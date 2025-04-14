@@ -1,8 +1,10 @@
-export default function HomePage() {
+function HomePage() {
   return (
-    <div className="min-h-screen p-8 bg-white">
-      <h1 className="text-3xl font-bold mb-4">Welcome to vTry It</h1>
-      <p className="text-lg">Your real-time virtual try-on beauty studio.</p>
+    <div style={{ padding: "2rem", fontFamily: "Arial", textAlign: "center" }}>
+      <h1>👋 Welcome to AR Beauty!</h1>
+      <p>Your real-time beauty try-on platform starts here.</p>
     </div>
   );
 }
+
+export default HomePage;
