@@ -1,8 +1,11 @@
-import { useState } from 'react';
+// Filename: AuthForm.jsx
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from "react-router-dom";
-import { supabase } from '../../utils/supabaseClient'; // ✅ your env-configured client
+import { supabase } from '../../utils/supabaseClient';
+import { Camera } from '@mediapipe/camera_utils'; // ✅ Make sure this is installed
 
 const AuthForm = () => {
+  const videoRef = useRef(null); // ✅ Needed for MediaPipe
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
@@ -10,6 +13,19 @@ const AuthForm = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  useEffect(() => {
+    if (!videoRef.current) return;
+
+    const camera = new Camera(videoRef.current, {
+      onFrame: async () => {
+        console.log('📸 Capturing frame from login screen webcam...');
+      },
+      width: 640,
+      height: 480,
+    });
+
+    camera.start();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -27,15 +43,13 @@ const AuthForm = () => {
       setError(error.message);
     } else {
       console.log('✅ Login success:', data);
-    }
-    if (!error) {
       navigate("/dashboard");
-    }    
+    }
   };
 
   const handleGoogleLogin = async () => {
     const isLocalhost = window.location.hostname === 'localhost';
-  
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -44,10 +58,9 @@ const AuthForm = () => {
           : 'https://vtryit.com/dashboard',
       },
     });
-  
+
     if (error) console.error('Google login error:', error.message);
   };
-  
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4">
@@ -57,6 +70,11 @@ const AuthForm = () => {
             Login to your account.
           </h1>
           <p className="mt-3 text-gray-500">Hello, welcome back to your account</p>
+        </div>
+
+        {/* Webcam preview */}
+        <div className="my-4">
+          <video ref={videoRef} autoPlay playsInline style={{ width: '100%', borderRadius: '8px' }} />
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
