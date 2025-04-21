@@ -92,9 +92,9 @@ const AvatarSwitcher = () => {
             autoPlay
             playsInline
             muted
+            width="320"
+            height="240"
             style={{
-              width: '320px',
-              height: '240px',
               border: '1px solid #ccc',
               background: '#000',
             }}
