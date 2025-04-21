@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as cam from '@mediapipe/camera_utils';
 
 const AvatarSwitcher = () => {
   const videoRef = useRef(null);
@@ -9,25 +8,25 @@ const AvatarSwitcher = () => {
 
   useEffect(() => {
     let camera;
-    let faceMesh;
 
-    const loadFaceMesh = async () => {
-      await new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js';
-        script.onload = resolve;
-        script.onerror = reject;
-        document.body.appendChild(script);
-      });
+    const loadScripts = async () => {
+      const loadScript = (src) =>
+        new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = src;
+          script.onload = resolve;
+          script.onerror = reject;
+          document.body.appendChild(script);
+        });
 
-      return new window.FaceMesh({
-        locateFile: (file) =>
-          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-      });
+      await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js');
+      await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
     };
 
-    const initCamera = async () => {
+    const init = async () => {
       try {
+        await loadScripts();
+
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user' },
           audio: false,
@@ -38,7 +37,10 @@ const AvatarSwitcher = () => {
           await videoRef.current.play();
         }
 
-        faceMesh = await loadFaceMesh();
+        const faceMesh = new window.FaceMesh({
+          locateFile: (file) =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+        });
 
         faceMesh.setOptions({
           maxNumFaces: 1,
@@ -67,7 +69,7 @@ const AvatarSwitcher = () => {
           }
         });
 
-        camera = new cam.Camera(videoRef.current, {
+        camera = new window.Camera(videoRef.current, {
           onFrame: async () => {
             await faceMesh.send({ image: videoRef.current });
           },
@@ -84,7 +86,7 @@ const AvatarSwitcher = () => {
       }
     };
 
-    initCamera();
+    init();
 
     return () => {
       if (camera) camera.stop();
