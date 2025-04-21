@@ -9,74 +9,67 @@ const AvatarSwitcher = () => {
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    let camera;
-
-    const initialize = async () => {
-      if (!videoRef.current) return;
-
-      const faceMesh = new FaceMesh({
-        locateFile: (file) =>
-          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-      });
-
-      faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-
-      faceMesh.onResults((results) => {
-        if (
-          !results.multiFaceLandmarks ||
-          results.multiFaceLandmarks.length === 0
-        )
-          return;
-
-        const landmarks = results.multiFaceLandmarks[0];
-        const nose = landmarks[1];
-        const leftCheek = landmarks[234];
-        const rightCheek = landmarks[454];
-
-        const noseToLeft = nose.x - leftCheek.x;
-        const noseToRight = rightCheek.x - nose.x;
-
-        if (noseToLeft > noseToRight * 1.4) {
-          setPose('right');
-        } else if (noseToRight > noseToLeft * 1.4) {
-          setPose('left');
-        } else {
-          setPose('front');
-        }
-      });
-
+    const initCamera = async () => {
       try {
-        camera = new Camera(videoRef.current, {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' }
+        });
+  
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play(); // ensure video starts
+        }
+  
+        const faceMesh = new FaceMesh({
+          locateFile: (file) =>
+            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+        });
+  
+        faceMesh.setOptions({
+          maxNumFaces: 1,
+          refineLandmarks: true,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+  
+        faceMesh.onResults((results) => {
+          if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
+          const landmarks = results.multiFaceLandmarks[0];
+  
+          const nose = landmarks[1];
+          const leftCheek = landmarks[234];
+          const rightCheek = landmarks[454];
+  
+          const noseToLeft = nose.x - leftCheek.x;
+          const noseToRight = rightCheek.x - nose.x;
+  
+          if (noseToLeft > noseToRight * 1.4) {
+            setPose('right');
+          } else if (noseToRight > noseToLeft * 1.4) {
+            setPose('left');
+          } else {
+            setPose('front');
+          }
+        });
+  
+        const camera = new cam.Camera(videoRef.current, {
           onFrame: async () => {
-            if (videoRef.current) {
-              await faceMesh.send({ image: videoRef.current });
-            }
+            await faceMesh.send({ image: videoRef.current });
           },
           width: 640,
           height: 480,
         });
-
-        await camera.start();
-        setIsInitialized(true);
-      } catch (err) {
-        console.error('Camera error:', err);
-        setCameraError(err.message);
+  
+        camera.start();
+      } catch (error) {
+        console.error("Failed to start webcam:", error);
+        alert("Unable to access the camera.");
       }
     };
-
-    initialize();
-
-    return () => {
-      if (camera) {
-        camera.stop();
-      }
-    };
+  
+    initCamera();
   }, []);
+  
 
   return (
     <div style={{ padding: '20px' }}>
