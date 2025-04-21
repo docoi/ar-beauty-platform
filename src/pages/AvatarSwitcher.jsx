@@ -86,21 +86,21 @@ const AvatarSwitcher = () => {
       </p>
 
       {isCameraReady && (
-        <div>
+        <div style={{ marginBottom: '20px' }}>
           <h3>Live Avatar:</h3>
           {pose === 'front' && (
-            <img src="/avatars/avatar_front.jpg" alt="Avatar Front" width="120" />
+            <img src="/avatars/avatar_front.jpg" alt="Avatar Front" width="200" />
           )}
           {pose === 'left' && (
-            <img src="/avatars/avatar_left.jpg" alt="Avatar Left" width="120" />
+            <img src="/avatars/avatar_left.jpg" alt="Avatar Left" width="200" />
           )}
           {pose === 'right' && (
-            <img src="/avatars/avatar_right.jpg" alt="Avatar Right" width="120" />
+            <img src="/avatars/avatar_right.jpg" alt="Avatar Right" width="200" />
           )}
         </div>
       )}
 
-      <div style={{ marginTop: '20px' }}>
+      <div>
         <video
           ref={videoRef}
           autoPlay
