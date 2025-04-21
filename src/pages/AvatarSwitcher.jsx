@@ -1,38 +1,38 @@
-import React, { useRef, useEffect, useState } from 'react';
-import { Camera } from '@mediapipe/camera_utils';
+// Filename: AvatarSwitcher.jsx
+import React, { useRef, useState, useEffect } from 'react';
 
 const AvatarSwitcher = () => {
   const videoRef = useRef(null);
   const [pose, setPose] = useState('front');
 
   useEffect(() => {
-    console.log("👀 useEffect triggered");
+    const initCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      } catch (err) {
+        alert('Failed to acquire camera feed: ' + err.message);
+      }
+    };
 
-    if (!videoRef.current) {
-      console.warn("🚨 videoRef is null");
-      return;
-    }
-
-    console.log("✅ videoRef available");
-
-    const camera = new Camera(videoRef.current, {
-      onFrame: async () => {
-        console.log("📸 Webcam frame being captured");
-      },
-      width: 640,
-      height: 480,
-    });
-
-    camera.start().then(() => {
-      console.log("🎥 Camera started");
-    }).catch((err) => {
-      console.error("❌ Camera failed to start:", err);
-    });
+    initCamera();
   }, []);
 
   return (
-    <div style={{ padding: '50px' }}>
-      <h1 style={{ color: 'green' }}>✅ It works! Vercel build is rendering this page.</h1>
+    <div style={{ padding: '1rem' }}>
+      <h1 style={{ color: 'green' }}>✅ Webcam + Pose Test (Stage 1)</h1>
+      <p>Pose: {pose}</p>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        width="320"
+        height="240"
+        style={{ border: '2px solid #ccc' }}
+      />
     </div>
   );
 };
