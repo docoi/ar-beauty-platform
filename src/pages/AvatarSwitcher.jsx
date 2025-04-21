@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FaceMesh } from '@mediapipe/face_mesh';
 import * as cam from '@mediapipe/camera_utils';
+import * as faceMeshModule from '@mediapipe/face_mesh';
+const FaceMesh = faceMeshModule.FaceMesh;
 
 const AvatarSwitcher = () => {
   const videoRef = useRef(null);
