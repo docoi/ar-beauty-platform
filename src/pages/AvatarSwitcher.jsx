@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { FaceMesh } from '@mediapipe/face_mesh';
+import * as cam from '@mediapipe/camera_utils';
 
 const AvatarSwitcher = () => {
   const videoRef = useRef(null);
@@ -9,24 +11,8 @@ const AvatarSwitcher = () => {
   useEffect(() => {
     let camera;
 
-    const loadScripts = async () => {
-      const loadScript = (src) =>
-        new Promise((resolve, reject) => {
-          const script = document.createElement('script');
-          script.src = src;
-          script.onload = resolve;
-          script.onerror = reject;
-          document.body.appendChild(script);
-        });
-
-      await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js');
-      await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
-    };
-
-    const init = async () => {
+    const initCamera = async () => {
       try {
-        await loadScripts();
-
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'user' },
           audio: false,
@@ -37,9 +23,8 @@ const AvatarSwitcher = () => {
           await videoRef.current.play();
         }
 
-        const faceMesh = new window.FaceMesh({
-          locateFile: (file) =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+        const faceMesh = new FaceMesh({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
         });
 
         faceMesh.setOptions({
@@ -69,7 +54,7 @@ const AvatarSwitcher = () => {
           }
         });
 
-        camera = new window.Camera(videoRef.current, {
+        camera = new cam.Camera(videoRef.current, {
           onFrame: async () => {
             await faceMesh.send({ image: videoRef.current });
           },
@@ -86,7 +71,7 @@ const AvatarSwitcher = () => {
       }
     };
 
-    init();
+    initCamera();
 
     return () => {
       if (camera) camera.stop();
@@ -94,31 +79,42 @@ const AvatarSwitcher = () => {
   }, []);
 
   return (
-    <div style={{ padding: '20px' }}>
+    <div style={{ padding: '20px', textAlign: 'center' }}>
       <h2 style={{ color: 'green' }}>✅ Webcam + Pose Test (Stable Version)</h2>
       <p>
         Pose: <strong>{pose}</strong>
       </p>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        width="320"
-        height="240"
-        style={{ border: '2px solid #ccc', background: '#000' }}
-      />
 
       {isCameraReady && (
-        <>
+        <div>
           <h3>Live Avatar:</h3>
-          {pose === 'front' && <img src="/avatars/avatar_front.jpg" alt="Avatar Front" width="120" />}
-          {pose === 'left' && <img src="/avatars/avatar_left.jpg" alt="Avatar Left" width="120" />}
-          {pose === 'right' && <img src="/avatars/avatar_right.jpg" alt="Avatar Right" width="120" />}
-        </>
+          {pose === 'front' && (
+            <img src="/avatars/avatar_front.jpg" alt="Avatar Front" width="120" />
+          )}
+          {pose === 'left' && (
+            <img src="/avatars/avatar_left.jpg" alt="Avatar Left" width="120" />
+          )}
+          {pose === 'right' && (
+            <img src="/avatars/avatar_right.jpg" alt="Avatar Right" width="120" />
+          )}
+        </div>
       )}
 
-      {cameraError && <p style={{ color: 'red' }}>❌ Error: {cameraError}</p>}
+      <div style={{ marginTop: '20px' }}>
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          width="320"
+          height="240"
+          style={{ border: '2px solid #ccc', background: '#000' }}
+        />
+      </div>
+
+      {cameraError && (
+        <p style={{ color: 'red' }}>❌ Error: {cameraError}</p>
+      )}
     </div>
   );
 };
