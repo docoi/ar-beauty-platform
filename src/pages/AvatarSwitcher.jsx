@@ -1,67 +1,53 @@
-// Filename: AvatarSwitcher.js
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Camera } from '@mediapipe/camera_utils';
-import { FaceMesh } from '@mediapipe/face_mesh';
-
 
 const AvatarSwitcher = () => {
   const videoRef = useRef(null);
   const [pose, setPose] = useState('front');
 
   useEffect(() => {
-    const faceMesh = new FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-    });
+    console.log("👀 useEffect triggered");
 
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
+    if (!videoRef.current) {
+      console.warn("🚨 videoRef is null");
+      return;
+    }
 
-    faceMesh.onResults((results) => {
-      if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
-      const landmarks = results.multiFaceLandmarks[0];
+    console.log("✅ videoRef available");
 
-      const nose = landmarks[1];
-      const leftCheek = landmarks[234];
-      const rightCheek = landmarks[454];
-
-      const noseToLeft = nose.x - leftCheek.x;
-      const noseToRight = rightCheek.x - nose.x;
-
-      if (noseToLeft > noseToRight * 1.4) {
-        setPose('right');
-      } else if (noseToRight > noseToLeft * 1.4) {
-        setPose('left');
-      } else {
-        setPose('front');
-      }
-    });
-
-    const camera = new cam.Camera(videoRef.current, {
+    const camera = new Camera(videoRef.current, {
       onFrame: async () => {
-        await faceMesh.send({ image: videoRef.current });
+        console.log("📸 Webcam frame being captured");
       },
       width: 640,
       height: 480,
     });
-    camera.start();
+
+    camera.start().then(() => {
+      console.log("🎥 Camera started");
+    }).catch((err) => {
+      console.error("❌ Camera failed to start:", err);
+    });
   }, []);
 
   return (
-    <div>
-      <h1 style={{ color: 'black' }}>Avatar Switcher is working</h1>
-      <p>Current Pose: {pose}</p>
-      <video ref={videoRef} autoPlay playsInline style={{ width: '320px', display: 'block' }} />
-  
-      {pose === 'front' && <img src="/avatars/avatar_front.jpg" alt="Avatar Front" />}
-      {pose === 'left' && <img src="/avatars/avatar_left.jpg" alt="Avatar Left" />}
-      {pose === 'right' && <img src="/avatars/avatar_right.jpg" alt="Avatar Right" />}
+    <div style={{ padding: '20px', color: 'black' }}>
+      <h1>✅ AvatarSwitcher is rendering!</h1>
+      <p>Pose state: {pose}</p>
+
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        style={{ width: '100%', maxWidth: '320px', border: '2px solid black' }}
+      />
+
+      <h2>Test Image Visibility:</h2>
+      <img src="/avatars/avatar_front.jpeg" alt="Front" width="100" />
+      <img src="/avatars/avatar_left.jpeg" alt="Left" width="100" />
+      <img src="/avatars/avatar_right.jpeg" alt="Right" width="100" />
     </div>
   );
-  
 };
+
 export default AvatarSwitcher;
