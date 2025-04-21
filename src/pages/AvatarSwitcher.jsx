@@ -1,57 +1,46 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FaceMesh } from '@mediapipe/face_mesh';
-import { Camera } from '@mediapipe/camera_utils';
+import * as cam from '@mediapipe/camera_utils';
 
 const AvatarSwitcher = () => {
   const videoRef = useRef(null);
   const [pose, setPose] = useState('front');
-  const [cameraError, setCameraError] = useState(null);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
 
   useEffect(() => {
-    const initCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' }
-        });
-  
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play(); // ensure video starts
+    const initCamera = () => {
+      const faceMesh = new FaceMesh({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+      });
+
+      faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
+      faceMesh.onResults((results) => {
+        if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
+        const landmarks = results.multiFaceLandmarks[0];
+
+        const nose = landmarks[1];
+        const leftCheek = landmarks[234];
+        const rightCheek = landmarks[454];
+
+        const noseToLeft = nose.x - leftCheek.x;
+        const noseToRight = rightCheek.x - nose.x;
+
+        if (noseToLeft > noseToRight * 1.4) {
+          setPose('right');
+        } else if (noseToRight > noseToLeft * 1.4) {
+          setPose('left');
+        } else {
+          setPose('front');
         }
-  
-        const faceMesh = new FaceMesh({
-          locateFile: (file) =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-        });
-  
-        faceMesh.setOptions({
-          maxNumFaces: 1,
-          refineLandmarks: true,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
-  
-        faceMesh.onResults((results) => {
-          if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) return;
-          const landmarks = results.multiFaceLandmarks[0];
-  
-          const nose = landmarks[1];
-          const leftCheek = landmarks[234];
-          const rightCheek = landmarks[454];
-  
-          const noseToLeft = nose.x - leftCheek.x;
-          const noseToRight = rightCheek.x - nose.x;
-  
-          if (noseToLeft > noseToRight * 1.4) {
-            setPose('right');
-          } else if (noseToRight > noseToLeft * 1.4) {
-            setPose('left');
-          } else {
-            setPose('front');
-          }
-        });
-  
+      });
+
+      try {
         const camera = new cam.Camera(videoRef.current, {
           onFrame: async () => {
             await faceMesh.send({ image: videoRef.current });
@@ -59,55 +48,49 @@ const AvatarSwitcher = () => {
           width: 640,
           height: 480,
         });
-  
         camera.start();
-      } catch (error) {
-        console.error("Failed to start webcam:", error);
-        alert("Unable to access the camera.");
+        setIsCameraReady(true);
+      } catch (err) {
+        alert('Unable to access the camera.');
+        console.error('Camera start error:', err);
       }
     };
-  
-    initCamera();
+
+    // Check camera permissions first
+    navigator.permissions
+      .query({ name: 'camera' })
+      .then((res) => {
+        if (res.state === 'granted' || res.state === 'prompt') {
+          // Slight delay to allow permission prompts to complete
+          setTimeout(() => {
+            initCamera();
+          }, 500);
+        } else {
+          alert('Camera permission denied.');
+        }
+      })
+      .catch((err) => {
+        console.warn('Permissions API not supported or failed:', err);
+        // Still attempt to start camera
+        setTimeout(() => {
+          initCamera();
+        }, 500);
+      });
   }, []);
-  
 
   return (
     <div style={{ padding: '20px' }}>
-      <h2 style={{ color: 'green' }}>✅ Webcam + Pose Test (Stage 2.1)</h2>
-
-      {cameraError ? (
-        <p style={{ color: 'red' }}>❌ Error: {cameraError}</p>
-      ) : (
-        <>
-          <p>Pose: <strong>{pose}</strong></p>
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            width="320"
-            height="240"
-            style={{
-              border: '1px solid #ccc',
-              background: '#000',
-            }}
-          />
-          {isInitialized && (
-            <>
-              <h3>Live Avatar:</h3>
-              {pose === 'front' && (
-                <img src="/avatars/avatar_front.jpg" alt="Avatar Front" width="120" />
-              )}
-              {pose === 'left' && (
-                <img src="/avatars/avatar_left.jpg" alt="Avatar Left" width="120" />
-              )}
-              {pose === 'right' && (
-                <img src="/avatars/avatar_right.jpg" alt="Avatar Right" width="120" />
-              )}
-            </>
-          )}
-        </>
-      )}
+      <h1 style={{ color: 'green' }}>✅ Webcam + Pose Test (Stage 2.1)</h1>
+      <p>
+        Pose: <strong>{pose}</strong>
+      </p>
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        style={{ width: '100%', maxWidth: '500px', background: 'black' }}
+      />
     </div>
   );
 };
