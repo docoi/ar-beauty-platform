@@ -76,35 +76,110 @@ const AvatarSwitcher = () => {
     };
   }, []);
   return (
-    <div style={{ padding: '20px' }}>
-      <h2 style={{ color: 'green' }}>✅ Webcam + Pose Test (Stable Version)</h2>
-      <p>
+    <div style={{ 
+      padding: '10px', 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100vh',
+      boxSizing: 'border-box'
+    }}>
+      <h2 style={{ color: 'green', margin: '0 0 10px 0' }}>✅ Webcam + Pose Test (Stable Version)</h2>
+      <p style={{ margin: '0 0 10px 0' }}>
         Pose: <strong>{pose}</strong>
       </p>
       
       {isCameraReady && (
-        <>
-          <h3>Live Avatar:</h3>
-          {pose === 'front' && <img src="/avatars/avatar_front.jpg" alt="Avatar Front" width="320" />}
-          {pose === 'left' && <img src="/avatars/avatar_left.jpg" alt="Avatar Left" width="320" />}
-          {pose === 'right' && <img src="/avatars/avatar_right.jpg" alt="Avatar Right" width="320" />}
-        </>
+        <div style={{ 
+          position: 'relative',
+          flex: 1,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          overflow: 'hidden',
+          marginBottom: '10px'
+        }}>
+          <h3 style={{ 
+            position: 'absolute', 
+            top: '10px', 
+            left: '10px', 
+            margin: 0, 
+            background: 'rgba(255,255,255,0.7)', 
+            padding: '5px', 
+            borderRadius: '5px',
+            zIndex: 2
+          }}>Live Avatar</h3>
+          <div style={{ 
+            position: 'relative', 
+            width: '100%', 
+            height: '100%',
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center' 
+          }}>
+            <img 
+              src="/avatars/avatar_front.jpg" 
+              alt="Avatar Front" 
+              style={{
+                position: 'absolute',
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                opacity: pose === 'front' ? 1 : 0,
+                transition: 'opacity 0.3s ease-in-out'
+              }}
+            />
+            <img 
+              src="/avatars/avatar_left.jpg" 
+              alt="Avatar Left" 
+              style={{
+                position: 'absolute',
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                opacity: pose === 'left' ? 1 : 0,
+                transition: 'opacity 0.3s ease-in-out'
+              }}
+            />
+            <img 
+              src="/avatars/avatar_right.jpg" 
+              alt="Avatar Right" 
+              style={{
+                position: 'absolute',
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                opacity: pose === 'right' ? 1 : 0,
+                transition: 'opacity 0.3s ease-in-out'
+              }}
+            />
+          </div>
+        </div>
       )}
       
-      <div style={{ marginTop: '20px' }}>
-        <h4>Camera Feed:</h4>
+      <div style={{ 
+        marginTop: 'auto', 
+        padding: '10px',
+        background: '#f5f5f5',
+        borderRadius: '8px'
+      }}>
+        <h4 style={{ margin: '0 0 5px 0' }}>Camera Feed:</h4>
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          width="240"
-          height="180"
-          style={{ border: '2px solid #ccc', background: '#000' }}
+          style={{ 
+            width: '100%', 
+            maxWidth: '240px', 
+            height: 'auto',
+            border: '2px solid #ccc', 
+            background: '#000',
+            borderRadius: '4px'
+          }}
         />
       </div>
       
-      {cameraError && <p style={{ color: 'red' }}>❌ Error: {cameraError}</p>}
+      {cameraError && <p style={{ color: 'red', margin: '10px 0 0 0' }}>❌ Error: {cameraError}</p>}
     </div>
   );
 };
