@@ -195,7 +195,7 @@ const AvatarSwitcher = () => {
           playsInline
           muted
           style={{ 
-            width: '160px', 
+            width: '112px', 
             height: 'auto',
             border: '2px solid #ccc', 
             background: '#000',
