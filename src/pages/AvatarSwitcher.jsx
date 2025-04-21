@@ -31,21 +31,8 @@ const AvatarSwitcher = () => {
   }, []);
 
   return (
-    <div style={{ padding: '20px', color: 'black' }}>
-      <h1>✅ AvatarSwitcher is rendering!</h1>
-      <p>Pose state: {pose}</p>
-
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        style={{ width: '100%', maxWidth: '320px', border: '2px solid black' }}
-      />
-
-      <h2>Test Image Visibility:</h2>
-      <img src="/avatars/avatar_front.jpeg" alt="Front" width="100" />
-      <img src="/avatars/avatar_left.jpeg" alt="Left" width="100" />
-      <img src="/avatars/avatar_right.jpeg" alt="Right" width="100" />
+    <div style={{ padding: '50px' }}>
+      <h1 style={{ color: 'green' }}>✅ It works! Vercel build is rendering this page.</h1>
     </div>
   );
 };
