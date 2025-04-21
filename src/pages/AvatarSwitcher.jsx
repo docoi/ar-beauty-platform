@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as cam from '@mediapipe/camera_utils';
-import * as faceMeshModule from '@mediapipe/face_mesh';
-const FaceMesh = faceMeshModule.FaceMesh;
 
 const AvatarSwitcher = () => {
   const videoRef = useRef(null);
@@ -11,6 +9,22 @@ const AvatarSwitcher = () => {
 
   useEffect(() => {
     let camera;
+    let faceMesh;
+
+    const loadFaceMesh = async () => {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.body.appendChild(script);
+      });
+
+      return new window.FaceMesh({
+        locateFile: (file) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+      });
+    };
 
     const initCamera = async () => {
       try {
@@ -24,9 +38,7 @@ const AvatarSwitcher = () => {
           await videoRef.current.play();
         }
 
-        const faceMesh = new FaceMesh({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-        });
+        faceMesh = await loadFaceMesh();
 
         faceMesh.setOptions({
           maxNumFaces: 1,
@@ -98,21 +110,13 @@ const AvatarSwitcher = () => {
       {isCameraReady && (
         <>
           <h3>Live Avatar:</h3>
-          {pose === 'front' && (
-            <img src="/avatars/avatar_front.jpg" alt="Avatar Front" width="120" />
-          )}
-          {pose === 'left' && (
-            <img src="/avatars/avatar_left.jpg" alt="Avatar Left" width="120" />
-          )}
-          {pose === 'right' && (
-            <img src="/avatars/avatar_right.jpg" alt="Avatar Right" width="120" />
-          )}
+          {pose === 'front' && <img src="/avatars/avatar_front.jpg" alt="Avatar Front" width="120" />}
+          {pose === 'left' && <img src="/avatars/avatar_left.jpg" alt="Avatar Left" width="120" />}
+          {pose === 'right' && <img src="/avatars/avatar_right.jpg" alt="Avatar Right" width="120" />}
         </>
       )}
 
-      {cameraError && (
-        <p style={{ color: 'red' }}>❌ Error: {cameraError}</p>
-      )}
+      {cameraError && <p style={{ color: 'red' }}>❌ Error: {cameraError}</p>}
     </div>
   );
 };
