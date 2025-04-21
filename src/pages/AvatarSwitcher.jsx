@@ -75,6 +75,12 @@ const AvatarSwitcher = () => {
       if (camera) camera.stop();
     };
   }, []);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  const toggleFullScreen = () => {
+    setIsFullScreen(!isFullScreen);
+  };
+  
   return (
     <div style={{ 
       padding: '10px', 
@@ -96,26 +102,42 @@ const AvatarSwitcher = () => {
           justifyContent: 'center',
           alignItems: 'center',
           overflow: 'hidden',
-          marginBottom: '10px'
+          marginBottom: '10px',
+          ...(isFullScreen ? {
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 1000,
+            background: '#000',
+            margin: 0
+          } : {})
         }}>
-          <h3 style={{ 
-            position: 'absolute', 
-            top: '10px', 
-            left: '10px', 
-            margin: 0, 
-            background: 'rgba(255,255,255,0.7)', 
-            padding: '5px', 
-            borderRadius: '5px',
-            zIndex: 2
-          }}>Live Avatar</h3>
-          <div style={{ 
-            position: 'relative', 
-            width: '100%', 
-            height: '100%',
-            display: 'flex', 
-            justifyContent: 'center', 
-            alignItems: 'center' 
-          }}>
+          {!isFullScreen && (
+            <h3 style={{ 
+              position: 'absolute', 
+              top: '10px', 
+              left: '10px', 
+              margin: 0, 
+              background: 'rgba(255,255,255,0.7)', 
+              padding: '5px', 
+              borderRadius: '5px',
+              zIndex: 2
+            }}>Live Avatar</h3>
+          )}
+          <div 
+            style={{ 
+              position: 'relative', 
+              width: '100%', 
+              height: '100%',
+              display: 'flex', 
+              justifyContent: 'center', 
+              alignItems: 'center',
+              cursor: 'pointer'
+            }}
+            onClick={toggleFullScreen}
+          >
             <img 
               src="/avatars/avatar_front.jpg" 
               alt="Avatar Front" 
@@ -157,10 +179,14 @@ const AvatarSwitcher = () => {
       )}
       
       <div style={{ 
-        marginTop: 'auto', 
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
         padding: '10px',
         background: '#f5f5f5',
-        borderRadius: '8px'
+        borderRadius: '8px',
+        marginTop: 'auto'
       }}>
         <h4 style={{ margin: '0 0 5px 0' }}>Camera Feed:</h4>
         <video
@@ -169,8 +195,7 @@ const AvatarSwitcher = () => {
           playsInline
           muted
           style={{ 
-            width: '100%', 
-            maxWidth: '240px', 
+            width: '160px', 
             height: 'auto',
             border: '2px solid #ccc', 
             background: '#000',
