@@ -85,20 +85,14 @@ const FaceEffect = ({ effectType }) => {
           console.log("Released previous camera stream");
         }
 
-        // Try with more specific constraints for mobile
-        const constraints = {
-          video: { 
-            width: { ideal: 640 }, 
-            height: { ideal: 480 }, 
-            facingMode: 'user',
-            frameRate: { ideal: 30 }
-          },
-          audio: false,
-        };
-
-        // Add a more specific error message for mobile users
+        // Try with simplified constraints for mobile
+        console.log("Requesting camera stream with default constraints..."); // Log before call
         try {
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user' }, // Prefer front camera, no specific size
+            audio: false,
+          });
+          console.log("Successfully acquired camera stream.");
           
           if (!videoRef.current || !mounted) return;
           
@@ -222,7 +216,10 @@ const FaceEffect = ({ effectType }) => {
           }
         }
       } catch (err) {
-        console.error("Error during initialization:", err);
+        console.error("ERROR during initialization:", err); // Log the full error object
+        if (err.name === "NotReadableError") {
+          console.error("Specific NotReadableError detected. Camera might be in use or hardware issue.");
+        }
         
         if (!mounted) return;
         
@@ -250,41 +247,48 @@ const FaceEffect = ({ effectType }) => {
     // Cleanup function
     return () => {
       mounted = false;
-      console.log("Cleaning up FaceEffect...");
+      console.log("Cleanup: Stopping FaceEffect...");
       
       // Clear any pending retry
       if (retryTimeout) {
         clearTimeout(retryTimeout);
+        console.log("Cleanup: Cleared pending retry timeout.");
       }
       
       // Stop MediaPipe Camera utility
       if (cameraUtilRef.current) {
         try {
+          console.log("Cleanup: Stopping MediaPipe Camera Utility.");
           cameraUtilRef.current.stop();
         } catch (e) {
           console.error("Error stopping camera:", e);
         }
         cameraUtilRef.current = null;
-        console.log("MediaPipe Camera Utility stopped.");
       }
       
       // Close FaceMesh
       if (faceMeshRef.current) {
+        console.log("Cleanup: Releasing FaceMesh reference.");
         faceMeshRef.current = null;
       }
       
       // Stop camera stream tracks
       if (videoRef.current && videoRef.current.srcObject) {
         try {
+          console.log("Cleanup: Stopping camera stream tracks.");
           const stream = videoRef.current.srcObject;
           const tracks = stream.getTracks();
-          tracks.forEach(track => track.stop());
+          tracks.forEach(track => {
+            console.log(`Stopping track: ${track.kind}`);
+            track.stop();
+          });
           videoRef.current.srcObject = null;
-          console.log("Camera stream stopped.");
         } catch (e) {
           console.error("Error stopping video tracks:", e);
         }
       }
+      
+      console.log("Cleanup: FaceEffect stopped completely.");
     };
   }, [effectType, retryCount, maxRetries]); // Added retryCount and maxRetries to dependencies
 
