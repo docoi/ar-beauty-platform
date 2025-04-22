@@ -4,11 +4,9 @@ import * as THREE from 'three';
 const FaceEffect = ({ effectType }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const containerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   
   // Refs for MediaPipe objects
   const faceMeshRef = useRef(null);
@@ -90,7 +88,6 @@ const FaceEffect = ({ effectType }) => {
         console.log("Stream assigned to video element");
         
         // --- 3. Set up event listeners for video element ---
-        // Wait for video metadata to load before attempting to play
         await new Promise((resolve) => {
           const onLoadedMetadata = () => {
             console.log("Video metadata loaded");
@@ -99,7 +96,6 @@ const FaceEffect = ({ effectType }) => {
           };
           
           if (videoRef.current.readyState >= 2) {
-            // Metadata already loaded
             console.log("Video metadata already loaded");
             resolve();
           } else {
@@ -117,22 +113,7 @@ const FaceEffect = ({ effectType }) => {
           if (!mounted) return;
           setIsCameraReady(true);
           
-          // Get and set video dimensions for proper sizing
-          if (videoRef.current) {
-            const videoWidth = videoRef.current.videoWidth;
-            const videoHeight = videoRef.current.videoHeight;
-            console.log(`Natural video dimensions: ${videoWidth}x${videoHeight}`);
-            
-            // Set canvas dimensions to match video
-            if (canvasRef.current) {
-              canvasRef.current.width = videoWidth;
-              canvasRef.current.height = videoHeight;
-              setDimensions({ width: videoWidth, height: videoHeight });
-            }
-          }
-          
           // --- 5. Initialize and start MediaPipe Camera Utility ---
-          // Need to use setTimeout to ensure DOM is updated with isCameraReady state
           setTimeout(() => {
             if (!mounted || !videoRef.current || !faceMeshRef.current || !window.Camera) {
               console.error("Prerequisites not available for Camera initialization");
@@ -141,9 +122,6 @@ const FaceEffect = ({ effectType }) => {
             
             console.log("Initializing MediaPipe Camera Utility...");
             try {
-              const videoWidth = videoRef.current.videoWidth || 640;
-              const videoHeight = videoRef.current.videoHeight || 480;
-              
               cameraUtilRef.current = new window.Camera(videoRef.current, {
                 onFrame: async () => {
                   if (!videoRef.current || !faceMeshRef.current) return;
@@ -153,8 +131,8 @@ const FaceEffect = ({ effectType }) => {
                     console.error("Error sending frame to FaceMesh:", sendError);
                   }
                 },
-                width: videoWidth,
-                height: videoHeight
+                width: 640,
+                height: 480,
               });
               
               cameraUtilRef.current.start();
@@ -233,9 +211,8 @@ const FaceEffect = ({ effectType }) => {
         }
       }
     };
-  }, [effectType]); // Re-initialize when effectType changes
+  }, [effectType]);
 
-  // --- Define the onResults Callback ---
   const onFaceMeshResults = (results) => {
     if (!canvasRef.current) return;
     
@@ -257,12 +234,10 @@ const FaceEffect = ({ effectType }) => {
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       const landmarks = results.multiFaceLandmarks[0];
       
-      // Apply different effects based on effectType prop
       switch (effectType) {
         case 'landmarks':
           drawLandmarks(canvasCtx, landmarks);
           break;
-        // Add more effect types here
         default:
           drawLandmarks(canvasCtx, landmarks);
       }
@@ -271,12 +246,9 @@ const FaceEffect = ({ effectType }) => {
     canvasCtx.restore();
   };
 
-  // Helper function to draw face landmarks
   const drawLandmarks = (ctx, landmarks) => {
-    // Simple drawing of key points
     ctx.fillStyle = '#00FF00';
     
-    // Draw key facial landmarks (simplified)
     const keyPoints = [1, 33, 61, 199, 263, 291]; // Nose, chin, left eye, right eye, etc.
     
     for (const id of keyPoints) {
@@ -291,64 +263,55 @@ const FaceEffect = ({ effectType }) => {
     }
   };
 
-  // Calculate container style based on dimensions
-  const containerStyle = {
-    width: '100%',
-    maxWidth: '600px',
-    margin: '0 auto',
-    position: 'relative',
-    // Set aspect ratio based on actual camera dimensions, with fallback
-    paddingTop: dimensions.height && dimensions.width 
-      ? `${(dimensions.height / dimensions.width) * 100}%` 
-      : '75%', // 4:3 default ratio as fallback
+  const handleRetry = () => {
+    setError(null);
+    setIsLoading(true);
+    initialize();
   };
 
   return (
-    <div className="p-4 w-full">
-      <div 
-        ref={containerRef}
-        style={containerStyle}
-        className="bg-gray-100 mb-4 rounded-lg overflow-hidden border border-gray-300"
-      >
-        {/* Canvas for output rendering */}
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full"
-        />
+    <div className="relative flex flex-col items-center p-4 w-full">
+      <div className="relative mx-auto w-full" style={{ maxWidth: '600px' }}>
+        {/* This is the container that controls the aspect ratio */}
+        <div className="relative aspect-[4/3] bg-black rounded-lg overflow-hidden">
+          {/* Canvas - keep fixed dimensions for MediaPipe but allow CSS to control display size */}
+          <canvas
+            ref={canvasRef}
+            width="640" 
+            height="480"
+            className="absolute inset-0 w-full h-full object-contain"
+          />
 
-        {/* Video element - hidden, Camera utility uses it */}
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="absolute -z-10 w-px h-px top-0 left-0"
-        />
+          {/* Video element - hidden, Camera utility uses it */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute -z-10 w-px h-px top-0 left-0"
+          />
 
-        {/* Loading Overlay */}
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-400 bg-opacity-60 z-10">
-            <p className="text-white bg-black bg-opacity-70 px-4 py-2 rounded">Loading camera...</p>
-          </div>
-        )}
+          {/* Loading Overlay */}
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-400 bg-opacity-60 z-10">
+              <p className="text-white bg-black bg-opacity-70 px-4 py-2 rounded">Loading camera...</p>
+            </div>
+          )}
 
-        {/* Error Overlay */}
-        {error && !isLoading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-400 bg-opacity-80 p-4 z-10">
-            <p className="text-white text-center font-semibold mb-4">{error}</p>
-            
-            <button
-              onClick={() => {
-                setError(null);
-                setIsLoading(true);
-                initialize();
-              }}
-              className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
-            >
-              Try Again
-            </button>
-          </div>
-        )}
+          {/* Error Overlay */}
+          {error && !isLoading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-400 bg-opacity-80 p-4 z-10">
+              <p className="text-white text-center font-semibold mb-4">{error}</p>
+              
+              <button
+                onClick={handleRetry}
+                className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
