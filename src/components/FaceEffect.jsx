@@ -4,9 +4,11 @@ import * as THREE from 'three';
 const FaceEffect = ({ effectType }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Refs for MediaPipe objects
   const faceMeshRef = useRef(null);
@@ -29,6 +31,11 @@ const FaceEffect = ({ effectType }) => {
       };
       document.body.appendChild(script);
     });
+  };
+
+  // Toggle fullscreen mode
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
   };
 
   useEffect(() => {
@@ -269,17 +276,53 @@ const FaceEffect = ({ effectType }) => {
     initialize();
   };
 
+  // Fullscreen container styles
+  const fullscreenStyle = isFullscreen ? {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    background: '#000',
+    width: '100%',
+    height: '100%',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  } : {};
+
   return (
-    <div className="relative flex flex-col items-center p-4 w-full">
-      <div className="relative mx-auto w-full" style={{ maxWidth: '600px' }}>
-        {/* This is the container that controls the aspect ratio */}
-        <div className="relative aspect-[4/3] bg-black rounded-lg overflow-hidden">
+    <div className="relative flex flex-col items-center p-2 w-full">
+      {/* Container with regular or fullscreen styles */}
+      <div 
+        ref={containerRef}
+        style={{
+          ...fullscreenStyle,
+          maxWidth: isFullscreen ? '100%' : '500px',
+          width: '100%',
+          margin: '0 auto',
+          position: isFullscreen ? 'fixed' : 'relative',
+        }}
+      >
+        {/* Vertical 9:16 container similar to TikTok */}
+        <div 
+          className="relative bg-black rounded-lg overflow-hidden mx-auto"
+          style={{
+            width: '100%',
+            paddingTop: isFullscreen ? '100%' : '177.78%', // 16:9 vertical aspect ratio
+            cursor: 'pointer'
+          }}
+          onClick={toggleFullscreen}
+        >
           {/* Canvas - keep fixed dimensions for MediaPipe but allow CSS to control display size */}
           <canvas
             ref={canvasRef}
             width="640" 
             height="480"
-            className="absolute inset-0 w-full h-full object-contain"
+            className="absolute inset-0 w-full h-full object-cover"
           />
 
           {/* Video element - hidden, Camera utility uses it */}
@@ -304,11 +347,23 @@ const FaceEffect = ({ effectType }) => {
               <p className="text-white text-center font-semibold mb-4">{error}</p>
               
               <button
-                onClick={handleRetry}
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent toggleFullscreen from being called
+                  handleRetry();
+                }}
                 className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
               >
                 Try Again
               </button>
+            </div>
+          )}
+
+          {/* Fullscreen indicator */}
+          {!isLoading && !error && (
+            <div className="absolute bottom-4 right-4 z-10">
+              <p className="text-xs text-white bg-black bg-opacity-50 px-2 py-1 rounded">
+                {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
+              </p>
             </div>
           )}
         </div>
