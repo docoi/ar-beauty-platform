@@ -112,6 +112,23 @@ const FaceEffect = ({ effectType }) => {
           if (!mounted) return;
           setIsCameraReady(true);
           
+          // --- NEW: Set Canvas Dimensions to Match Video ---
+          if (videoRef.current && canvasRef.current) {
+            const videoWidth = videoRef.current.videoWidth;
+            const videoHeight = videoRef.current.videoHeight;
+
+            if (videoWidth > 0 && videoHeight > 0) {
+              console.log(`Video dimensions: ${videoWidth}x${videoHeight}`);
+              canvasRef.current.width = videoWidth;
+              canvasRef.current.height = videoHeight;
+              console.log(`Canvas dimensions set to: ${canvasRef.current.width}x${canvasRef.current.height}`);
+            } else {
+              console.warn("Could not get valid video dimensions to set canvas size.");
+              // Keep default canvas size
+            }
+          }
+          // --- End NEW ---
+          
           // --- 5. Initialize and start MediaPipe Camera Utility ---
           // Need to use setTimeout to ensure DOM is updated with isCameraReady state
           setTimeout(() => {
@@ -131,8 +148,9 @@ const FaceEffect = ({ effectType }) => {
                     console.error("Error sending frame to FaceMesh:", sendError);
                   }
                 },
-                width: 640,
-                height: 480,
+                // Use the actual video dimensions here now
+                width: canvasRef.current ? canvasRef.current.width : 640,
+                height: canvasRef.current ? canvasRef.current.height : 480,
               });
               
               cameraUtilRef.current.start();
@@ -272,12 +290,10 @@ const FaceEffect = ({ effectType }) => {
   return (
     <div className="relative flex flex-col items-center p-4 w-full">
       <div className="relative w-full max-w-2xl mx-auto aspect-video">
-        {/* Canvas for output rendering */}
+        {/* Canvas for output rendering - width/height set dynamically */}
         <canvas
           ref={canvasRef}
-          width="640"
-          height="480"
-          className="absolute top-0 left-0 w-full h-full rounded-lg shadow-md border border-gray-300"
+          className="absolute top-0 left-0 w-full h-full rounded-lg shadow-md border border-gray-300 object-contain"
         />
 
         {/* Video element - hidden, Camera utility uses it */}
