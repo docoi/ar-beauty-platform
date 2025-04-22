@@ -124,7 +124,9 @@ const FaceEffect = ({ effectType }) => {
           errorMessage = "Could not play video. Please ensure autoplay is allowed or interact with the page first.";
         }
         
-        setError(errorMessage);
+        // Append error details to the generic message for on-screen display
+        const detailedErrorMessage = `${errorMessage} (Type: ${err.name}, Msg: ${err.message})`;
+        setError(detailedErrorMessage);
         setIsLoading(false);
         setIsCameraReady(false);
       }
