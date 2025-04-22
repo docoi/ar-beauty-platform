@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react';
 import * as THREE from 'three';
-import { FaceMesh } from '@mediapipe/face_mesh';
-import { Camera } from '@mediapipe/camera_utils';
+// REMOVED:
+// import { FaceMesh } from '@mediapipe/face_mesh';
+// import { Camera } from '@mediapipe/camera_utils';
 
 const FaceEffect = ({ effectType }) => {
   const videoRef = useRef(null);
@@ -14,6 +15,21 @@ const FaceEffect = ({ effectType }) => {
   const faceMeshRef = useRef(null);
   const cameraUtilRef = useRef(null);
 
+  // Helper function to load scripts dynamically
+  const loadScript = (src) => {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = true;
+      script.onload = resolve;
+      script.onerror = (error) => {
+        console.error(`Error loading script: ${src}`, error);
+        reject(new Error(`Failed to load script: ${src}`));
+      };
+      document.body.appendChild(script);
+    });
+  };
+
   useEffect(() => {
     let mounted = true;
     
@@ -25,8 +41,20 @@ const FaceEffect = ({ effectType }) => {
       setIsCameraReady(false);
 
       try {
-        // --- 1. Initialize FaceMesh Instance ---
-        faceMeshRef.current = new FaceMesh({
+        // --- Load MediaPipe Scripts ---
+        console.log("Loading MediaPipe scripts...");
+        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
+        console.log("MediaPipe scripts loaded.");
+
+        // Check if scripts actually added FaceMesh and Camera to window
+        if (!window.FaceMesh || !window.Camera) {
+          throw new Error("MediaPipe scripts loaded but FaceMesh or Camera not found on window object.");
+        }
+
+        // --- 1. Initialize FaceMesh Instance (using window) ---
+        console.log("Initializing FaceMesh...");
+        faceMeshRef.current = new window.FaceMesh({
           locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
         });
 
@@ -38,8 +66,10 @@ const FaceEffect = ({ effectType }) => {
         });
 
         faceMeshRef.current.onResults(onFaceMeshResults);
+        console.log("FaceMesh initialized.");
 
         // --- 2. Access Camera ---
+        console.log("Accessing camera...");
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error("Camera access is not supported by this browser.");
         }
@@ -85,24 +115,37 @@ const FaceEffect = ({ effectType }) => {
           // --- 5. Initialize and start MediaPipe Camera Utility ---
           // Need to use setTimeout to ensure DOM is updated with isCameraReady state
           setTimeout(() => {
-            if (!mounted || !videoRef.current || !faceMeshRef.current) return;
-            
-            cameraUtilRef.current = new Camera(videoRef.current, {
-              onFrame: async () => {
-                if (!videoRef.current || !faceMeshRef.current) return;
-                await faceMeshRef.current.send({ image: videoRef.current });
-              },
-              width: 640,
-              height: 480,
-            });
-            
-            cameraUtilRef.current.start();
-            console.log("MediaPipe Camera Utility started");
-            
-            if (mounted) {
-              setIsLoading(false);
+            if (!mounted || !videoRef.current || !faceMeshRef.current || !window.Camera) {
+              console.error("Prerequisites not available for Camera initialization");
+              return;
             }
-          }, 100);
+            
+            console.log("Initializing MediaPipe Camera Utility...");
+            try {
+              cameraUtilRef.current = new window.Camera(videoRef.current, {
+                onFrame: async () => {
+                  if (!videoRef.current || !faceMeshRef.current) return;
+                  try {
+                    await faceMeshRef.current.send({ image: videoRef.current });
+                  } catch (sendError) {
+                    console.error("Error sending frame to FaceMesh:", sendError);
+                  }
+                },
+                width: 640,
+                height: 480,
+              });
+              
+              cameraUtilRef.current.start();
+              console.log("MediaPipe Camera Utility started");
+              
+              if (mounted) {
+                setIsLoading(false);
+              }
+            } catch (cameraError) {
+              console.error("Error initializing Camera utility:", cameraError);
+              throw cameraError;
+            }
+          }, 500); // Increased timeout to ensure everything is ready
           
         } catch (playError) {
           console.error("Error playing video:", playError);
@@ -141,7 +184,11 @@ const FaceEffect = ({ effectType }) => {
       
       // Stop MediaPipe Camera utility
       if (cameraUtilRef.current) {
-        cameraUtilRef.current.stop();
+        try {
+          cameraUtilRef.current.stop();
+        } catch (e) {
+          console.error("Error stopping camera:", e);
+        }
         cameraUtilRef.current = null;
         console.log("MediaPipe Camera Utility stopped.");
       }
@@ -153,11 +200,15 @@ const FaceEffect = ({ effectType }) => {
       
       // Stop camera stream tracks
       if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject;
-        const tracks = stream.getTracks();
-        tracks.forEach(track => track.stop());
-        videoRef.current.srcObject = null;
-        console.log("Camera stream stopped.");
+        try {
+          const stream = videoRef.current.srcObject;
+          const tracks = stream.getTracks();
+          tracks.forEach(track => track.stop());
+          videoRef.current.srcObject = null;
+          console.log("Camera stream stopped.");
+        } catch (e) {
+          console.error("Error stopping video tracks:", e);
+        }
       }
     };
   }, [effectType]); // Re-initialize when effectType changes
