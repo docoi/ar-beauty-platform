@@ -10,6 +10,8 @@ const FaceEffect = ({ effectType }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
   
   // Refs for MediaPipe objects
   const faceMeshRef = useRef(null);
@@ -32,6 +34,7 @@ const FaceEffect = ({ effectType }) => {
 
   useEffect(() => {
     let mounted = true;
+    let retryTimeout = null;
     
     const initialize = async () => {
       if (!mounted) return;
@@ -74,100 +77,149 @@ const FaceEffect = ({ effectType }) => {
           throw new Error("Camera access is not supported by this browser.");
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({
+        // Release any existing camera stream before requesting a new one
+        if (videoRef.current && videoRef.current.srcObject) {
+          const oldStream = videoRef.current.srcObject;
+          oldStream.getTracks().forEach(track => track.stop());
+          videoRef.current.srcObject = null;
+          console.log("Released previous camera stream");
+        }
+
+        // Try with more specific constraints for mobile
+        const constraints = {
           video: { 
             width: { ideal: 640 }, 
             height: { ideal: 480 }, 
-            facingMode: 'user' 
+            facingMode: 'user',
+            frameRate: { ideal: 30 }
           },
           audio: false,
-        });
+        };
 
-        if (!videoRef.current || !mounted) return;
-        
-        videoRef.current.srcObject = stream;
-        
-        // --- 3. Set up event listeners for video element ---
-        // Wait for video metadata to load before attempting to play
-        await new Promise((resolve) => {
-          const onLoadedMetadata = () => {
-            console.log("Video metadata loaded");
-            videoRef.current.removeEventListener('loadedmetadata', onLoadedMetadata);
-            resolve();
-          };
-          
-          if (videoRef.current.readyState >= 2) {
-            // Metadata already loaded
-            resolve();
-          } else {
-            videoRef.current.addEventListener('loadedmetadata', onLoadedMetadata);
-          }
-        });
-        
-        // --- 4. Explicitly play video ---
+        // Add a more specific error message for mobile users
         try {
-          await videoRef.current.play();
-          console.log("Camera stream started and video playing");
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
           
-          if (!mounted) return;
-          setIsCameraReady(true);
+          if (!videoRef.current || !mounted) return;
           
-          // --- NEW: Set Canvas Dimensions to Match Video ---
-          if (videoRef.current && canvasRef.current) {
-            const videoWidth = videoRef.current.videoWidth;
-            const videoHeight = videoRef.current.videoHeight;
-
-            if (videoWidth > 0 && videoHeight > 0) {
-              console.log(`Video dimensions: ${videoWidth}x${videoHeight}`);
-              canvasRef.current.width = videoWidth;
-              canvasRef.current.height = videoHeight;
-              console.log(`Canvas dimensions set to: ${canvasRef.current.width}x${canvasRef.current.height}`);
-            } else {
-              console.warn("Could not get valid video dimensions to set canvas size.");
-              // Keep default canvas size
-            }
-          }
-          // --- End NEW ---
+          videoRef.current.srcObject = stream;
+          console.log("Camera stream obtained successfully");
           
-          // --- 5. Initialize and start MediaPipe Camera Utility ---
-          // Need to use setTimeout to ensure DOM is updated with isCameraReady state
-          setTimeout(() => {
-            if (!mounted || !videoRef.current || !faceMeshRef.current || !window.Camera) {
-              console.error("Prerequisites not available for Camera initialization");
-              return;
-            }
+          // --- 3. Set up event listeners for video element ---
+          // Wait for video metadata to load before attempting to play
+          await new Promise((resolve) => {
+            const onLoadedMetadata = () => {
+              console.log("Video metadata loaded");
+              videoRef.current.removeEventListener('loadedmetadata', onLoadedMetadata);
+              resolve();
+            };
             
-            console.log("Initializing MediaPipe Camera Utility...");
-            try {
-              cameraUtilRef.current = new window.Camera(videoRef.current, {
-                onFrame: async () => {
-                  if (!videoRef.current || !faceMeshRef.current) return;
-                  try {
-                    await faceMeshRef.current.send({ image: videoRef.current });
-                  } catch (sendError) {
-                    console.error("Error sending frame to FaceMesh:", sendError);
-                  }
-                },
-                // Use the actual video dimensions here now
-                width: canvasRef.current ? canvasRef.current.width : 640,
-                height: canvasRef.current ? canvasRef.current.height : 480,
-              });
-              
-              cameraUtilRef.current.start();
-              console.log("MediaPipe Camera Utility started");
-              
-              if (mounted) {
-                setIsLoading(false);
-              }
-            } catch (cameraError) {
-              console.error("Error initializing Camera utility:", cameraError);
-              throw cameraError;
+            if (videoRef.current.readyState >= 2) {
+              // Metadata already loaded
+              resolve();
+            } else {
+              videoRef.current.addEventListener('loadedmetadata', onLoadedMetadata);
             }
-          }, 500); // Increased timeout to ensure everything is ready
+          });
           
-        } catch (playError) {
-          console.error("Error playing video:", playError);
-          throw new Error(`Could not play video: ${playError.message}`);
+          // --- 4. Explicitly play video ---
+          try {
+            await videoRef.current.play();
+            console.log("Camera stream started and video playing");
+            
+            if (!mounted) return;
+            setIsCameraReady(true);
+            
+            // --- NEW: Set Canvas Dimensions to Match Video ---
+            if (videoRef.current && canvasRef.current) {
+              const videoWidth = videoRef.current.videoWidth;
+              const videoHeight = videoRef.current.videoHeight;
+
+              if (videoWidth > 0 && videoHeight > 0) {
+                console.log(`Video dimensions: ${videoWidth}x${videoHeight}`);
+                canvasRef.current.width = videoWidth;
+                canvasRef.current.height = videoHeight;
+                console.log(`Canvas dimensions set to: ${canvasRef.current.width}x${canvasRef.current.height}`);
+              } else {
+                console.warn("Could not get valid video dimensions to set canvas size.");
+                // Keep default canvas size
+              }
+            }
+            // --- End NEW ---
+            
+            // --- 5. Initialize and start MediaPipe Camera Utility ---
+            // Need to use setTimeout to ensure DOM is updated with isCameraReady state
+            setTimeout(() => {
+              if (!mounted || !videoRef.current || !faceMeshRef.current || !window.Camera) {
+                console.error("Prerequisites not available for Camera initialization");
+                return;
+              }
+              
+              console.log("Initializing MediaPipe Camera Utility...");
+              try {
+                cameraUtilRef.current = new window.Camera(videoRef.current, {
+                  onFrame: async () => {
+                    if (!videoRef.current || !faceMeshRef.current) return;
+                    try {
+                      await faceMeshRef.current.send({ image: videoRef.current });
+                    } catch (sendError) {
+                      console.error("Error sending frame to FaceMesh:", sendError);
+                    }
+                  },
+                  // Use the actual video dimensions here now
+                  width: canvasRef.current ? canvasRef.current.width : 640,
+                  height: canvasRef.current ? canvasRef.current.height : 480,
+                });
+                
+                cameraUtilRef.current.start();
+                console.log("MediaPipe Camera Utility started");
+                
+                if (mounted) {
+                  setIsLoading(false);
+                  // Reset retry count on success
+                  setRetryCount(0);
+                }
+              } catch (cameraError) {
+                console.error("Error initializing Camera utility:", cameraError);
+                throw cameraError;
+              }
+            }, 500); // Increased timeout to ensure everything is ready
+            
+          } catch (playError) {
+            console.error("Error playing video:", playError);
+            throw new Error(`Could not play video: ${playError.message}`);
+          }
+        } catch (mediaError) {
+          console.error("Error accessing media devices:", mediaError);
+          
+          // For NotReadableError, we want to retry
+          if (mediaError.name === "NotReadableError" && retryCount < maxRetries) {
+            const nextRetryCount = retryCount + 1;
+            const delay = 1000 * nextRetryCount; // Increasing delay with each retry
+            
+            console.log(`Camera NotReadableError. Scheduling retry ${nextRetryCount}/${maxRetries} in ${delay}ms...`);
+            setError(`Camera busy. Retrying in ${delay/1000} seconds... (${nextRetryCount}/${maxRetries})`);
+            
+            if (mounted) {
+              setRetryCount(nextRetryCount);
+              retryTimeout = setTimeout(() => {
+                if (mounted) {
+                  console.log(`Executing retry attempt ${nextRetryCount}...`);
+                  initialize();
+                }
+              }, delay);
+            }
+            return; // Exit without setting error since we're retrying
+          }
+          
+          // Handle specific mobile camera errors
+          if (mediaError.name === "NotReadableError") {
+            throw new Error("Camera is already in use or has technical issues. Please close other apps that might be using your camera and refresh the page.");
+          } else if (mediaError.name === "NotAllowedError") {
+            throw new Error("Camera access was denied. Please grant camera permission in your browser settings and refresh the page.");
+          } else {
+            throw mediaError; // Rethrow for the outer catch block
+          }
         }
       } catch (err) {
         console.error("Error during initialization:", err);
@@ -180,7 +232,7 @@ const FaceEffect = ({ effectType }) => {
         } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
           errorMessage = "Camera permission denied. Please allow access in your browser settings.";
         } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
-          errorMessage = "Camera is already in use by another application.";
+          errorMessage = "Camera is already in use by another application or cannot be accessed.";
         } else if (err.message.includes("play")) {
           errorMessage = "Could not play video. Please ensure autoplay is allowed or interact with the page first.";
         }
@@ -199,6 +251,11 @@ const FaceEffect = ({ effectType }) => {
     return () => {
       mounted = false;
       console.log("Cleaning up FaceEffect...");
+      
+      // Clear any pending retry
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
       
       // Stop MediaPipe Camera utility
       if (cameraUtilRef.current) {
@@ -229,7 +286,7 @@ const FaceEffect = ({ effectType }) => {
         }
       }
     };
-  }, [effectType]); // Re-initialize when effectType changes
+  }, [effectType, retryCount, maxRetries]); // Added retryCount and maxRetries to dependencies
 
   // --- Define the onResults Callback ---
   const onFaceMeshResults = (results) => {
@@ -314,8 +371,22 @@ const FaceEffect = ({ effectType }) => {
 
         {/* Error Overlay */}
         {error && !isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-red-400 bg-opacity-80 rounded-lg p-4 z-10">
-            <p className="text-white text-center font-semibold">{error}</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-400 bg-opacity-80 rounded-lg p-4 z-10">
+            <p className="text-white text-center font-semibold mb-4">{error}</p>
+            
+            {/* Retry Button */}
+            {error.includes('Type: NotReadableError') && retryCount >= maxRetries && (
+              <button 
+                onClick={() => {
+                  setRetryCount(0);
+                  setError(null);
+                  setIsLoading(true);
+                }} 
+                className="bg-white text-red-600 font-semibold py-2 px-4 rounded hover:bg-gray-100"
+              >
+                Try Again
+              </button>
+            )}
           </div>
         )}
       </div>
