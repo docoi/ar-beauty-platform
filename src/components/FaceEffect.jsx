@@ -1,15 +1,14 @@
 import React, { useRef, useState, useEffect } from 'react';
 import * as THREE from 'three';
-// REMOVED:
-// import { FaceMesh } from '@mediapipe/face_mesh';
-// import { Camera } from '@mediapipe/camera_utils';
 
 const FaceEffect = ({ effectType }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const containerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   
   // Refs for MediaPipe objects
   const faceMeshRef = useRef(null);
@@ -118,6 +117,20 @@ const FaceEffect = ({ effectType }) => {
           if (!mounted) return;
           setIsCameraReady(true);
           
+          // Get and set video dimensions for proper sizing
+          if (videoRef.current) {
+            const videoWidth = videoRef.current.videoWidth;
+            const videoHeight = videoRef.current.videoHeight;
+            console.log(`Natural video dimensions: ${videoWidth}x${videoHeight}`);
+            
+            // Set canvas dimensions to match video
+            if (canvasRef.current) {
+              canvasRef.current.width = videoWidth;
+              canvasRef.current.height = videoHeight;
+              setDimensions({ width: videoWidth, height: videoHeight });
+            }
+          }
+          
           // --- 5. Initialize and start MediaPipe Camera Utility ---
           // Need to use setTimeout to ensure DOM is updated with isCameraReady state
           setTimeout(() => {
@@ -128,6 +141,9 @@ const FaceEffect = ({ effectType }) => {
             
             console.log("Initializing MediaPipe Camera Utility...");
             try {
+              const videoWidth = videoRef.current.videoWidth || 640;
+              const videoHeight = videoRef.current.videoHeight || 480;
+              
               cameraUtilRef.current = new window.Camera(videoRef.current, {
                 onFrame: async () => {
                   if (!videoRef.current || !faceMeshRef.current) return;
@@ -137,8 +153,8 @@ const FaceEffect = ({ effectType }) => {
                     console.error("Error sending frame to FaceMesh:", sendError);
                   }
                 },
-                width: 640,
-                height: 480,
+                width: videoWidth,
+                height: videoHeight
               });
               
               cameraUtilRef.current.start();
@@ -151,7 +167,7 @@ const FaceEffect = ({ effectType }) => {
               console.error("Error initializing Camera utility:", cameraError);
               throw cameraError;
             }
-          }, 500); // Increased timeout to ensure everything is ready
+          }, 500);
           
         } catch (playError) {
           console.error("Error playing video:", playError);
@@ -275,15 +291,29 @@ const FaceEffect = ({ effectType }) => {
     }
   };
 
+  // Calculate container style based on dimensions
+  const containerStyle = {
+    width: '100%',
+    maxWidth: '600px',
+    margin: '0 auto',
+    position: 'relative',
+    // Set aspect ratio based on actual camera dimensions, with fallback
+    paddingTop: dimensions.height && dimensions.width 
+      ? `${(dimensions.height / dimensions.width) * 100}%` 
+      : '75%', // 4:3 default ratio as fallback
+  };
+
   return (
-    <div className="relative flex flex-col items-center p-4 w-full">
-      <div className="relative w-full max-w-2xl mx-auto aspect-video">
-        {/* Canvas for output rendering - keep fixed dimensions */}
+    <div className="p-4 w-full">
+      <div 
+        ref={containerRef}
+        style={containerStyle}
+        className="bg-gray-100 mb-4 rounded-lg overflow-hidden border border-gray-300"
+      >
+        {/* Canvas for output rendering */}
         <canvas
           ref={canvasRef}
-          width="640"
-          height="480"
-          className="absolute top-0 left-0 w-full h-full rounded-lg shadow-md border border-gray-300"
+          className="absolute inset-0 w-full h-full"
         />
 
         {/* Video element - hidden, Camera utility uses it */}
@@ -297,31 +327,29 @@ const FaceEffect = ({ effectType }) => {
 
         {/* Loading Overlay */}
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-400 bg-opacity-60 rounded-lg z-10">
-            <p className="text-white bg-black bg-opacity-70 px-4 py-2 rounded">Loading resources...</p>
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-400 bg-opacity-60 z-10">
+            <p className="text-white bg-black bg-opacity-70 px-4 py-2 rounded">Loading camera...</p>
           </div>
         )}
 
         {/* Error Overlay */}
         {error && !isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-red-400 bg-opacity-80 rounded-lg p-4 z-10">
-            <p className="text-white text-center font-semibold">{error}</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-400 bg-opacity-80 p-4 z-10">
+            <p className="text-white text-center font-semibold mb-4">{error}</p>
+            
+            <button
+              onClick={() => {
+                setError(null);
+                setIsLoading(true);
+                initialize();
+              }}
+              className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
+            >
+              Try Again
+            </button>
           </div>
         )}
       </div>
-
-      {error && (
-        <button
-          onClick={() => {
-            setError(null);
-            setIsLoading(true);
-            initialize();
-          }}
-          className="mt-4 bg-blue-500 text-white font-semibold py-2 px-4 rounded"
-        >
-          Try Again
-        </button>
-      )}
     </div>
   );
 };
