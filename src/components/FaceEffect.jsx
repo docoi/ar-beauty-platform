@@ -1,6 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
 import * as THREE from 'three';
-// Don't import FaceMesh or Camera directly
 
 const FaceEffect = ({ effectType }) => {
   const videoRef = useRef(null);
@@ -11,44 +10,60 @@ const FaceEffect = ({ effectType }) => {
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
   const [deviceInfo, setDeviceInfo] = useState('');
+  const [scriptLoadingStatus, setScriptLoadingStatus] = useState('');
   
   // Refs for MediaPipe objects
   const faceMeshRef = useRef(null);
   const cameraUtilRef = useRef(null);
 
-  // Helper function to load scripts dynamically
-  const loadScript = (src) => {
-    return new Promise((resolve, reject) => {
-      console.log(`Loading script: ${src}`);
-      const script = document.createElement('script');
-      script.src = src;
-      script.async = true;
-      script.onload = () => {
-        console.log(`Script loaded successfully: ${src}`);
-        resolve();
-      };
-      script.onerror = (error) => {
-        console.error(`Error loading script: ${src}`, error);
-        reject(new Error(`Failed to load script: ${src}`));
-      };
-      document.body.appendChild(script);
-    });
+  // Helper function to load scripts dynamically with fallbacks
+  const loadScriptWithFallbacks = async (sources) => {
+    let lastError = null;
+    
+    for (const src of sources) {
+      try {
+        setScriptLoadingStatus(`Trying to load: ${src}`);
+        console.log(`Attempting to load script: ${src}`);
+        
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = src;
+          script.async = true;
+          
+          script.onload = () => {
+            console.log(`✓ Script loaded successfully: ${src}`);
+            setScriptLoadingStatus(`Loaded: ${src}`);
+            resolve();
+          };
+          
+          script.onerror = (error) => {
+            console.error(`✗ Error loading script: ${src}`, error);
+            setScriptLoadingStatus(`Failed: ${src}`);
+            reject(new Error(`Failed to load script: ${src}`));
+          };
+          
+          document.body.appendChild(script);
+        });
+        
+        // If we reach here, script loaded successfully
+        return;
+      } catch (error) {
+        console.log(`Failed loading ${src}, trying next fallback if available`);
+        lastError = error;
+        // Continue to next fallback
+      }
+    }
+    
+    // If we get here, all fallbacks failed
+    throw lastError || new Error("All script loading fallbacks failed");
   };
 
   // Get device information for better debugging
   useEffect(() => {
     try {
-      const info = [
-        `User Agent: ${navigator.userAgent}`,
-        `Platform: ${navigator.platform}`,
-        `Vendor: ${navigator.vendor}`,
-        `Memory: ${navigator.deviceMemory ? navigator.deviceMemory + 'GB' : 'unknown'}`,
-        `Cores: ${navigator.hardwareConcurrency || 'unknown'}`,
-        `Screen: ${window.screen.width}x${window.screen.height}`,
-        `Pixel Ratio: ${window.devicePixelRatio}`
-      ].join(' | ');
+      const info = `User Agent: ${navigator.userAgent.substring(0, 50)}...`;
       setDeviceInfo(info);
-      console.log("Device Info:", info);
+      console.log("Full Device Info:", navigator.userAgent);
     } catch (e) {
       console.error("Error getting device info:", e);
       setDeviceInfo("Error getting device info");
@@ -59,29 +74,6 @@ const FaceEffect = ({ effectType }) => {
     let mounted = true;
     let retryTimeout = null;
     
-    const getSupportedConstraints = () => {
-      try {
-        const supportedConstraints = navigator.mediaDevices.getSupportedConstraints();
-        console.log("Supported constraints:", supportedConstraints);
-        return supportedConstraints;
-      } catch (e) {
-        console.error("Error getting supported constraints:", e);
-        return {};
-      }
-    };
-    
-    const enumerateDevices = async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const cameras = devices.filter(device => device.kind === 'videoinput');
-        console.log("Available cameras:", cameras);
-        return cameras;
-      } catch (e) {
-        console.error("Error enumerating devices:", e);
-        return [];
-      }
-    };
-    
     const initialize = async () => {
       if (!mounted) return;
       
@@ -90,16 +82,29 @@ const FaceEffect = ({ effectType }) => {
       setIsCameraReady(false);
 
       try {
-        // --- Get supported constraints and devices ---
-        const supportedConstraints = getSupportedConstraints();
-        const cameras = await enumerateDevices();
-        
-        // --- Load MediaPipe Scripts ---
+        // --- Load MediaPipe Scripts with Fallbacks ---
         console.log("Loading MediaPipe scripts...");
+        
         try {
-          await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js');
-          await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1620248243/camera_utils.js');
-          console.log("MediaPipe scripts loaded successfully.");
+          await loadScriptWithFallbacks([
+            // Unpkg fallbacks
+            'https://unpkg.com/@mediapipe/face_mesh',
+            // Original jsdelivr fallbacks without specific versions
+            'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js',
+            // Local fallback if available (you'd need to host these files)
+            '/scripts/face_mesh.js'
+          ]);
+          
+          await loadScriptWithFallbacks([
+            // Unpkg fallbacks
+            'https://unpkg.com/@mediapipe/camera_utils',
+            // Original jsdelivr fallbacks without specific versions
+            'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js',
+            // Local fallback if available
+            '/scripts/camera_utils.js'
+          ]);
+          
+          console.log("All MediaPipe scripts loaded successfully.");
         } catch (scriptError) {
           console.error("Failed to load MediaPipe scripts:", scriptError);
           throw new Error(`Failed to load required scripts: ${scriptError.message}`);
@@ -113,13 +118,18 @@ const FaceEffect = ({ effectType }) => {
           throw new Error("MediaPipe scripts loaded but FaceMesh or Camera not found on window object.");
         }
 
-        // --- 1. Initialize FaceMesh Instance (using window) ---
+        // --- Initialize FaceMesh Instance ---
         console.log("Initializing FaceMesh...");
         faceMeshRef.current = new window.FaceMesh({
           locateFile: (file) => {
-            const url = `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`;
-            console.log(`Requesting file from: ${url}`);
-            return url;
+            // Try multiple fallback locations
+            const locations = [
+              `https://unpkg.com/@mediapipe/face_mesh/${file}`,
+              `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+              `/scripts/${file}`
+            ];
+            console.log(`Requesting file: ${file}, using: ${locations[0]}`);
+            return locations[0]; // Use the first one - the instance will try others if this fails
           },
         });
 
@@ -133,7 +143,7 @@ const FaceEffect = ({ effectType }) => {
         faceMeshRef.current.onResults(onFaceMeshResults);
         console.log("FaceMesh initialized successfully.");
 
-        // --- 2. Access Camera ---
+        // --- Access Camera ---
         console.log("Checking camera support...");
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error("Camera access is not supported by this browser.");
@@ -150,24 +160,22 @@ const FaceEffect = ({ effectType }) => {
           console.log("Released previous camera stream");
         }
 
-        // Samsung Browser specific handling - try multiple approaches
-        console.log("Requesting camera stream with default constraints...");
+        // Try with simplest constraints
+        console.log("Requesting camera stream with simplest constraints...");
         try {
-          // Try approach 1: Minimal constraints (preferred for Samsung devices)
-          console.log("Approach 1: Using minimal constraints");
           const stream = await navigator.mediaDevices.getUserMedia({
             video: true, // Just request any video
             audio: false,
           });
           
-          console.log("Successfully acquired camera stream with minimal constraints.");
+          console.log("Successfully acquired camera stream.");
           
           if (!videoRef.current || !mounted) return;
           
           videoRef.current.srcObject = stream;
           console.log("Camera stream set to video element.");
           
-          // --- 3. Set up event listeners for video element ---
+          // --- Set up event listeners for video element ---
           await new Promise((resolve) => {
             const onLoadedMetadata = () => {
               console.log("Video metadata loaded");
@@ -176,15 +184,15 @@ const FaceEffect = ({ effectType }) => {
             };
             
             if (videoRef.current.readyState >= 2) {
-              console.log("Video metadata already loaded (readyState >= 2)");
+              console.log("Video metadata already loaded");
               resolve();
             } else {
-              console.log("Waiting for video metadata to load...");
+              console.log("Waiting for video metadata...");
               videoRef.current.addEventListener('loadedmetadata', onLoadedMetadata);
             }
           });
           
-          // --- 4. Explicitly play video ---
+          // --- Play video ---
           try {
             console.log("Attempting to play video...");
             await videoRef.current.play();
@@ -193,32 +201,32 @@ const FaceEffect = ({ effectType }) => {
             if (!mounted) return;
             setIsCameraReady(true);
             
-            // --- Set Canvas Dimensions to Match Video ---
+            // --- Set Canvas Dimensions ---
             if (videoRef.current && canvasRef.current) {
               const videoWidth = videoRef.current.videoWidth;
               const videoHeight = videoRef.current.videoHeight;
 
-              console.log(`Video dimensions reported as: ${videoWidth}x${videoHeight}`);
+              console.log(`Video dimensions: ${videoWidth}x${videoHeight}`);
               
               if (videoWidth > 0 && videoHeight > 0) {
                 canvasRef.current.width = videoWidth;
                 canvasRef.current.height = videoHeight;
                 console.log(`Canvas dimensions set to: ${canvasRef.current.width}x${canvasRef.current.height}`);
               } else {
-                console.warn("Could not get valid video dimensions, using defaults.");
+                console.warn("Using default canvas size");
                 canvasRef.current.width = 640;
                 canvasRef.current.height = 480;
               }
             }
             
-            // --- Initialize and start MediaPipe Camera Utility ---
+            // --- Start MediaPipe Camera Utility ---
             setTimeout(() => {
               if (!mounted || !videoRef.current || !faceMeshRef.current || !window.Camera) {
                 console.error("Prerequisites not available for Camera initialization");
                 return;
               }
               
-              console.log("Initializing MediaPipe Camera Utility...");
+              console.log("Initializing Camera Utility...");
               try {
                 cameraUtilRef.current = new window.Camera(videoRef.current, {
                   onFrame: async () => {
@@ -234,7 +242,7 @@ const FaceEffect = ({ effectType }) => {
                 });
                 
                 cameraUtilRef.current.start();
-                console.log("MediaPipe Camera Utility started successfully!");
+                console.log("Camera Utility started!");
                 
                 if (mounted) {
                   setIsLoading(false);
@@ -252,15 +260,15 @@ const FaceEffect = ({ effectType }) => {
           }
           
         } catch (mediaError) {
-          console.error("ERROR: Failed with minimal constraints:", mediaError);
+          console.error("ERROR accessing camera:", mediaError);
           
-          // If minimal constraints failed, no need to try more specific ones
+          // For retry logic
           if (mediaError.name === "NotReadableError" && retryCount < maxRetries) {
             const nextRetryCount = retryCount + 1;
-            const delay = 1500 * nextRetryCount; // Increasing delay with each retry
+            const delay = 1500 * nextRetryCount;
             
-            console.log(`Camera NotReadableError. Scheduling retry ${nextRetryCount}/${maxRetries} in ${delay}ms...`);
-            setError(`Camera busy or unavailable. Retrying in ${Math.round(delay/1000)} seconds... (${nextRetryCount}/${maxRetries})`);
+            console.log(`Scheduling retry ${nextRetryCount}/${maxRetries} in ${delay}ms...`);
+            setError(`Camera busy. Retrying in ${Math.round(delay/1000)} seconds... (${nextRetryCount}/${maxRetries})`);
             
             if (mounted) {
               setRetryCount(nextRetryCount);
@@ -271,42 +279,38 @@ const FaceEffect = ({ effectType }) => {
                 }
               }, delay);
             }
-            return; // Exit without setting error since we're retrying
+            return;
           }
           
-          // Handle specific mobile camera errors
+          // Handle specific errors
           if (mediaError.name === "NotReadableError") {
-            throw new Error("Camera is already in use or has technical issues. Please close other apps that might be using your camera, restart your browser, and try again.");
+            throw new Error("Camera is already in use or has technical issues. Please close other apps that might be using your camera.");
           } else if (mediaError.name === "NotAllowedError") {
-            throw new Error("Camera access was denied. Please grant camera permission in your browser settings and refresh the page.");
+            throw new Error("Camera permission denied. Please grant camera access.");
           } else {
-            throw mediaError; // Rethrow for the outer catch block
+            throw mediaError;
           }
         }
         
       } catch (err) {
         console.error("ERROR during initialization:", err);
         
-        if (err.name === "NotReadableError") {
-          console.error("Specific NotReadableError detected. Camera might be in use or hardware issue.");
-        }
-        
         if (!mounted) return;
         
         let errorMessage = "Failed to initialize. Please check permissions and camera connection.";
-        if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        if (err.name === "NotFoundError") {
           errorMessage = "No camera found. Please connect a camera.";
-        } else if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        } else if (err.name === "NotAllowedError") {
           errorMessage = "Camera permission denied. Please allow access in your browser settings.";
-        } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
-          errorMessage = "Camera is already in use by another application or cannot be accessed.";
+        } else if (err.name === "NotReadableError") {
+          errorMessage = "Camera is already in use by another application.";
         } else if (err.message.includes("play")) {
-          errorMessage = "Could not play video. Please ensure autoplay is allowed or interact with the page first.";
+          errorMessage = "Could not play video. Please ensure autoplay is allowed.";
+        } else if (err.message.includes("script")) {
+          errorMessage = "Failed to load required scripts. Please check your internet connection.";
         }
         
-        // Append error details to the generic message for on-screen display
-        const detailedErrorMessage = `${errorMessage} (Type: ${err.name}, Msg: ${err.message})`;
-        setError(detailedErrorMessage);
+        setError(`${errorMessage} (Type: ${err.name}, Msg: ${err.message})`);
         setIsLoading(false);
         setIsCameraReady(false);
       }
@@ -317,18 +321,14 @@ const FaceEffect = ({ effectType }) => {
     // Cleanup function
     return () => {
       mounted = false;
-      console.log("Cleanup: Stopping FaceEffect...");
+      console.log("Cleaning up...");
       
-      // Clear any pending retry
       if (retryTimeout) {
         clearTimeout(retryTimeout);
-        console.log("Cleanup: Cleared pending retry timeout.");
       }
       
-      // Stop MediaPipe Camera utility
       if (cameraUtilRef.current) {
         try {
-          console.log("Cleanup: Stopping MediaPipe Camera Utility.");
           cameraUtilRef.current.stop();
         } catch (e) {
           console.error("Error stopping camera:", e);
@@ -336,33 +336,24 @@ const FaceEffect = ({ effectType }) => {
         cameraUtilRef.current = null;
       }
       
-      // Close FaceMesh
       if (faceMeshRef.current) {
-        console.log("Cleanup: Releasing FaceMesh reference.");
         faceMeshRef.current = null;
       }
       
-      // Stop camera stream tracks
       if (videoRef.current && videoRef.current.srcObject) {
         try {
-          console.log("Cleanup: Stopping camera stream tracks.");
           const stream = videoRef.current.srcObject;
           const tracks = stream.getTracks();
-          tracks.forEach(track => {
-            console.log(`Stopping track: ${track.kind}`);
-            track.stop();
-          });
+          tracks.forEach(track => track.stop());
           videoRef.current.srcObject = null;
         } catch (e) {
           console.error("Error stopping video tracks:", e);
         }
       }
-      
-      console.log("Cleanup: FaceEffect stopped completely.");
     };
-  }, [effectType, retryCount, maxRetries, deviceInfo]); // Added deviceInfo
+  }, [effectType, retryCount, maxRetries]);
 
-  // --- Define the onResults Callback ---
+  // onResults Callback
   const onFaceMeshResults = (results) => {
     if (!canvasRef.current) return;
     
@@ -370,7 +361,6 @@ const FaceEffect = ({ effectType }) => {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
-    // Draw video frame to canvas
     if (results.image) {
       canvasCtx.drawImage(
         results.image, 
@@ -380,16 +370,13 @@ const FaceEffect = ({ effectType }) => {
       );
     }
 
-    // Draw face landmarks if available
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       const landmarks = results.multiFaceLandmarks[0];
       
-      // Apply different effects based on effectType prop
       switch (effectType) {
         case 'landmarks':
           drawLandmarks(canvasCtx, landmarks);
           break;
-        // Add more effect types here
         default:
           drawLandmarks(canvasCtx, landmarks);
       }
@@ -400,11 +387,9 @@ const FaceEffect = ({ effectType }) => {
 
   // Helper function to draw face landmarks
   const drawLandmarks = (ctx, landmarks) => {
-    // Simple drawing of key points
     ctx.fillStyle = '#00FF00';
     
-    // Draw key facial landmarks (simplified)
-    const keyPoints = [1, 33, 61, 199, 263, 291]; // Nose, chin, left eye, right eye, etc.
+    const keyPoints = [1, 33, 61, 199, 263, 291];
     
     for (const id of keyPoints) {
       const point = landmarks[id];
@@ -432,14 +417,18 @@ const FaceEffect = ({ effectType }) => {
         </div>
       )}
       
+      {scriptLoadingStatus && (
+        <div className="text-xs text-blue-500 mb-2">
+          {scriptLoadingStatus}
+        </div>
+      )}
+      
       <div className="relative w-full max-w-2xl mx-auto aspect-video">
-        {/* Canvas for output rendering - width/height set dynamically */}
         <canvas
           ref={canvasRef}
           className="absolute top-0 left-0 w-full h-full rounded-lg shadow-md border border-gray-300 object-contain"
         />
 
-        {/* Video element - hidden, Camera utility uses it */}
         <video
           ref={videoRef}
           autoPlay
@@ -448,27 +437,22 @@ const FaceEffect = ({ effectType }) => {
           className="absolute -z-10 w-px h-px top-0 left-0"
         />
 
-        {/* Loading Overlay */}
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-400 bg-opacity-60 rounded-lg z-10">
             <p className="text-white bg-black bg-opacity-70 px-4 py-2 rounded">Loading resources...</p>
           </div>
         )}
 
-        {/* Error Overlay */}
         {error && !isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-400 bg-opacity-80 rounded-lg p-4 z-10">
             <p className="text-white text-center font-semibold mb-4">{error}</p>
             
-            {/* Retry Button */}
-            {error.includes('NotReadableError') && retryCount >= maxRetries && (
-              <button 
-                onClick={handleRetry} 
-                className="bg-white text-red-600 font-semibold py-2 px-4 rounded hover:bg-gray-100"
-              >
-                Try Again
-              </button>
-            )}
+            <button 
+              onClick={handleRetry} 
+              className="bg-white text-red-600 font-semibold py-2 px-4 rounded hover:bg-gray-100"
+            >
+              Try Again
+            </button>
           </div>
         )}
       </div>
