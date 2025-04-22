@@ -14,6 +14,7 @@ import PrivacyPolicy from "./pages/privacy.jsx";
 import TermsOfService from './pages/TermsOfService.jsx';
 import ComingSoon from './pages/ComingSoon.jsx';
 import AvatarSwitcher from './pages/AvatarSwitcher.jsx';
+import HydrationSerumPage from './pages/hydration_serum';
 
 
 function App() {
@@ -33,7 +34,8 @@ function App() {
         <Route path="/auth" element={<AuthForm />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />   
-        <Route path="/AvatarSwitcher" element={<AvatarSwitcher />} />    
+        <Route path="/AvatarSwitcher" element={<AvatarSwitcher />} />  
+        <Route path="/hydration_serum" element={<HydrationSerumPage />} />        
       </Routes>
     </Router>
   );
