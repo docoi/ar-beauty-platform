@@ -277,74 +277,106 @@ const FaceEffect = ({ effectType }) => {
 
   return (
     <div className="relative w-full flex justify-center">
-      {/* Outer container */}
+      {/* Outer container with responsive width */}
       <div 
-        className={`${isFullscreen ? 'fixed inset-0 z-50 bg-black flex items-center justify-center' : 'w-full max-w-sm mx-auto'}`}
+        className={`${isFullscreen ? 'fixed inset-0 z-50 bg-black flex items-center justify-center' : 'w-full max-w-md mx-auto'}`}
       >
-        {/* Inner container with fixed aspect ratio (9:16 vertical like a phone) */}
-        <div 
-          className={`relative ${isFullscreen ? 'w-full h-full' : ''}`}
-          style={{
-            aspectRatio: isFullscreen ? 'auto' : '9/16', // Vertical phone-like ratio when not fullscreen
-            overflow: 'hidden',
-            cursor: 'pointer'
-          }}
-          onClick={toggleFullscreen}
-        >
-          {/* Canvas crop container - This is the trick: create a center-cropped view of the camera */}
-          <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-black">
-            {/* Canvas with fixed dimensions for MediaPipe */}
-            <canvas
-              ref={canvasRef}
-              width="640" 
-              height="480"
-              className="min-w-full min-h-full object-cover" // object-cover will crop edges to fill container
-            />
-          </div>
-
-          {/* Video element - hidden but needed for camera access */}
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="absolute -z-10 w-0 h-0"
-          />
-
-          {/* Loading Overlay */}
-          {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
-              <p className="text-white px-4 py-2 rounded font-semibold">Loading camera...</p>
-            </div>
-          )}
-
-          {/* Error Overlay */}
-          {error && !isLoading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-500 bg-opacity-75 p-4 z-10">
-              <p className="text-white text-center font-semibold mb-4">{error}</p>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation(); // Prevent toggleFullscreen from being called
-                  handleRetry();
+        {/* Key trick: Create a double-container system with specific styling for each */}
+        <div className={`relative ${isFullscreen ? 'w-full h-full' : ''}`}>
+          {/* First container - controls the aspect ratio */}
+          <div 
+            style={{ 
+              paddingBottom: '133%',  // This creates a 3:4 aspect ratio
+              position: 'relative',
+              width: '100%',
+              cursor: 'pointer'
+            }}
+            onClick={toggleFullscreen}
+          >
+            {/* Second container - this one does a center-scale crop */}
+            <div 
+              style={{ 
+                position: 'absolute', 
+                top: 0, 
+                left: 0, 
+                right: 0, 
+                bottom: 0, 
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              {/* Fixed-size canvas with special scaling */}
+              <div 
+                style={{ 
+                  width: '100%', 
+                  height: '100%', 
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden'
                 }}
-                className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
               >
-                Try Again
-              </button>
-            </div>
-          )}
-
-          {/* Fullscreen indicator */}
-          {!isLoading && !error && (
-            <div className="absolute bottom-4 right-4 z-10">
-              <div className="bg-black bg-opacity-50 px-3 py-1 rounded-full">
-                <p className="text-sm text-white">
-                  {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
-                </p>
+                {/* Canvas with scale-up and center crop to fill frame */}
+                <canvas
+                  ref={canvasRef}
+                  width="640" 
+                  height="480"
+                  style={{ 
+                    minWidth: '100%',
+                    minHeight: '100%',
+                    objectFit: 'cover',
+                    transform: isFullscreen ? 'scale(1.1)' : 'scale(1.5)' // Scale up to remove distortion
+                  }}
+                />
               </div>
             </div>
-          )}
+
+            {/* Video element - hidden but needed for camera access */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute -z-10 w-0 h-0"
+            />
+
+            {/* Loading Overlay */}
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
+                <p className="text-white px-4 py-2 rounded font-semibold">Loading camera...</p>
+              </div>
+            )}
+
+            {/* Error Overlay */}
+            {error && !isLoading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-500 bg-opacity-75 p-4 z-10">
+                <p className="text-white text-center font-semibold mb-4">{error}</p>
+                
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent toggleFullscreen from being called
+                    handleRetry();
+                  }}
+                  className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+
+            {/* Fullscreen indicator */}
+            {!isLoading && !error && (
+              <div className="absolute bottom-4 right-4 z-10">
+                <div className="bg-black bg-opacity-50 px-3 py-1 rounded-full">
+                  <p className="text-sm text-white">
+                    {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
