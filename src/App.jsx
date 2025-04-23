@@ -8,13 +8,13 @@ import Support from "./pages/support.jsx";
 import Vstudio from "./pages/vstudio.jsx";
 import Pricing from "./pages/pricing.jsx";
 import Contact from "./pages/contact.jsx";
-import Tryon from "./pages/Tryon.jsx";
 import AuthForm from "./components/AuthForm.jsx";
 import PrivacyPolicy from "./pages/privacy.jsx";
 import TermsOfService from './pages/TermsOfService.jsx';
 import ComingSoon from './pages/ComingSoon.jsx';
 import AvatarSwitcher from './pages/AvatarSwitcher.jsx';
 import HydrationSerumPage from './pages/hydration_serum';
+import VirtualTryOnPage from './pages/VirtualTryOnPage';
 
 
 function App() {
@@ -30,12 +30,12 @@ function App() {
         <Route path="/vstudio" element={<Vstudio />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/contact" element={<Contact />} />
-        <Route path="/try-on/id" element={<Tryon />} />
         <Route path="/auth" element={<AuthForm />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />   
         <Route path="/AvatarSwitcher" element={<AvatarSwitcher />} />  
-        <Route path="/hydration_serum" element={<HydrationSerumPage />} />        
+        <Route path="/hydration_serum" element={<HydrationSerumPage />} /> 
+        <Route path="/try-on" element={<VirtualTryOnPage />} />       
       </Routes>
     </Router>
   );
