@@ -75,15 +75,20 @@ const FaceEffect = ({ effectType }) => {
         faceMeshRef.current.onResults(onFaceMeshResults);
         console.log("FaceMesh initialized.");
 
-        // --- 2. Access Camera ---
+        // --- 2. Access Camera with mobile-friendly constraints ---
         console.log("Accessing camera...");
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error("Camera access is not supported by this browser.");
         }
 
-        console.log("Requesting camera with simple constraints...");
+        // Try with front camera and higher resolution for better selfie quality
+        console.log("Requesting front camera with better quality...");
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: {
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
           audio: false,
         });
         console.log("Successfully acquired camera stream");
@@ -128,6 +133,10 @@ const FaceEffect = ({ effectType }) => {
             
             console.log("Initializing MediaPipe Camera Utility...");
             try {
+              // Get actual video dimensions for better results
+              const videoWidth = videoRef.current.videoWidth || 640;
+              const videoHeight = videoRef.current.videoHeight || 480;
+              
               cameraUtilRef.current = new window.Camera(videoRef.current, {
                 onFrame: async () => {
                   if (!videoRef.current || !faceMeshRef.current) return;
@@ -137,8 +146,8 @@ const FaceEffect = ({ effectType }) => {
                     console.error("Error sending frame to FaceMesh:", sendError);
                   }
                 },
-                width: 640,
-                height: 480,
+                width: videoWidth,
+                height: videoHeight
               });
               
               cameraUtilRef.current.start();
@@ -226,7 +235,7 @@ const FaceEffect = ({ effectType }) => {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
-    // Draw video frame to canvas
+    // Draw video frame to canvas - clean and undistorted
     if (results.image) {
       canvasCtx.drawImage(
         results.image, 
@@ -276,35 +285,33 @@ const FaceEffect = ({ effectType }) => {
   };
 
   return (
-    <div className="relative flex flex-col items-center w-full">
-      {/* Regular container or fullscreen container */}
+    <div className="relative w-full h-full">
+      {/* Container that manages fullscreen state */}
       <div 
-        className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-black' : 'mx-auto'}`}
-        style={{
-          maxWidth: isFullscreen ? '100%' : '480px',
-          width: '100%'
-        }}
+        className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-black flex items-center justify-center' : 'w-full'}`}
       >
-        {/* Video container with better aspect ratio */}
+        {/* Aspect ratio container - close to selfie proportions */}
         <div 
-          className="relative bg-black overflow-hidden rounded-lg"
+          className={`relative bg-black overflow-hidden ${isFullscreen ? 'w-full h-full' : 'w-full mx-auto'}`}
           style={{
-            width: '100%',
-            // Use an aspect ratio that's not as tall - closer to 3:4 instead of 9:16
-            paddingTop: isFullscreen ? '100vh' : '133.33%', // 4:3 ratio is 133.33%
+            maxWidth: isFullscreen ? '100%' : '500px',
+            // Normal mode has a maximum height to fit in page
+            maxHeight: isFullscreen ? '100%' : '650px',
+            // A taller aspect ratio to focus on face like in selfie apps
+            aspectRatio: isFullscreen ? 'auto' : '3/4',
             cursor: 'pointer'
           }}
           onClick={toggleFullscreen}
         >
-          {/* Canvas with object-fit:contain to avoid zoom distortion */}
+          {/* Actual canvas displaying the camera feed */}
           <canvas
             ref={canvasRef}
             width="640" 
             height="480"
-            className="absolute inset-0 w-full h-full object-contain"
+            className="absolute inset-0 w-full h-full object-cover"
           />
 
-          {/* Video element - hidden */}
+          {/* Hidden video element */}
           <video
             ref={videoRef}
             autoPlay
