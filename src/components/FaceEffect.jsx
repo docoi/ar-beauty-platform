@@ -75,15 +75,15 @@ const FaceEffect = ({ effectType }) => {
         faceMeshRef.current.onResults(onFaceMeshResults);
         console.log("FaceMesh initialized.");
 
-        // --- 2. Access Camera - USE MINIMAL CONSTRAINTS ---
-        console.log("Accessing camera with minimal constraints...");
+        // --- 2. Access Camera ---
+        console.log("Accessing camera...");
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error("Camera access is not supported by this browser.");
         }
 
-        // Use simplest possible constraints for maximum compatibility
+        console.log("Requesting camera with simple constraints...");
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true, // Just request ANY video - no resolution or facingMode
+          video: true,
           audio: false,
         });
         console.log("Successfully acquired camera stream");
@@ -275,75 +275,82 @@ const FaceEffect = ({ effectType }) => {
     initialize();
   };
 
+  // Style for container - this controls how it looks without changing camera initialization
+  const containerStyle = {
+    position: isFullscreen ? 'fixed' : 'relative',
+    top: isFullscreen ? 0 : 'auto',
+    left: isFullscreen ? 0 : 'auto',
+    right: isFullscreen ? 0 : 'auto',
+    bottom: isFullscreen ? 0 : 'auto',
+    width: isFullscreen ? '100%' : '100%',
+    maxWidth: isFullscreen ? '100%' : '400px',
+    height: isFullscreen ? '100%' : 'auto',
+    margin: '0 auto',
+    background: 'black',
+    aspectRatio: isFullscreen ? 'auto' : '3/4',
+    zIndex: isFullscreen ? 9999 : 'auto',
+    borderRadius: isFullscreen ? 0 : '8px',
+    overflow: 'hidden',
+    cursor: 'pointer'
+  };
+
   return (
-    <div className="w-full flex justify-center">
-      {/* Container with fixed dimensions and proper styling */}
-      <div className={`relative ${isFullscreen ? 'fixed inset-0 z-50 flex items-center justify-center bg-black' : ''}`}>
-        <div 
-          className={`relative bg-black overflow-hidden rounded-lg ${isFullscreen ? 'w-full h-full' : 'mx-auto'}`}
-          style={{
-            // Selfie aspect ratio that works on mobile - fixed dimensions
-            width: isFullscreen ? '100%' : '100%',
-            maxWidth: isFullscreen ? '100%' : '400px',
-            aspectRatio: '3/4',
-            cursor: 'pointer'
-          }}
-          onClick={toggleFullscreen}
-        >
-          {/* Canvas with fixed dimensions - using CSS to control display size */}
-          <canvas
-            ref={canvasRef}
-            width="640" 
-            height="480"
-            className="absolute inset-0 w-full h-full object-cover"
-          />
+    <div className="relative w-full flex justify-center">
+      <div
+        style={containerStyle}
+        onClick={toggleFullscreen}
+      >
+        {/* Canvas - Use fixed dimensions for processing but control display with CSS */}
+        <canvas
+          ref={canvasRef}
+          width="640" 
+          height="480"
+          className="w-full h-full object-cover"
+        />
 
-          {/* Video element - hidden */}
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="absolute -z-10 w-px h-px top-0 left-0"
-          />
+        {/* Video element - hidden but needed for camera access */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="absolute -z-10 w-0 h-0"
+        />
 
-          {/* Loading Overlay */}
-          {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-400 bg-opacity-60 z-10">
-              <div className="bg-black bg-opacity-70 px-4 py-2 rounded">
-                <p className="text-white">Loading camera...</p>
-              </div>
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
+            <p className="text-white px-4 py-2 rounded font-semibold">Loading camera...</p>
+          </div>
+        )}
+
+        {/* Error Overlay */}
+        {error && !isLoading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-500 bg-opacity-75 p-4 z-10">
+            <p className="text-white text-center font-semibold mb-4">{error}</p>
+            
+            <button
+              onClick={(e) => {
+                e.stopPropagation(); // Prevent toggleFullscreen from being called
+                handleRetry();
+              }}
+              className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
+
+        {/* Fullscreen indicator */}
+        {!isLoading && !error && (
+          <div className="absolute bottom-4 right-4 z-10">
+            <div className="bg-black bg-opacity-50 px-3 py-1 rounded-full">
+              <p className="text-sm text-white">
+                {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
+              </p>
             </div>
-          )}
-
-          {/* Error Overlay */}
-          {error && !isLoading && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-400 bg-opacity-80 p-4 z-10">
-              <p className="text-white text-center font-semibold mb-4">{error}</p>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation(); // Prevent toggleFullscreen from being called
-                  handleRetry();
-                }}
-                className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
-              >
-                Try Again
-              </button>
-            </div>
-          )}
-
-          {/* Fullscreen indicator */}
-          {!isLoading && !error && (
-            <div className="absolute bottom-4 right-4 z-10">
-              <div className="bg-black bg-opacity-50 px-3 py-1 rounded-full">
-                <p className="text-sm text-white">
-                  {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
