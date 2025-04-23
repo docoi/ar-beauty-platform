@@ -526,6 +526,7 @@ const FaceEffect = ({ effectType }) => {
             }}
           >
             {/* The canvas element: Maintains 640x480 drawing buffer. CSS controls display size & fit. */}
+            {/* The canvas element: Maintains 640x480 drawing buffer. CSS controls display size & fit. */}
             <canvas
               ref={canvasRef}
               width="640" // Intrinsic width of the drawing buffer
@@ -535,12 +536,8 @@ const FaceEffect = ({ effectType }) => {
                 // --- MODIFICATION START ---
                 width: '100%',     // Make the canvas element try to fill the container width
                 height: '100%',    // Make the canvas element try to fill the container height
-                objectFit: 'cover', // Maintain 4:3 aspect ratio, cover container, crop if needed
+                objectFit: 'contain', // Maintain 4:3 aspect ratio, FIT WITHIN container, add pillar/letterbox if needed
                 // --- MODIFICATION END ---
-                // Remove previous transform styles that caused distortion
-                // transform: 'translate(-13%, -5%)', // REMOVED
-                // Explicit position not needed if parent is flex centering
-                // position: 'absolute', // REMOVED (or set conditionally if needed)
               }}
             />
           </div>
