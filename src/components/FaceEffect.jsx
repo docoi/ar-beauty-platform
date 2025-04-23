@@ -281,19 +281,26 @@ const FaceEffect = ({ effectType }) => {
       <div 
         className={`${isFullscreen ? 'fixed inset-0 z-50 bg-black flex items-center justify-center' : 'w-full max-w-md mx-auto'}`}
       >
-        {/* Key trick: Create a double-container system with specific styling for each */}
-        <div className={`relative ${isFullscreen ? 'w-full h-full' : ''}`}>
-          {/* First container - controls the aspect ratio */}
+        {/* Fixed container */}
+        <div 
+          className="relative"
+          style={{ 
+            width: isFullscreen ? '100vw' : '100%',
+            height: isFullscreen ? '100vh' : 'auto', 
+          }}
+        >
+          {/* This container controls the aspect ratio */}
           <div 
             style={{ 
-              paddingBottom: '133%',  // This creates a 3:4 aspect ratio
+              paddingBottom: isFullscreen ? '0' : '160%',  // 10:16 aspect ratio - more vertical
               position: 'relative',
               width: '100%',
+              height: isFullscreen ? '100%' : 'auto',
               cursor: 'pointer'
             }}
             onClick={toggleFullscreen}
           >
-            {/* Second container - this one does a center-scale crop */}
+            {/* This container crops and positions the canvas */}
             <div 
               style={{ 
                 position: 'absolute', 
@@ -304,33 +311,24 @@ const FaceEffect = ({ effectType }) => {
                 overflow: 'hidden',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                background: '#f0f0f0'
               }}
             >
-              {/* Fixed-size canvas with special scaling */}
-              <div 
+              {/* The canvas itself with transformations to correct the ratio */}
+              <canvas
+                ref={canvasRef}
+                width="640" 
+                height="480"
                 style={{ 
-                  width: '100%', 
-                  height: '100%', 
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden'
+                  position: 'absolute',
+                  width: '180%',    // Stretch wider to compensate for height
+                  height: '140%',   // Make taller to fix proportions
+                  objectFit: 'cover',
+                  transformOrigin: 'center',
+                  transform: 'translate(-13%, -5%)' // Adjust position to center face
                 }}
-              >
-                {/* Canvas with scale-up and center crop to fill frame */}
-                <canvas
-                  ref={canvasRef}
-                  width="640" 
-                  height="480"
-                  style={{ 
-                    minWidth: '100%',
-                    minHeight: '100%',
-                    objectFit: 'cover',
-                    transform: isFullscreen ? 'scale(1.1)' : 'scale(1.5)' // Scale up to remove distortion
-                  }}
-                />
-              </div>
+              />
             </div>
 
             {/* Video element - hidden but needed for camera access */}
