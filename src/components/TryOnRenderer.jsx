@@ -8,17 +8,26 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
   const canvasRef = useRef(null);
   const drawingUtilsRef = useRef(null); // Ref to store DrawingUtils instance
 
-  // Initialize DrawingUtils once
-  useEffect(() => {
+  // Function to initialize or re-initialize DrawingUtils
+  const initializeDrawingUtils = () => {
       if (canvasRef.current) {
         const canvasCtx = canvasRef.current.getContext("2d");
-        if (canvasCtx && DrawingUtils) { // Check if DrawingUtils is available
+        if (canvasCtx && typeof DrawingUtils !== 'undefined') { // Check if DrawingUtils is defined
             drawingUtilsRef.current = new DrawingUtils(canvasCtx);
-            console.log("DrawingUtils initialized.");
-        } else if (!DrawingUtils){
-            console.log("DrawingUtils not imported/installed, will use manual drawing.");
+            console.log("DrawingUtils initialized/re-initialized.");
+            return true;
+        } else {
+            console.warn("DrawingUtils not available or canvas context failed.");
+            drawingUtilsRef.current = null; // Ensure it's null if failed
+            return false;
         }
       }
+      return false;
+  };
+
+  // Initialize DrawingUtils once on mount
+  useEffect(() => {
+      initializeDrawingUtils();
   }, []);
 
 
@@ -26,7 +35,8 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
   useImperativeHandle(ref, () => ({
     // --- Method for Real-time Video ---
     renderResults: (videoElement, results) => {
-      if (!canvasRef.current) return;
+      // ... (keep this method as it was in the PREVIOUS step - drawing still commented out) ...
+       if (!canvasRef.current) return;
       const canvas = canvasRef.current;
       const canvasCtx = canvas.getContext('2d');
        if (!canvasCtx) return;
@@ -35,7 +45,7 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
            canvas.height = videoHeight;
             if (canvas.width === 0 || canvas.height === 0) return;
              // Re-init if size changes
-             if (DrawingUtils) drawingUtilsRef.current = new DrawingUtils(canvasCtx);
+             initializeDrawingUtils();
        }
 
       canvasCtx.save();
@@ -45,25 +55,9 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
       canvasCtx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
       canvasCtx.restore();
 
-      // --- TEMPORARILY COMMENT OUT REAL-TIME LANDMARK DRAWING ---
-      // if (results?.faceLandmarks && drawingUtilsRef.current) {
-      //     // console.log("Temp Debug: Drawing real-time landmarks using DrawingUtils...");
-      //     // for (const landmarks of results.faceLandmarks) {
-      //     //   drawingUtilsRef.current.drawLandmarks(landmarks, {color: '#30FF30', radius: 1});
-      //     // }
-      // } else if (results?.faceLandmarks) {
-      //     // console.log("Temp Debug: Drawing real-time landmarks manually...");
-      //     // canvasCtx.fillStyle = "rgba(0, 255, 0, 0.7)";
-      //     // results.faceLandmarks.forEach(landmarks => {
-      //     //     landmarks.forEach(point => {
-      //     //         canvasCtx.beginPath();
-      //     //         canvasCtx.arc(point.x * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
-      //     //         canvasCtx.fill();
-      //     //     });
-      //     // });
-      // }
-      // --- END OF TEMPORARY COMMENTING ---
-
+      // --- REAL-TIME LANDMARK DRAWING STILL COMMENTED OUT ---
+      // if (results?.faceLandmarks && drawingUtilsRef.current) { ... }
+      // --- END OF REAL-TIME COMMENTING ---
     },
 
     // --- Method for Static Image ---
@@ -78,40 +72,55 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
              canvas.width = imageElement.naturalWidth;
              canvas.height = imageElement.naturalHeight;
              if (canvas.width === 0 || canvas.height === 0) return;
-              // Re-init if size changes
-             if (DrawingUtils) drawingUtilsRef.current = new DrawingUtils(canvasCtx);
+              // Re-init drawing utils if size changes
+             initializeDrawingUtils();
          }
 
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
         canvasCtx.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
 
-        // --- TEMPORARILY COMMENT OUT STATIC LANDMARK DRAWING ---
-        // if (results?.faceLandmarks && drawingUtilsRef.current) {
-        //      // console.log("Temp Debug: Drawing static landmarks using DrawingUtils...");
-        //      // for (const landmarks of results.faceLandmarks) {
-        //      //   drawingUtilsRef.current.drawLandmarks(landmarks, {color: '#FF0000', radius: 2});
-        //      // }
-        // } else if (results?.faceLandmarks) {
-        //      // console.log("Temp Debug: Drawing static landmarks manually...");
-        //      // canvasCtx.fillStyle = "rgba(255, 0, 0, 0.7)";
-        //      // results.faceLandmarks.forEach(landmarks => {
-        //      //     landmarks.forEach(point => {
-        //      //         canvasCtx.beginPath();
-        //      //         canvasCtx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
-        //      //         canvasCtx.fill();
-        //      //     });
-        //      // });
-        // } else {
-        //     // console.log("Temp Debug: No landmarks found in static results to draw.");
-        // }
-        // --- END OF TEMPORARY COMMENTING ---
+        // --- RE-ENABLE STATIC LANDMARK DRAWING (DrawingUtils path only) ---
+        if (results?.faceLandmarks && results.faceLandmarks.length > 0) {
+            if (drawingUtilsRef.current) {
+                 console.log("Renderer: Attempting to draw static landmarks using DrawingUtils...");
+                 console.log("Landmark data structure:", results.faceLandmarks); // Log data
+                 try {
+                     // Loop through each detected face's landmarks
+                     for (const landmarks of results.faceLandmarks) {
+                       // Ensure landmarks is an array and has data
+                       if (Array.isArray(landmarks) && landmarks.length > 0) {
+                           drawingUtilsRef.current.drawLandmarks(landmarks, {color: '#FF0000', radius: 2}); // Red dots for static
+                       } else {
+                            console.warn("Renderer: Invalid landmarks structure found in results.faceLandmarks:", landmarks);
+                       }
+                     }
+                     console.log("Renderer: Static landmark drawing attempted.");
+                 } catch(drawError) {
+                     console.error("Renderer: Error occurred during DrawingUtils.drawLandmarks:", drawError);
+                     // Add specific error logging if possible
+                     if (drawError.message) {
+                         console.error("Error message:", drawError.message);
+                     }
+                     if (drawError.stack) {
+                          console.error("Error stack:", drawError.stack);
+                     }
+                 }
+            } else {
+                 console.warn("Renderer: DrawingUtils not available, cannot draw landmarks.");
+                 // Optionally add manual drawing fallback here if needed
+            }
+        } else {
+            console.log("Renderer: No landmarks found in static results to draw.");
+        }
+        // --- END OF RE-ENABLING ---
 
         canvasCtx.restore();
     },
 
     // --- Method to clear ---
     clearCanvas: () => {
+       // ... (keep clearCanvas method) ...
          if (!canvasRef.current) return;
          const canvasCtx = canvasRef.current.getContext('2d');
          console.log("Renderer: Clearing canvas.");
@@ -121,6 +130,7 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
 
   // Effect to set initial canvas dimensions
   useEffect(() => {
+    // ... (keep useEffect for dimensions) ...
       if (canvasRef.current && videoWidth > 0 && videoHeight > 0) {
           if(canvasRef.current.width !== videoWidth || canvasRef.current.height !== videoHeight) {
               canvasRef.current.width = videoWidth;
@@ -129,7 +139,9 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
       }
   }, [videoWidth, videoHeight]);
 
+
   return (
+     // ... (keep return canvas JSX) ...
     <canvas
       ref={canvasRef}
       className={`renderer-canvas ${className || ''}`}
