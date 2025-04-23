@@ -8,6 +8,7 @@ const FaceEffect = ({ effectType }) => {
   const [error, setError] = useState(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
   
   // Refs for MediaPipe objects
   const faceMeshRef = useRef(null);
@@ -97,12 +98,30 @@ const FaceEffect = ({ effectType }) => {
         await new Promise((resolve) => {
           const onLoadedMetadata = () => {
             console.log("Video metadata loaded");
+            
+            // Get and store actual video dimensions
+            if (videoRef.current) {
+              const videoWidth = videoRef.current.videoWidth;
+              const videoHeight = videoRef.current.videoHeight;
+              console.log(`Actual video dimensions: ${videoWidth}x${videoHeight}`);
+              
+              // Set these dimensions for the canvas
+              if (canvasRef.current) {
+                canvasRef.current.width = videoWidth;
+                canvasRef.current.height = videoHeight;
+              }
+              
+              // Store for calculating aspect ratio
+              setVideoDimensions({ width: videoWidth, height: videoHeight });
+            }
+            
             videoRef.current.removeEventListener('loadedmetadata', onLoadedMetadata);
             resolve();
           };
           
           if (videoRef.current.readyState >= 2) {
             console.log("Video metadata already loaded");
+            onLoadedMetadata(); // Still call this to get dimensions
             resolve();
           } else {
             console.log("Waiting for video metadata...");
@@ -128,6 +147,10 @@ const FaceEffect = ({ effectType }) => {
             
             console.log("Initializing MediaPipe Camera Utility...");
             try {
+              // Use actual video dimensions from the camera
+              const videoWidth = canvasRef.current ? canvasRef.current.width : 640;
+              const videoHeight = canvasRef.current ? canvasRef.current.height : 480;
+              
               cameraUtilRef.current = new window.Camera(videoRef.current, {
                 onFrame: async () => {
                   if (!videoRef.current || !faceMeshRef.current) return;
@@ -137,8 +160,8 @@ const FaceEffect = ({ effectType }) => {
                     console.error("Error sending frame to FaceMesh:", sendError);
                   }
                 },
-                width: 640,
-                height: 480,
+                width: videoWidth,
+                height: videoHeight,
               });
               
               cameraUtilRef.current.start();
@@ -275,37 +298,46 @@ const FaceEffect = ({ effectType }) => {
     initialize();
   };
 
-  // Style for container - this controls how it looks without changing camera initialization
-  const containerStyle = {
-    position: isFullscreen ? 'fixed' : 'relative',
-    top: isFullscreen ? 0 : 'auto',
-    left: isFullscreen ? 0 : 'auto',
-    right: isFullscreen ? 0 : 'auto',
-    bottom: isFullscreen ? 0 : 'auto',
-    width: isFullscreen ? '100%' : '100%',
-    maxWidth: isFullscreen ? '100%' : '400px',
-    height: isFullscreen ? '100%' : 'auto',
-    margin: '0 auto',
-    background: 'black',
-    aspectRatio: isFullscreen ? 'auto' : '3/4',
-    zIndex: isFullscreen ? 9999 : 'auto',
-    borderRadius: isFullscreen ? 0 : '8px',
-    overflow: 'hidden',
-    cursor: 'pointer'
+  // Calculate container aspect ratio based on actual video dimensions
+  const getContainerStyles = () => {
+    // Default to a sensible ratio if we don't have video dimensions yet
+    let aspectRatio = 3/4; // Default to portrait orientation
+    
+    if (videoDimensions.width && videoDimensions.height) {
+      // Use actual video dimensions to set aspect ratio
+      aspectRatio = videoDimensions.height / videoDimensions.width;
+    }
+    
+    return {
+      position: isFullscreen ? 'fixed' : 'relative',
+      top: isFullscreen ? 0 : 'auto',
+      left: isFullscreen ? 0 : 'auto',
+      right: isFullscreen ? 0 : 'auto',
+      bottom: isFullscreen ? 0 : 'auto',
+      width: isFullscreen ? '100%' : '100%',
+      maxWidth: isFullscreen ? '100%' : '400px',
+      height: isFullscreen ? '100%' : 'auto',
+      margin: '0 auto',
+      background: 'black',
+      // Set aspect ratio based on actual camera dimensions
+      aspectRatio: isFullscreen ? 'auto' : `${1}/${aspectRatio.toFixed(3)}`,
+      zIndex: isFullscreen ? 9999 : 'auto',
+      borderRadius: isFullscreen ? 0 : '8px',
+      overflow: 'hidden',
+      cursor: 'pointer'
+    };
   };
 
   return (
     <div className="relative w-full flex justify-center">
       <div
-        style={containerStyle}
+        style={getContainerStyles()}
         onClick={toggleFullscreen}
       >
-        {/* Canvas - Use fixed dimensions for processing but control display with CSS */}
+        {/* Canvas - dimensions now match the actual video stream */}
         <canvas
           ref={canvasRef}
-          width="640" 
-          height="480"
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain"
         />
 
         {/* Video element - hidden but needed for camera access */}
