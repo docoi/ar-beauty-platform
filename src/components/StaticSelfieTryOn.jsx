@@ -12,6 +12,8 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
   const [capturedSelfieDataUrl, setCapturedSelfieDataUrl] = useState(null);
   const [detectedSelfieResults, setDetectedSelfieResults] = useState(null);
   const [selfieDimensions, setSelfieDimensions] = useState({ width: 0, height: 0 });
+  const [isDetecting, setIsDetecting] = useState(false); // Add state for detection status
+
 
   // Refs
   const selfieVideoRef = useRef(null);
@@ -128,9 +130,11 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
 
     // Get data URL
     const dataUrl = tempCanvas.toDataURL('image/png'); // Use PNG for potentially better quality
+    console.log("Selfie Captured. Data URL length:", dataUrl.length); // Log data URL length
     setCapturedSelfieDataUrl(dataUrl);
     setIsPreviewing(false); // Switch view
     setDetectedSelfieResults(null); // Clear previous results
+    setIsDetecting(true); // Start detecting indicator
 
     // Stop the preview stream AFTER capturing
     console.log("Stopping selfie preview stream.");
@@ -141,69 +145,73 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
 
   // --- Face Detection on Captured Selfie ---
   useEffect(() => {
-      if (!capturedSelfieDataUrl || !faceLandmarker) {
-          return; // Only run when we have a selfie and the landmarker
+      // Check isDetecting flag which is set only after selfie is taken
+      if (!capturedSelfieDataUrl || !faceLandmarker || !isDetecting) {
+          if (isDetecting) {
+              console.log("Detection Effect: Waiting for prerequisites (selfieDataUrl, faceLandmarker).");
+          }
+          return; // Only run when we have a selfie to process and landmarker is ready
       }
 
-      console.log("Selfie captured, preparing for detection...");
+      console.log("Detection Effect: Starting detection process...");
       const imageElement = new Image();
+
       imageElement.onload = async () => {
-          console.log("Selfie image loaded, running detection...");
+          console.log("Detection Effect: Selfie image loaded into Image element.");
           staticImageRef.current = imageElement; // Store ref to the loaded image
           try {
-                // Make sure landmarker is ready (it should be, but check)
                 if (faceLandmarker) {
-                    // Detect on the static image
+                    console.log("Detection Effect: Calling faceLandmarker.detect()...");
+                    // If landmarker was created with VIDEO mode, detect() should work on image.
                     const results = faceLandmarker.detect(imageElement);
-                    console.log("Selfie detection results:", results);
+                    console.log("Detection Effect: Detection finished. Results:", results); // Log the results
                     setDetectedSelfieResults(results);
-
-                     // // --- Trigger Rendering ---
-                     // // We need to wait for the rendererRef to be ready
-                     // // A small timeout might be needed, or a more robust check
-                    // setTimeout(() => {
-                    //     if (rendererRef.current && staticImageRef.current && results) {
-                    //         console.log("Pushing static image results to renderer...");
-                    //         rendererRef.current.renderStaticImageResults(staticImageRef.current, results);
-                    //     } else {
-                    //          console.warn("Renderer or static image/results not ready when trying to render.");
-                    //     }
-                    // }, 100); // Adjust timeout or use state/callback for readiness
-
-
+                    // No need to call renderer here, let the other effect handle it
                 } else {
-                     console.error("FaceLandmarker became unavailable before detection.");
+                     console.error("Detection Effect: FaceLandmarker became unavailable.");
                 }
-
           } catch(err) {
-              console.error("Error during selfie detection:", err);
-              // Handle detection error (e.g., show message)
+              console.error("Detection Effect: Error during faceLandmarker.detect():", err);
+              // Optionally set an error state to display to the user
+          } finally {
+               // Crucially, set detecting to false whether detection succeeded or failed
+               console.log("Detection Effect: Setting isDetecting to false.");
+               setIsDetecting(false);
           }
       }
       imageElement.onerror = () => {
-          console.error("Failed to load captured selfie data URL into image element.");
-           // Handle image loading error
+          console.error("Detection Effect: Failed to load captured selfie data URL into image element.");
+          setIsDetecting(false); // Stop detecting on error
+           // Optionally set an error state
       }
-      imageElement.src = capturedSelfieDataUrl;
+      console.log("Detection Effect: Setting imageElement.src");
+      imageElement.src = capturedSelfieDataUrl; // Set src AFTER defining onload/onerror
 
-  }, [capturedSelfieDataUrl, faceLandmarker]); // Run when selfie or landmarker changes
+  // Rerun only when the source data changes, or we explicitly want to detect
+  }, [capturedSelfieDataUrl, faceLandmarker, isDetecting]);
 
    // --- Effect to draw initial state or update renderer ---
   useEffect(() => {
-    // This effect runs when previewing is false AND results are available
-    if (!isPreviewing && rendererRef.current && staticImageRef.current && detectedSelfieResults) {
-      console.log("Effect: Pushing static image results to renderer...");
-      rendererRef.current.renderStaticImageResults(staticImageRef.current, detectedSelfieResults);
-    } else if (!isPreviewing && rendererRef.current && staticImageRef.current && !detectedSelfieResults) {
-         // Handle case where selfie is shown but detection hasn't finished/failed
-         // Maybe draw just the image initially
-         console.log("Effect: Drawing static image without results yet...");
-         rendererRef.current.renderStaticImageResults(staticImageRef.current, null); // Pass null results
+    // This effect's job is solely to call the renderer when the state is right
+    console.log("Render Effect Triggered:", { isPreviewing, isDetecting, renderer: !!rendererRef.current, image: !!staticImageRef.current, results: !!detectedSelfieResults });
+
+    if (!isPreviewing && rendererRef.current && staticImageRef.current) {
+        // Only render if detection is NOT actively in progress
+        if (!isDetecting) {
+            console.log("Render Effect: Calling renderStaticImageResults...");
+            // Pass current results (could be null if detection failed or found no faces)
+            rendererRef.current.renderStaticImageResults(staticImageRef.current, detectedSelfieResults);
+        } else {
+             console.log("Render Effect: Waiting for detection to finish before rendering static image.");
+             // Optionally clear or show placeholder while detecting
+             // rendererRef.current.clearCanvas(); // Or draw just the image without results yet?
+        }
     } else if (isPreviewing && rendererRef.current){
-        // Clear the renderer canvas when going back to preview
+        console.log("Render Effect: Clearing canvas for preview mode.");
         rendererRef.current.clearCanvas();
     }
-  }, [isPreviewing, detectedSelfieResults, selfieDimensions]); // Dependencies that determine rendering state
+  // Dependencies: Changes that should trigger a re-render decision
+  }, [isPreviewing, isDetecting, detectedSelfieResults, selfieDimensions]);
 
 
   // --- Retake Selfie ---
@@ -215,7 +223,8 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
     staticImageRef.current = null;
     setCameraError(null); // Clear previous errors
     setIsCameraLoading(true); // Show loading for camera restart
-    // The camera useEffect will re-run
+    setIsDetecting(false); // Reset detection flag
+    // The camera useEffect will re-run because isPreviewing changed
   };
 
   return (
@@ -225,58 +234,65 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
       {isPreviewing ? (
         // --- Preview Mode ---
         <>
-          {isCameraLoading && <p>Starting camera for selfie...</p>}
-          {cameraError && <p className="text-red-500">{cameraError}</p>}
-          <div className="relative w-full" style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : (9/16)*100}%` /* Maintain aspect ratio, default 16:9 */ }}>
+          {isCameraLoading && <p className="text-center py-4">Starting camera for selfie...</p>}
+          {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
+          <div className="relative w-full" style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : (9/16)*100}%` }}>
             <video
               ref={selfieVideoRef}
               autoPlay
               playsInline
               muted
               className={`absolute top-0 left-0 w-full h-full ${isCameraLoading || cameraError ? 'opacity-0' : 'opacity-100'}`}
-              style={{ transform: 'scaleX(-1)', transition: 'opacity 0.3s' }} // Mirror preview
+              style={{ transform: 'scaleX(-1)', transition: 'opacity 0.3s', objectFit: 'cover' }} // Mirror preview
             ></video>
             {(isCameraLoading || cameraError) && (
                  <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
-                    <p className="text-gray-500">{cameraError ? 'Error' : 'Loading...'}</p>
+                    <p className="text-gray-500">{cameraError ? 'Error starting camera' : 'Loading Camera...'}</p>
                  </div>
             )}
           </div>
-          <button
-            onClick={handleTakeSelfie}
-            disabled={isCameraLoading || !!cameraError || !cameraStream}
-            className="mt-4 bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 disabled:bg-gray-400"
-          >
-            Take Selfie
-          </button>
+          <div className="text-center mt-4">
+            <button
+                onClick={handleTakeSelfie}
+                disabled={isCameraLoading || !!cameraError || !cameraStream}
+                className="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+            >
+                Take Selfie
+            </button>
+          </div>
         </>
       ) : (
         // --- Selfie Captured Mode ---
         <>
-          <div className="relative w-full" style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : (4/3)*100}%` /* Maintain aspect ratio, default 4:3 */ }}>
-           {/* Render the TryOnRenderer to display the static image + effects */}
-           {/* Ensure dimensions are passed */}
-           {selfieDimensions.width > 0 && (
+          <div className="relative w-full" style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : (4/3)*100}%` }}>
+           {/* Ensure dimensions are available before rendering */}
+           {selfieDimensions.width > 0 ? (
                  <TryOnRenderer
                     ref={rendererRef}
-                    videoWidth={selfieDimensions.width}
+                    videoWidth={selfieDimensions.width} // Use selfie dimensions
                     videoHeight={selfieDimensions.height}
                     className="absolute top-0 left-0 w-full h-full"
                  />
+           ) : (
+               <div className="absolute inset-0 flex items-center justify-center bg-gray-200">
+                   <p>Loading dimensions...</p> {/* Should be very brief */}
+               </div>
            )}
           </div>
-           {/* Show loading/message during detection? */}
-           {capturedSelfieDataUrl && !detectedSelfieResults && <p className="mt-2">Analyzing selfie...</p>}
+           {/* Show detecting status */}
+           {isDetecting && <p className="mt-2 text-center animate-pulse">Analyzing selfie...</p>}
 
-          <button
-            onClick={handleRetakeSelfie}
-            className="mt-4 bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-          >
-            Retake Selfie
-          </button>
+          <div className="text-center mt-4">
+            <button
+                onClick={handleRetakeSelfie}
+                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+            >
+                Retake Selfie
+            </button>
+          </div>
         </>
       )}
-      {!faceLandmarker && <p className="text-red-500 mt-2">Waiting for FaceLandmarker...</p>}
+      {!faceLandmarker && <p className="text-red-500 mt-2 text-center">Waiting for FaceLandmarker model...</p>}
     </div>
   );
 };
