@@ -75,20 +75,15 @@ const FaceEffect = ({ effectType }) => {
         faceMeshRef.current.onResults(onFaceMeshResults);
         console.log("FaceMesh initialized.");
 
-        // --- 2. Access Camera with mobile-friendly constraints ---
-        console.log("Accessing camera...");
+        // --- 2. Access Camera - USE MINIMAL CONSTRAINTS ---
+        console.log("Accessing camera with minimal constraints...");
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error("Camera access is not supported by this browser.");
         }
 
-        // Try with front camera and higher resolution for better selfie quality
-        console.log("Requesting front camera with better quality...");
+        // Use simplest possible constraints for maximum compatibility
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user",
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          },
+          video: true, // Just request ANY video - no resolution or facingMode
           audio: false,
         });
         console.log("Successfully acquired camera stream");
@@ -133,10 +128,6 @@ const FaceEffect = ({ effectType }) => {
             
             console.log("Initializing MediaPipe Camera Utility...");
             try {
-              // Get actual video dimensions for better results
-              const videoWidth = videoRef.current.videoWidth || 640;
-              const videoHeight = videoRef.current.videoHeight || 480;
-              
               cameraUtilRef.current = new window.Camera(videoRef.current, {
                 onFrame: async () => {
                   if (!videoRef.current || !faceMeshRef.current) return;
@@ -146,8 +137,8 @@ const FaceEffect = ({ effectType }) => {
                     console.error("Error sending frame to FaceMesh:", sendError);
                   }
                 },
-                width: videoWidth,
-                height: videoHeight
+                width: 640,
+                height: 480,
               });
               
               cameraUtilRef.current.start();
@@ -235,7 +226,7 @@ const FaceEffect = ({ effectType }) => {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
-    // Draw video frame to canvas - clean and undistorted
+    // Draw video frame to canvas
     if (results.image) {
       canvasCtx.drawImage(
         results.image, 
@@ -285,25 +276,21 @@ const FaceEffect = ({ effectType }) => {
   };
 
   return (
-    <div className="relative w-full h-full">
-      {/* Container that manages fullscreen state */}
-      <div 
-        className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-black flex items-center justify-center' : 'w-full'}`}
-      >
-        {/* Aspect ratio container - close to selfie proportions */}
+    <div className="w-full flex justify-center">
+      {/* Container with fixed dimensions and proper styling */}
+      <div className={`relative ${isFullscreen ? 'fixed inset-0 z-50 flex items-center justify-center bg-black' : ''}`}>
         <div 
-          className={`relative bg-black overflow-hidden ${isFullscreen ? 'w-full h-full' : 'w-full mx-auto'}`}
+          className={`relative bg-black overflow-hidden rounded-lg ${isFullscreen ? 'w-full h-full' : 'mx-auto'}`}
           style={{
-            maxWidth: isFullscreen ? '100%' : '500px',
-            // Normal mode has a maximum height to fit in page
-            maxHeight: isFullscreen ? '100%' : '650px',
-            // A taller aspect ratio to focus on face like in selfie apps
-            aspectRatio: isFullscreen ? 'auto' : '3/4',
+            // Selfie aspect ratio that works on mobile - fixed dimensions
+            width: isFullscreen ? '100%' : '100%',
+            maxWidth: isFullscreen ? '100%' : '400px',
+            aspectRatio: '3/4',
             cursor: 'pointer'
           }}
           onClick={toggleFullscreen}
         >
-          {/* Actual canvas displaying the camera feed */}
+          {/* Canvas with fixed dimensions - using CSS to control display size */}
           <canvas
             ref={canvasRef}
             width="640" 
@@ -311,7 +298,7 @@ const FaceEffect = ({ effectType }) => {
             className="absolute inset-0 w-full h-full object-cover"
           />
 
-          {/* Hidden video element */}
+          {/* Video element - hidden */}
           <video
             ref={videoRef}
             autoPlay
