@@ -5,35 +5,68 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
 
   // Expose methods to the parent component via the ref
   useImperativeHandle(ref, () => ({
+    // --- Method for Real-time Video ---
     renderResults: (videoElement, results) => {
       if (!canvasRef.current) return;
       const canvasCtx = canvasRef.current.getContext('2d');
 
-      // Basic drawing: video feed + simple overlay if face detected
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-
-      // Flip the canvas drawing horizontally to match the mirrored video source visually
-      canvasCtx.scale(-1, 1);
+      canvasCtx.scale(-1, 1); // Flip canvas for mirror effect
       canvasCtx.translate(-canvasRef.current.width, 0);
-
-      // Draw the video frame
       canvasCtx.drawImage(videoElement, 0, 0, canvasRef.current.width, canvasRef.current.height);
 
-      // Simple results visualization (replace with actual rendering later)
+      // Restore transform before drawing overlays if overlays shouldn't be flipped
+      canvasCtx.restore(); // Restore to non-flipped state
+
+      // --- DRAW OVERLAYS (e.g., effects) on non-flipped canvas ---
+      // Basic results visualization (replace with actual rendering later)
       if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
-        canvasCtx.fillStyle = "rgba(0, 255, 0, 0.5)"; // Semi-transparent green
-        canvasCtx.fillRect(10, 10, 100, 50); // Simple indicator box
-         canvasCtx.fillStyle = "white";
-         canvasCtx.font = "16px Arial";
-         // Flip text back to draw normally after canvas flip
-         canvasCtx.scale(-1, 1);
-         canvasCtx.translate(-canvasRef.current.width, 0);
-         canvasCtx.fillText("Face Detected", canvasRef.current.width - 110 -10 , 40); // Adjust text position due to flipping
+          // Example: Draw mask or landmarks here
+          // For now, just the indicator box
+          canvasCtx.fillStyle = "rgba(0, 255, 0, 0.5)"; // Semi-transparent green
+          canvasCtx.fillRect(10, 10, 110, 30);
+          canvasCtx.fillStyle = "black";
+          canvasCtx.font = "16px Arial";
+          canvasCtx.fillText("Face Detected", 15, 30);
       }
 
-      canvasCtx.restore();
     },
+
+    // --- Method for Static Image ---
+    renderStaticImageResults: (imageElement, results) => {
+        if (!canvasRef.current || !imageElement) return;
+        const canvasCtx = canvasRef.current.getContext('2d');
+
+        canvasCtx.save();
+        canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+
+        // Draw the static image (no flipping needed)
+        canvasCtx.drawImage(imageElement, 0, 0, canvasRef.current.width, canvasRef.current.height);
+
+        // --- DRAW OVERLAYS (e.g., effects) ---
+         // Basic results visualization (replace with actual rendering later)
+         if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
+            // Example: Draw mask or landmarks here
+            // For now, just the indicator box
+            canvasCtx.fillStyle = "rgba(0, 0, 255, 0.5)"; // Semi-transparent blue for static
+            canvasCtx.fillRect(10, 10, 130, 30);
+            canvasCtx.fillStyle = "white";
+            canvasCtx.font = "16px Arial";
+            canvasCtx.fillText("Selfie Analysed", 15, 30);
+        } else if (results) { // results exist but no landmarks
+             canvasCtx.fillStyle = "rgba(255, 0, 0, 0.5)"; // Semi-transparent red
+             canvasCtx.fillRect(10, 10, 130, 30);
+             canvasCtx.fillStyle = "white";
+             canvasCtx.font = "16px Arial";
+             canvasCtx.fillText("No Face Found", 15, 30);
+        }
+        // If results are null (still detecting), nothing drawn over image
+
+        canvasCtx.restore();
+    },
+
+    // --- Method to clear ---
     clearCanvas: () => {
          if (!canvasRef.current) return;
          const canvasCtx = canvasRef.current.getContext('2d');
@@ -41,7 +74,7 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
     }
   }));
 
-   // Effect to set canvas dimensions once video dimensions are known
+  // Effect to set canvas dimensions once video dimensions are known
   useEffect(() => {
       if (canvasRef.current && videoWidth > 0 && videoHeight > 0) {
           canvasRef.current.width = videoWidth;
@@ -54,7 +87,6 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
     <canvas
       ref={canvasRef}
       className={`renderer-canvas ${className || ''}`} // Apply passed class names
-      // Set initial size, will be updated by useEffect
       width={videoWidth || 640}
       height={videoHeight || 480}
       style={{ backgroundColor: '#eee' }} // Placeholder background
@@ -64,7 +96,6 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
   );
 });
 
-// Add display name for React DevTools
 TryOnRenderer.displayName = 'TryOnRenderer';
 
 export default TryOnRenderer;
