@@ -8,7 +8,6 @@ const FaceEffect = ({ effectType }) => {
   const [error, setError] = useState(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
   
   // Refs for MediaPipe objects
   const faceMeshRef = useRef(null);
@@ -98,30 +97,12 @@ const FaceEffect = ({ effectType }) => {
         await new Promise((resolve) => {
           const onLoadedMetadata = () => {
             console.log("Video metadata loaded");
-            
-            // Get and store actual video dimensions
-            if (videoRef.current) {
-              const videoWidth = videoRef.current.videoWidth;
-              const videoHeight = videoRef.current.videoHeight;
-              console.log(`Actual video dimensions: ${videoWidth}x${videoHeight}`);
-              
-              // Set these dimensions for the canvas
-              if (canvasRef.current) {
-                canvasRef.current.width = videoWidth;
-                canvasRef.current.height = videoHeight;
-              }
-              
-              // Store for calculating aspect ratio
-              setVideoDimensions({ width: videoWidth, height: videoHeight });
-            }
-            
             videoRef.current.removeEventListener('loadedmetadata', onLoadedMetadata);
             resolve();
           };
           
           if (videoRef.current.readyState >= 2) {
             console.log("Video metadata already loaded");
-            onLoadedMetadata(); // Still call this to get dimensions
             resolve();
           } else {
             console.log("Waiting for video metadata...");
@@ -147,10 +128,6 @@ const FaceEffect = ({ effectType }) => {
             
             console.log("Initializing MediaPipe Camera Utility...");
             try {
-              // Use actual video dimensions from the camera
-              const videoWidth = canvasRef.current ? canvasRef.current.width : 640;
-              const videoHeight = canvasRef.current ? canvasRef.current.height : 480;
-              
               cameraUtilRef.current = new window.Camera(videoRef.current, {
                 onFrame: async () => {
                   if (!videoRef.current || !faceMeshRef.current) return;
@@ -160,8 +137,8 @@ const FaceEffect = ({ effectType }) => {
                     console.error("Error sending frame to FaceMesh:", sendError);
                   }
                 },
-                width: videoWidth,
-                height: videoHeight,
+                width: 640,
+                height: 480,
               });
               
               cameraUtilRef.current.start();
@@ -298,91 +275,77 @@ const FaceEffect = ({ effectType }) => {
     initialize();
   };
 
-  // Calculate container aspect ratio based on actual video dimensions
-  const getContainerStyles = () => {
-    // Default to a sensible ratio if we don't have video dimensions yet
-    let aspectRatio = 3/4; // Default to portrait orientation
-    
-    if (videoDimensions.width && videoDimensions.height) {
-      // Use actual video dimensions to set aspect ratio
-      aspectRatio = videoDimensions.height / videoDimensions.width;
-    }
-    
-    return {
-      position: isFullscreen ? 'fixed' : 'relative',
-      top: isFullscreen ? 0 : 'auto',
-      left: isFullscreen ? 0 : 'auto',
-      right: isFullscreen ? 0 : 'auto',
-      bottom: isFullscreen ? 0 : 'auto',
-      width: isFullscreen ? '100%' : '100%',
-      maxWidth: isFullscreen ? '100%' : '400px',
-      height: isFullscreen ? '100%' : 'auto',
-      margin: '0 auto',
-      background: 'black',
-      // Set aspect ratio based on actual camera dimensions
-      aspectRatio: isFullscreen ? 'auto' : `${1}/${aspectRatio.toFixed(3)}`,
-      zIndex: isFullscreen ? 9999 : 'auto',
-      borderRadius: isFullscreen ? 0 : '8px',
-      overflow: 'hidden',
-      cursor: 'pointer'
-    };
-  };
-
   return (
     <div className="relative w-full flex justify-center">
-      <div
-        style={getContainerStyles()}
-        onClick={toggleFullscreen}
+      {/* Outer container */}
+      <div 
+        className={`${isFullscreen ? 'fixed inset-0 z-50 bg-black flex items-center justify-center' : 'w-full max-w-sm mx-auto'}`}
       >
-        {/* Canvas - dimensions now match the actual video stream */}
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full object-contain"
-        />
-
-        {/* Video element - hidden but needed for camera access */}
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="absolute -z-10 w-0 h-0"
-        />
-
-        {/* Loading Overlay */}
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
-            <p className="text-white px-4 py-2 rounded font-semibold">Loading camera...</p>
+        {/* Inner container with fixed aspect ratio (9:16 vertical like a phone) */}
+        <div 
+          className={`relative ${isFullscreen ? 'w-full h-full' : ''}`}
+          style={{
+            aspectRatio: isFullscreen ? 'auto' : '9/16', // Vertical phone-like ratio when not fullscreen
+            overflow: 'hidden',
+            cursor: 'pointer'
+          }}
+          onClick={toggleFullscreen}
+        >
+          {/* Canvas crop container - This is the trick: create a center-cropped view of the camera */}
+          <div className="absolute inset-0 flex items-center justify-center overflow-hidden bg-black">
+            {/* Canvas with fixed dimensions for MediaPipe */}
+            <canvas
+              ref={canvasRef}
+              width="640" 
+              height="480"
+              className="min-w-full min-h-full object-cover" // object-cover will crop edges to fill container
+            />
           </div>
-        )}
 
-        {/* Error Overlay */}
-        {error && !isLoading && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-500 bg-opacity-75 p-4 z-10">
-            <p className="text-white text-center font-semibold mb-4">{error}</p>
-            
-            <button
-              onClick={(e) => {
-                e.stopPropagation(); // Prevent toggleFullscreen from being called
-                handleRetry();
-              }}
-              className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
-            >
-              Try Again
-            </button>
-          </div>
-        )}
+          {/* Video element - hidden but needed for camera access */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className="absolute -z-10 w-0 h-0"
+          />
 
-        {/* Fullscreen indicator */}
-        {!isLoading && !error && (
-          <div className="absolute bottom-4 right-4 z-10">
-            <div className="bg-black bg-opacity-50 px-3 py-1 rounded-full">
-              <p className="text-sm text-white">
-                {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
-              </p>
+          {/* Loading Overlay */}
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 z-10">
+              <p className="text-white px-4 py-2 rounded font-semibold">Loading camera...</p>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* Error Overlay */}
+          {error && !isLoading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-500 bg-opacity-75 p-4 z-10">
+              <p className="text-white text-center font-semibold mb-4">{error}</p>
+              
+              <button
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent toggleFullscreen from being called
+                  handleRetry();
+                }}
+                className="bg-white text-red-600 font-semibold py-2 px-4 rounded"
+              >
+                Try Again
+              </button>
+            </div>
+          )}
+
+          {/* Fullscreen indicator */}
+          {!isLoading && !error && (
+            <div className="absolute bottom-4 right-4 z-10">
+              <div className="bg-black bg-opacity-50 px-3 py-1 rounded-full">
+                <p className="text-sm text-white">
+                  {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
