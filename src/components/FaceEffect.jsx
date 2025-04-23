@@ -4,7 +4,6 @@ import * as THREE from 'three';
 const FaceEffect = ({ effectType }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const containerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
@@ -276,56 +275,36 @@ const FaceEffect = ({ effectType }) => {
     initialize();
   };
 
-  // Fullscreen container styles
-  const fullscreenStyle = isFullscreen ? {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 9999,
-    background: '#000',
-    width: '100%',
-    height: '100%',
-    margin: 0,
-    padding: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  } : {};
-
   return (
-    <div className="relative flex flex-col items-center p-2 w-full">
-      {/* Container with regular or fullscreen styles */}
+    <div className="relative flex flex-col items-center w-full">
+      {/* Regular container or fullscreen container */}
       <div 
-        ref={containerRef}
+        className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-black' : 'mx-auto'}`}
         style={{
-          ...fullscreenStyle,
-          maxWidth: isFullscreen ? '100%' : '500px',
-          width: '100%',
-          margin: '0 auto',
-          position: isFullscreen ? 'fixed' : 'relative',
+          maxWidth: isFullscreen ? '100%' : '480px',
+          width: '100%'
         }}
       >
-        {/* Vertical 9:16 container similar to TikTok */}
+        {/* Video container with better aspect ratio */}
         <div 
-          className="relative bg-black rounded-lg overflow-hidden mx-auto"
+          className="relative bg-black overflow-hidden rounded-lg"
           style={{
             width: '100%',
-            paddingTop: isFullscreen ? '100%' : '177.78%', // 16:9 vertical aspect ratio
+            // Use an aspect ratio that's not as tall - closer to 3:4 instead of 9:16
+            paddingTop: isFullscreen ? '100vh' : '133.33%', // 4:3 ratio is 133.33%
             cursor: 'pointer'
           }}
           onClick={toggleFullscreen}
         >
-          {/* Canvas - keep fixed dimensions for MediaPipe but allow CSS to control display size */}
+          {/* Canvas with object-fit:contain to avoid zoom distortion */}
           <canvas
             ref={canvasRef}
             width="640" 
             height="480"
-            className="absolute inset-0 w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-contain"
           />
 
-          {/* Video element - hidden, Camera utility uses it */}
+          {/* Video element - hidden */}
           <video
             ref={videoRef}
             autoPlay
@@ -337,7 +316,9 @@ const FaceEffect = ({ effectType }) => {
           {/* Loading Overlay */}
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-400 bg-opacity-60 z-10">
-              <p className="text-white bg-black bg-opacity-70 px-4 py-2 rounded">Loading camera...</p>
+              <div className="bg-black bg-opacity-70 px-4 py-2 rounded">
+                <p className="text-white">Loading camera...</p>
+              </div>
             </div>
           )}
 
@@ -361,9 +342,11 @@ const FaceEffect = ({ effectType }) => {
           {/* Fullscreen indicator */}
           {!isLoading && !error && (
             <div className="absolute bottom-4 right-4 z-10">
-              <p className="text-xs text-white bg-black bg-opacity-50 px-2 py-1 rounded">
-                {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
-              </p>
+              <div className="bg-black bg-opacity-50 px-3 py-1 rounded-full">
+                <p className="text-sm text-white">
+                  {isFullscreen ? "Tap to exit fullscreen" : "Tap for fullscreen"}
+                </p>
+              </div>
             </div>
           )}
         </div>
