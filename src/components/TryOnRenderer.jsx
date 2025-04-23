@@ -1,9 +1,7 @@
 // src/components/TryOnRenderer.jsx
 
 import React, { useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
-// Import drawing utils from MediaPipe (optional but helpful)
-// If you didn't install @mediapipe/drawing_utils, you can skip this import
-// and draw manually, otherwise run: npm install @mediapipe/drawing_utils
+// Keep this import if you installed the package
 import { DrawingUtils } from "@mediapipe/drawing_utils";
 
 const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) => {
@@ -14,9 +12,11 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
   useEffect(() => {
       if (canvasRef.current) {
         const canvasCtx = canvasRef.current.getContext("2d");
-        if (canvasCtx) {
+        if (canvasCtx && DrawingUtils) { // Check if DrawingUtils is available
             drawingUtilsRef.current = new DrawingUtils(canvasCtx);
             console.log("DrawingUtils initialized.");
+        } else if (!DrawingUtils){
+            console.log("DrawingUtils not imported/installed, will use manual drawing.");
         }
       }
   }, []);
@@ -30,40 +30,40 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
       const canvas = canvasRef.current;
       const canvasCtx = canvas.getContext('2d');
        if (!canvasCtx) return;
-       // Ensure canvas size matches video
        if (canvas.width !== videoWidth || canvas.height !== videoHeight) {
            canvas.width = videoWidth;
            canvas.height = videoHeight;
             if (canvas.width === 0 || canvas.height === 0) return;
+             // Re-init if size changes
+             if (DrawingUtils) drawingUtilsRef.current = new DrawingUtils(canvasCtx);
        }
 
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-      canvasCtx.scale(-1, 1); // Flip canvas for mirror effect
+      canvasCtx.scale(-1, 1);
       canvasCtx.translate(-canvas.width, 0);
       canvasCtx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-      canvasCtx.restore(); // Restore to non-flipped state
+      canvasCtx.restore();
 
-      // Draw real-time results (using drawing utils if available)
-      if (results?.faceLandmarks && drawingUtilsRef.current) {
-          for (const landmarks of results.faceLandmarks) {
-            // Example: Draw connectors and landmarks
-            // drawingUtilsRef.current.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
-            // drawingUtilsRef.current.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, {color: '#FF3030'});
-            // ... add more specific landmark groups ...
-            drawingUtilsRef.current.drawLandmarks(landmarks, {color: '#30FF30', radius: 1}); // Simple green dots
-          }
-      } else if (results?.faceLandmarks) {
-          // Manual drawing if drawing_utils not used
-           canvasCtx.fillStyle = "rgba(0, 255, 0, 0.7)";
-           results.faceLandmarks.forEach(landmarks => {
-               landmarks.forEach(point => {
-                  canvasCtx.beginPath();
-                  canvasCtx.arc(point.x * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
-                  canvasCtx.fill();
-               });
-           });
-      }
+      // --- TEMPORARILY COMMENT OUT REAL-TIME LANDMARK DRAWING ---
+      // if (results?.faceLandmarks && drawingUtilsRef.current) {
+      //     // console.log("Temp Debug: Drawing real-time landmarks using DrawingUtils...");
+      //     // for (const landmarks of results.faceLandmarks) {
+      //     //   drawingUtilsRef.current.drawLandmarks(landmarks, {color: '#30FF30', radius: 1});
+      //     // }
+      // } else if (results?.faceLandmarks) {
+      //     // console.log("Temp Debug: Drawing real-time landmarks manually...");
+      //     // canvasCtx.fillStyle = "rgba(0, 255, 0, 0.7)";
+      //     // results.faceLandmarks.forEach(landmarks => {
+      //     //     landmarks.forEach(point => {
+      //     //         canvasCtx.beginPath();
+      //     //         canvasCtx.arc(point.x * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
+      //     //         canvasCtx.fill();
+      //     //     });
+      //     // });
+      // }
+      // --- END OF TEMPORARY COMMENTING ---
+
     },
 
     // --- Method for Static Image ---
@@ -74,42 +74,38 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
         const canvas = canvasRef.current;
         const canvasCtx = canvas.getContext('2d');
          if (!canvasCtx) return;
-
-        // Ensure canvas size matches image
         if (canvas.width !== imageElement.naturalWidth || canvas.height !== imageElement.naturalHeight) {
              canvas.width = imageElement.naturalWidth;
              canvas.height = imageElement.naturalHeight;
              if (canvas.width === 0 || canvas.height === 0) return;
-             // Re-initialize drawing utils if canvas size changes
-             drawingUtilsRef.current = new DrawingUtils(canvasCtx);
-             console.log("DrawingUtils re-initialized after static canvas resize.");
+              // Re-init if size changes
+             if (DrawingUtils) drawingUtilsRef.current = new DrawingUtils(canvasCtx);
          }
-
 
         canvasCtx.save();
         canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-        canvasCtx.drawImage(imageElement, 0, 0, canvas.width, canvas.height); // Draw image first
+        canvasCtx.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
 
-        // Draw static results (using drawing utils if available)
-        if (results?.faceLandmarks && drawingUtilsRef.current) {
-             console.log("Renderer: Drawing static landmarks using DrawingUtils...");
-             for (const landmarks of results.faceLandmarks) {
-               // drawingUtilsRef.current.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION, {color: '#C0C0C070', lineWidth: 1});
-               drawingUtilsRef.current.drawLandmarks(landmarks, {color: '#FF0000', radius: 2}); // Red dots for static
-             }
-        } else if (results?.faceLandmarks) { // Manual drawing
-            console.log("Renderer: Drawing static landmarks manually...");
-             canvasCtx.fillStyle = "rgba(255, 0, 0, 0.7)"; // Red dots
-             results.faceLandmarks.forEach(landmarks => {
-                 landmarks.forEach(point => {
-                    canvasCtx.beginPath();
-                    canvasCtx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
-                    canvasCtx.fill();
-                 });
-             });
-        } else {
-            console.log("Renderer: No landmarks found in static results to draw.");
-        }
+        // --- TEMPORARILY COMMENT OUT STATIC LANDMARK DRAWING ---
+        // if (results?.faceLandmarks && drawingUtilsRef.current) {
+        //      // console.log("Temp Debug: Drawing static landmarks using DrawingUtils...");
+        //      // for (const landmarks of results.faceLandmarks) {
+        //      //   drawingUtilsRef.current.drawLandmarks(landmarks, {color: '#FF0000', radius: 2});
+        //      // }
+        // } else if (results?.faceLandmarks) {
+        //      // console.log("Temp Debug: Drawing static landmarks manually...");
+        //      // canvasCtx.fillStyle = "rgba(255, 0, 0, 0.7)";
+        //      // results.faceLandmarks.forEach(landmarks => {
+        //      //     landmarks.forEach(point => {
+        //      //         canvasCtx.beginPath();
+        //      //         canvasCtx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
+        //      //         canvasCtx.fill();
+        //      //     });
+        //      // });
+        // } else {
+        //     // console.log("Temp Debug: No landmarks found in static results to draw.");
+        // }
+        // --- END OF TEMPORARY COMMENTING ---
 
         canvasCtx.restore();
     },
