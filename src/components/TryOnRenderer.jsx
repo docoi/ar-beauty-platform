@@ -1,142 +1,236 @@
 // src/components/TryOnRenderer.jsx
 
-import React, { useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
-// No DrawingUtils import needed anymore
+import React, { useRef, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
+import * as THREE from 'three';
 
 const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) => {
   const canvasRef = useRef(null);
-  // No drawingUtilsRef needed anymore
+  const rendererRef = useRef(null);
+  const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
+  const videoTextureRef = useRef(null);
+  const imageTextureRef = useRef(null);
+  const planeMeshRef = useRef(null);
+  const isInitialized = useRef(false); // Flag to prevent double initialization
 
-  // No initializeDrawingUtils needed anymore
+  // --- Initialize Three.js Scene ---
+  const initThreeScene = useCallback(() => {
+    if (!canvasRef.current || isInitialized.current) return;
+    console.log("Renderer: Initializing Three.js scene...");
 
-  // No useEffect for initializing DrawingUtils needed anymore
+    try {
+      const canvas = canvasRef.current;
+      const width = canvas.clientWidth; // Use client dimensions for initial setup
+      const height = canvas.clientHeight;
 
-  // Expose methods to the parent component via the ref
+      // Scene
+      sceneRef.current = new THREE.Scene();
+
+      // Camera (Orthographic)
+      // We set left/right/top/bottom based on desired view size (e.g., match video)
+      // Initial setup, will be adjusted when dimensions are known
+      cameraRef.current = new THREE.OrthographicCamera(
+        -width / 2, width / 2, height / 2, -height / 2, 1, 1000
+      );
+      cameraRef.current.position.z = 5; // Position camera back slightly
+      sceneRef.current.add(cameraRef.current);
+
+      // Renderer
+      rendererRef.current = new THREE.WebGLRenderer({
+        canvas: canvas,
+        antialias: true, // Enable anti-aliasing
+        alpha: true // Allow transparency if needed later
+      });
+      rendererRef.current.setSize(width, height);
+      rendererRef.current.setPixelRatio(window.devicePixelRatio); // Adjust for screen density
+      rendererRef.current.outputColorSpace = THREE.SRGBColorSpace; // Match typical image/video color space
+
+      // Plane Geometry (placeholder size)
+      const planeGeometry = new THREE.PlaneGeometry(1, 1); // Will be resized later
+
+      // Basic Material (placeholder)
+      const planeMaterial = new THREE.MeshBasicMaterial({
+          color: 0xcccccc, // Gray placeholder
+          side: THREE.DoubleSide
+       });
+
+      // Plane Mesh
+      planeMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial);
+      sceneRef.current.add(planeMeshRef.current);
+
+      isInitialized.current = true;
+      console.log("Renderer: Three.js scene initialized.");
+
+      // Adjust size immediately if dimensions are already available
+       if(videoWidth > 0 && videoHeight > 0){
+           handleResize(videoWidth, videoHeight);
+       }
+
+
+    } catch (error) {
+      console.error("Error initializing Three.js:", error);
+      // Handle initialization error (e.g., show error message)
+    }
+  }, [videoWidth, videoHeight]); // Include dimensions dependency
+
+
+  // --- Handle Resizing ---
+  const handleResize = useCallback((newWidth, newHeight) => {
+    if (!rendererRef.current || !cameraRef.current || !planeMeshRef.current || newWidth === 0 || newHeight === 0) return;
+
+    console.log(`Renderer: Resizing to ${newWidth}x${newHeight}`);
+
+    // Update Renderer
+    rendererRef.current.setSize(newWidth, newHeight);
+
+    // Update Camera
+    cameraRef.current.left = -newWidth / 2;
+    cameraRef.current.right = newWidth / 2;
+    cameraRef.current.top = newHeight / 2;
+    cameraRef.current.bottom = -newHeight / 2;
+    cameraRef.current.updateProjectionMatrix();
+
+    // Update Plane Size to match the new dimensions (acts as the screen)
+    planeMeshRef.current.scale.set(newWidth, newHeight, 1);
+
+  }, []);
+
+
+  // --- Effect for Initial Setup and Resizing ---
+  useEffect(() => {
+    initThreeScene(); // Initialize on mount
+
+    // Update size when props change
+    if (isInitialized.current && videoWidth > 0 && videoHeight > 0) {
+      handleResize(videoWidth, videoHeight);
+    }
+
+    // Cleanup on unmount
+    return () => {
+        console.log("Renderer: Cleaning up Three.js resources...");
+        isInitialized.current = false; // Reset flag
+        if (videoTextureRef.current) {
+            videoTextureRef.current.dispose();
+            videoTextureRef.current = null;
+        }
+         if (imageTextureRef.current) {
+            imageTextureRef.current.dispose();
+            imageTextureRef.current = null;
+        }
+        if (planeMeshRef.current) {
+            planeMeshRef.current.geometry?.dispose();
+            planeMeshRef.current.material?.dispose();
+             // No need to remove from scene if scene is discarded
+        }
+         if (sceneRef.current) {
+            // Dispose scene contents if necessary (though often just letting go is enough)
+            sceneRef.current = null;
+        }
+        if (rendererRef.current) {
+            rendererRef.current.dispose(); // Important! Release WebGL context
+            rendererRef.current = null;
+        }
+         canvasRef.current = null; // Clear canvas ref
+    };
+  }, [videoWidth, videoHeight, initThreeScene, handleResize]); // Dependencies for resizing
+
+
+  // --- Expose Methods ---
   useImperativeHandle(ref, () => ({
     // --- Method for Real-time Video ---
     renderResults: (videoElement, results) => {
-       if (!canvasRef.current) return;
-       const canvas = canvasRef.current;
-       const canvasCtx = canvas.getContext('2d');
-       if (!canvasCtx) return;
-       if (canvas.width !== videoWidth || canvas.height !== videoHeight) {
-           canvas.width = videoWidth;
-           canvas.height = videoHeight;
-            if (canvas.width === 0 || canvas.height === 0) return;
+      if (!rendererRef.current || !sceneRef.current || !cameraRef.current || !planeMeshRef.current || !videoElement || !isInitialized.current) return;
+
+      // Create/Update Video Texture
+      if (!videoTextureRef.current) {
+        console.log("Renderer: Creating video texture.");
+        videoTextureRef.current = new THREE.VideoTexture(videoElement);
+        videoTextureRef.current.colorSpace = THREE.SRGBColorSpace;
+        planeMeshRef.current.material.map = videoTextureRef.current;
+        planeMeshRef.current.material.needsUpdate = true;
+      }
+      // VideoTexture updates automatically
+
+      // --- Apply Mirror Effect ---
+      // Flip the mesh horizontally if it's not already flipped
+       if (planeMeshRef.current.scale.x > 0) {
+           console.log("Renderer: Applying mirror effect scale.");
+           planeMeshRef.current.scale.x = -Math.abs(planeMeshRef.current.scale.x);
        }
 
-       canvasCtx.save();
-       canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-       canvasCtx.scale(-1, 1); // Flip canvas for mirror effect
-       canvasCtx.translate(-canvas.width, 0);
-       canvasCtx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-       canvasCtx.restore(); // Restore to non-flipped state
+       // Clear previous image texture if switching modes
+       if (imageTextureRef.current) {
+           imageTextureRef.current.dispose();
+           imageTextureRef.current = null;
+       }
 
-      // --- MANUAL DRAWING FOR REAL-TIME ---
-      if (results?.faceLandmarks) {
-          // console.log("Renderer: Drawing real-time landmarks manually..."); // Optional log
-          try {
-               canvasCtx.fillStyle = "rgba(0, 255, 0, 0.7)"; // Green dots for real-time
-               results.faceLandmarks.forEach(landmarks => {
-                  if (Array.isArray(landmarks)) {
-                      landmarks.forEach(point => {
-                         if (point && typeof point.x === 'number' && typeof point.y === 'number') {
-                            canvasCtx.beginPath();
-                            // Use normalized coordinates directly
-                            canvasCtx.arc(point.x * canvas.width, point.y * canvas.height, 2, 0, 2 * Math.PI);
-                            canvasCtx.fill();
-                         }
-                      });
-                  }
-               });
-          } catch (drawError) {
-              console.error("Error drawing real-time landmarks manually:", drawError);
-          }
-      }
-      // --- END OF REAL-TIME DRAWING ---
+      // --- TODO: Landmark/Effect Logic ---
+      // We'll add shader logic here later using 'results'
+      // For now, just render the textured plane
+
+      // Render the scene
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
     },
 
     // --- Method for Static Image ---
     renderStaticImageResults: (imageElement, results) => {
-        console.log("Renderer: renderStaticImageResults called.", { hasImage: !!imageElement, hasResults: !!results });
+      console.log("Renderer: renderStaticImageResults called.", { hasImage: !!imageElement, hasResults: !!results });
+      if (!rendererRef.current || !sceneRef.current || !cameraRef.current || !planeMeshRef.current || !imageElement || !isInitialized.current) return;
 
-        if (!canvasRef.current || !imageElement) return;
-        const canvas = canvasRef.current;
-        const canvasCtx = canvas.getContext('2d');
-         if (!canvasCtx) return;
-        if (canvas.width !== imageElement.naturalWidth || canvas.height !== imageElement.naturalHeight) {
-             canvas.width = imageElement.naturalWidth;
-             canvas.height = imageElement.naturalHeight;
-             if (canvas.width === 0 || canvas.height === 0) return;
-         }
+       // Clear previous video texture if switching modes
+       if (videoTextureRef.current) {
+           videoTextureRef.current.dispose();
+           videoTextureRef.current = null;
+       }
 
-        canvasCtx.save();
-        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-        canvasCtx.drawImage(imageElement, 0, 0, canvas.width, canvas.height); // Draw image first
+      // Create/Update Image Texture
+      console.log("Renderer: Creating/updating image texture.");
+       // Dispose previous texture first to free GPU memory
+       if (imageTextureRef.current) {
+            imageTextureRef.current.dispose();
+       }
+       imageTextureRef.current = new THREE.Texture(imageElement);
+       imageTextureRef.current.needsUpdate = true; // Important! Tell three to upload the texture
+       imageTextureRef.current.colorSpace = THREE.SRGBColorSpace;
+       planeMeshRef.current.material.map = imageTextureRef.current;
+       planeMeshRef.current.material.needsUpdate = true;
 
-        // --- MANUAL DRAWING FOR STATIC ---
-        if (results?.faceLandmarks && results.faceLandmarks.length > 0) {
-             console.log("Renderer: Attempting manual landmark drawing...");
-             try {
-                 canvasCtx.fillStyle = "rgba(255, 0, 0, 0.7)"; // Red dots
-                 let drawnCount = 0;
-                 results.faceLandmarks.forEach(landmarks => {
-                     if (Array.isArray(landmarks)) {
-                         landmarks.forEach(point => {
-                            if (point && typeof point.x === 'number' && typeof point.y === 'number') {
-                                canvasCtx.beginPath();
-                                // Use normalized coordinates directly
-                                canvasCtx.arc(point.x * canvas.width, point.y * canvas.height, 3, 0, 2 * Math.PI);
-                                canvasCtx.fill();
-                                drawnCount++;
-                            }
-                         });
-                     }
-                 });
-                 console.log(`Renderer: Manual drawing attempted. Drew ${drawnCount} points.`);
-             } catch (manualDrawError) {
-                  console.error("Renderer: Error during manual landmark drawing:", manualDrawError);
-             }
-        } else {
-            console.log("Renderer: No landmarks found in static results to draw.");
-        }
-        // --- END OF STATIC DRAWING ---
 
-        canvasCtx.restore();
+      // --- Apply Normal (Non-Mirrored) Effect ---
+      // Flip the mesh back horizontally if it was mirrored
+      if (planeMeshRef.current.scale.x < 0) {
+           console.log("Renderer: Removing mirror effect scale.");
+           planeMeshRef.current.scale.x = Math.abs(planeMeshRef.current.scale.x); // Ensure positive scale
+       }
+
+      // --- TODO: Landmark/Effect Logic ---
+      // We'll add shader logic here later using 'results'
+      // For now, just render the textured plane
+
+      // Render the scene
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
     },
 
     // --- Method to clear ---
     clearCanvas: () => {
-       // ... (keep clearCanvas method) ...
-         if (!canvasRef.current) return;
-         const canvasCtx = canvasRef.current.getContext('2d');
-         console.log("Renderer: Clearing canvas.");
-         canvasCtx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        if (rendererRef.current && sceneRef.current && cameraRef.current) {
+           console.log("Renderer: Clearing canvas (rendering background).");
+           // Set background color or make transparent if needed
+           // rendererRef.current.setClearColor(0x000000, 0); // Example: transparent
+           rendererRef.current.clear();
+        }
     }
   }));
 
-  // Effect to set initial canvas dimensions
-  useEffect(() => {
-    // ... (keep useEffect for dimensions) ...
-      if (canvasRef.current && videoWidth > 0 && videoHeight > 0) {
-          if(canvasRef.current.width !== videoWidth || canvasRef.current.height !== videoHeight) {
-              canvasRef.current.width = videoWidth;
-              canvasRef.current.height = videoHeight;
-          }
-      }
-  }, [videoWidth, videoHeight]);
 
-
+  // The canvas element for Three.js
   return (
-     // ... (keep return canvas JSX) ...
     <canvas
       ref={canvasRef}
       className={`renderer-canvas ${className || ''}`}
-      width={videoWidth || 640}
-      height={videoHeight || 480}
-      style={{ backgroundColor: '#eee', display: 'block' }}
+      style={{ display: 'block', width: '100%', height: '100%', backgroundColor: '#eee' }} // Ensure canvas fills container
     >
-      Your browser does not support the HTML canvas element.
+      Your browser does not support the HTML canvas element or WebGL.
     </canvas>
   );
 });
