@@ -172,11 +172,16 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
       imageElement.onload = async () => {
           console.log("Detection Effect: Selfie image loaded into Image element.");
           staticImageRef.current = imageElement; // Store ref to the loaded image
-          setDebugInfo('Image loaded, calling detect()...'); // Update debug info
+          setDebugInfo('Image loaded, calling detectForVideo()...'); // Update debug info
           try {
                 if (faceLandmarker) {
-                    console.log("Detection Effect: Calling faceLandmarker.detect()...");
-                    const results = faceLandmarker.detect(imageElement);
+                    console.log("Detection Effect: Calling faceLandmarker.detectForVideo()...");
+                    // **********************************************************
+                    // *** THE FIX: Use detectForVideo instead of detect ***
+                    // **********************************************************
+                    const results = faceLandmarker.detectForVideo(imageElement, performance.now());
+                    // **********************************************************
+
                     console.log("Detection Effect: Detection finished. Results:", results);
                     // --- Store results/status in debug info ---
                     if (results?.faceLandmarks?.length > 0) {
@@ -191,8 +196,13 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
                      console.error("Detection Effect: FaceLandmarker became unavailable.");
                 }
           } catch(err) {
-               setDebugInfo(`Error during detect(): ${err.message}`); // Update debug info
-               console.error("Detection Effect: Error during faceLandmarker.detect():", err);
+               // Add check for the specific error we previously encountered (though unlikely now)
+               if (err.message.includes("runningMode")) {
+                    setDebugInfo(`Internal Error: detect() called on VIDEO mode landmarker.`);
+               } else {
+                    setDebugInfo(`Error during detectForVideo(): ${err.message}`); // Update debug info
+               }
+               console.error("Detection Effect: Error during faceLandmarker.detectForVideo():", err);
           } finally {
                // Crucially, set detecting to false whether detection succeeded or failed
                console.log("Detection Effect: Setting isDetecting to false.");
