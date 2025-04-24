@@ -47,36 +47,35 @@ const StaticSelfieTryOn = ({
 
    // --- Effect to Trigger Rendering ---
   useEffect(() => {
-    console.log("Render Trigger Effect:", { isPreviewing, isDetecting, hasRenderer: !!rendererRef.current, hasImage: !!staticImageRef.current, hasResults: !!detectedSelfieResults });
+    // Only run when not previewing AND renderer is ready AND static image ref is ready
     if (!isPreviewing && rendererRef.current && staticImageRef.current) {
+        // Render immediately when not detecting or when detection finishes
         if (!isDetecting) {
             console.log("Render Trigger: Calling renderStaticImageResults w/ corrections.");
-            // --- Pass correction values to renderer ---
+            // Pass correction values from props to the renderer
             rendererRef.current.renderStaticImageResults(
                 staticImageRef.current,
-                detectedSelfieResults,
-                selfieBrightness, // Pass brightness prop
-                selfieContrast    // Pass contrast prop
+                detectedSelfieResults, // Pass latest results (could be null if detection failed)
+                selfieBrightness,
+                selfieContrast
             );
         } else {
              console.log("Render Trigger: Rendering base image while detecting.");
-             // Pass current correction values even while detecting? Yes.
+             // Render just the image without results while detecting
              rendererRef.current.renderStaticImageResults(
                  staticImageRef.current,
                  null, // No results yet
-                 selfieBrightness,
+                 selfieBrightness, // Pass current correction values
                  selfieContrast
              );
         }
     } else if (isPreviewing && rendererRef.current){
-        // When switching back TO preview, ensure renderer is cleared
-        // The imperative clear might be better handled by the parent on tab switch?
-        // For now, clear it here too.
+        // If switching back TO preview, clear the renderer canvas
         console.log("Render Trigger: Clearing canvas for preview.");
         rendererRef.current.clearCanvas();
     }
-  // --- Add brightness/contrast props to dependencies ---
-  }, [isPreviewing, isDetecting, detectedSelfieResults, selfieDimensions, selfieBrightness, selfieContrast]);
+  // Dependencies should include everything that affects the render call
+  }, [isPreviewing, isDetecting, detectedSelfieResults, selfieDimensions, selfieBrightness, selfieContrast, faceLandmarker]); // Added faceLandmarker just in case
 
 
   // --- Retake Selfie ---
@@ -94,7 +93,11 @@ const StaticSelfieTryOn = ({
           {isCameraLoading && <p className="text-center py-4">Starting camera...</p>}
           {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
           <div className="relative w-full max-w-md mx-auto aspect-[9/16] bg-gray-200 overflow-hidden rounded shadow">
+            {/* Use RealTimeMirror for preview? No, separate video element */}
             <video ref={selfieVideoRef} autoPlay playsInline muted className={`absolute top-0 left-0 w-full h-full ${isCameraLoading || cameraError ? 'opacity-0' : 'opacity-100'}`} style={{ transform: 'scaleX(-1)', transition: 'opacity 0.3s', objectFit: 'cover' }}></video>
+            {/* Render TryOnRenderer BEHIND video for preview if needed for effects,
+                but for now, just the video is fine for preview */}
+            {/* {selfieDimensions.width > 0 && <TryOnRenderer ref={rendererRef} videoWidth={selfieDimensions.width} videoHeight={selfieDimensions.height} className="absolute top-0 left-0 w-full h-full opacity-50 z-0"/>} */}
             {(isCameraLoading || cameraError) && ( <div className="absolute inset-0 flex items-center justify-center"><p className="text-gray-500 bg-white px-2 py-1 rounded shadow">{cameraError ? 'Error' : 'Loading...'}</p></div> )}
           </div>
           <div className="text-center mt-4"> <button onClick={handleTakeSelfie} disabled={isCameraLoading || !!cameraError || !cameraStream} className="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed"> Take Selfie </button> </div>
@@ -102,10 +105,18 @@ const StaticSelfieTryOn = ({
       ) : (
         // --- Captured Mode JSX ---
         <>
-          {/* Selfie Display Area */}
+          {/* Selfie Display Area using TryOnRenderer */}
           <div className="relative w-full max-w-md mx-auto bg-gray-200 overflow-hidden rounded shadow" style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : 75}%` }}>
-           {selfieDimensions.width > 0 ? ( <TryOnRenderer ref={rendererRef} videoWidth={selfieDimensions.width} videoHeight={selfieDimensions.height} className="absolute top-0 left-0 w-full h-full" /> )
-           : ( <div className="absolute inset-0 flex items-center justify-center"><p className="text-gray-500">Loading Image...</p></div> )}
+           {selfieDimensions.width > 0 ? (
+             // Render TryOnRenderer here to display the static selfie
+             <TryOnRenderer
+                ref={rendererRef}
+                // Pass dimensions from state, not videoWidth/Height props
+                videoWidth={selfieDimensions.width}
+                videoHeight={selfieDimensions.height}
+                className="absolute top-0 left-0 w-full h-full"
+             />
+            ) : ( <div className="absolute inset-0 flex items-center justify-center"><p className="text-gray-500">Loading Image...</p></div> )}
           </div>
            {/* Debug Info Box */}
           <div className="mt-2 p-2 border bg-gray-100 text-xs overflow-auto max-h-20 max-w-md mx-auto rounded">

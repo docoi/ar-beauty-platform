@@ -12,8 +12,8 @@ const VirtualTryOnPage = () => {
   const { faceLandmarker, isLoading, error } = useFaceLandmarker();
 
   // --- State for Selfie Correction ---
-  const [selfieBrightness, setSelfieBrightness] = useState(1.5); // Match initial shader uniform
-  const [selfieContrast, setSelfieContrast] = useState(1.3);   // Match initial shader uniform
+  const [selfieBrightness, setSelfieBrightness] = useState(1.0); // Start neutral (1.0 = no change)
+  const [selfieContrast, setSelfieContrast] = useState(1.0);   // Start neutral (1.0 = no change)
 
   useEffect(() => {
     console.log("Hook State Update:", { isLoading, error: error?.message, faceLandmarker: !!faceLandmarker });
@@ -37,7 +37,6 @@ const VirtualTryOnPage = () => {
       {/* Conditional Rendering based on Mode */}
       <div className="try-on-container mb-4">
         {mode === 'mirror' && faceLandmarker && (
-          // Pass props even if not used yet by mirror, for consistency
           <RealTimeMirror
             faceLandmarker={faceLandmarker}
            />
@@ -60,7 +59,7 @@ const VirtualTryOnPage = () => {
            {/* --- Selfie Correction Sliders --- */}
            {/* Conditionally show or disable based on mode */}
            <div className={`mb-4 p-3 border rounded ${mode === 'selfie' ? 'bg-yellow-50' : 'bg-gray-200 opacity-50'}`}>
-                <h4 className={`text-md font-semibold mb-1 ${mode === 'selfie' ? 'text-yellow-800' : 'text-gray-500'}`}>Selfie Correction (Debug)</h4>
+                <h4 className={`text-md font-semibold mb-1 ${mode === 'selfie' ? 'text-yellow-800' : 'text-gray-500'}`}>Selfie Correction</h4>
                 <label htmlFor="brightness-slider" className="block mb-1 text-sm">Brightness: {selfieBrightness.toFixed(2)}</label>
                 <input
                     id="brightness-slider"
