@@ -57,7 +57,6 @@ const VirtualTryOnPage = () => {
            <h3 className="text-lg font-semibold mb-2">Controls</h3>
 
            {/* --- Selfie Correction Sliders --- */}
-           {/* Conditionally show or disable based on mode */}
            <div className={`mb-4 p-3 border rounded ${mode === 'selfie' ? 'bg-yellow-50' : 'bg-gray-200 opacity-50'}`}>
                 <h4 className={`text-md font-semibold mb-1 ${mode === 'selfie' ? 'text-yellow-800' : 'text-gray-500'}`}>Selfie Correction</h4>
                 <label htmlFor="brightness-slider" className="block mb-1 text-sm">Brightness: {selfieBrightness.toFixed(2)}</label>
@@ -67,7 +66,7 @@ const VirtualTryOnPage = () => {
                     value={selfieBrightness}
                     onChange={(e) => setSelfieBrightness(parseFloat(e.target.value))}
                     className="w-full accent-yellow-600 disabled:accent-gray-400"
-                    disabled={mode !== 'selfie'} // Disable if not in selfie mode
+                    disabled={mode !== 'selfie'}
                     />
                 <label htmlFor="contrast-slider" className="block mb-1 mt-2 text-sm">Contrast: {selfieContrast.toFixed(2)}</label>
                 <input
@@ -76,15 +75,12 @@ const VirtualTryOnPage = () => {
                     value={selfieContrast}
                     onChange={(e) => setSelfieContrast(parseFloat(e.target.value))}
                     className="w-full accent-yellow-600 disabled:accent-gray-400"
-                    disabled={mode !== 'selfie'} // Disable if not in selfie mode
+                    disabled={mode !== 'selfie'}
                 />
              </div>
             {/* --- END NEW SLIDERS --- */}
 
            <p className="mt-4">Effect controls will go here.</p>
-           {/* Example Effect Slider Placeholder */}
-           {/* <label htmlFor="effect-slider" className="block mb-1">Effect Intensity:</label>
-           <input id="effect-slider" type="range" min="0" max="1" step="0.01" defaultValue="0.5" className="w-full"/> */}
         </div>
     </div>
   );
