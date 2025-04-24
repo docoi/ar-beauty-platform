@@ -1,4 +1,4 @@
-// src/pages/VirtualTryOnPage.jsx - REVERTED
+// src/pages/VirtualTryOnPage.jsx - With Correction Sliders
 
 import React, { useState, useEffect } from 'react';
 import useFaceLandmarker from '../hooks/useFaceLandmarker';
@@ -11,12 +11,16 @@ const VirtualTryOnPage = () => {
   const [mode, setMode] = useState('mirror');
   const { faceLandmarker, isLoading, error } = useFaceLandmarker();
 
+  // --- State for Selfie Correction ---
+  const [selfieBrightness, setSelfieBrightness] = useState(1.5); // Match initial shader uniform
+  const [selfieContrast, setSelfieContrast] = useState(1.3);   // Match initial shader uniform
+
   useEffect(() => {
     console.log("Hook State Update:", { isLoading, error: error?.message, faceLandmarker: !!faceLandmarker });
   }, [isLoading, error, faceLandmarker]);
 
   if (isLoading) { return <div className="flex justify-center items-center h-screen"><p>Loading AI Model...</p></div>; }
-  if (error) { return <div className="flex flex-col justify-center items-center h-screen text-red-500"><p className="font-bold mb-2">Error loading model:</p><p>{error.message}</p></div>; }
+  if (error) { return <div className="flex flex-col justify-center items-center h-screen text-red-500"><p className="font-bold mb-2">Error loading model:</p><p>{error.message}</p><p>WASM files in public/wasm? Model path OK?</p></div>; }
   if (!faceLandmarker) { return <div className="flex justify-center items-center h-screen"><p>Initializing...</p></div>; }
 
   console.log("Rendering: Main content - FaceLandmarker ready.");
@@ -33,19 +37,55 @@ const VirtualTryOnPage = () => {
       {/* Conditional Rendering based on Mode */}
       <div className="try-on-container mb-4">
         {mode === 'mirror' && faceLandmarker && (
-          <RealTimeMirror faceLandmarker={faceLandmarker} />
+          // Pass props even if not used yet by mirror, for consistency
+          <RealTimeMirror
+            faceLandmarker={faceLandmarker}
+           />
         )}
         {mode === 'selfie' && faceLandmarker && (
-          <StaticSelfieTryOn faceLandmarker={faceLandmarker} />
+          <StaticSelfieTryOn
+            faceLandmarker={faceLandmarker}
+            // --- PASS PROPS ---
+            selfieBrightness={selfieBrightness}
+            selfieContrast={selfieContrast}
+            // --- END PASS PROPS ---
+          />
         )}
       </div>
 
-        {/* Controls Area (Placeholder) */}
-        <div className="mt-4 p-4 border rounded bg-gray-100">
+        {/* Controls Area */}
+        <div className="mt-4 p-4 border rounded bg-gray-100 max-w-md mx-auto">
            <h3 className="text-lg font-semibold mb-2">Controls</h3>
-           <p>Effect controls (like sliders) will go here.</p>
-           <label htmlFor="effect-slider" className="block mb-1">Effect Intensity:</label>
-           <input id="effect-slider" type="range" min="0" max="1" step="0.01" defaultValue="0.5" className="w-full"/>
+
+           {/* --- Selfie Correction Sliders --- */}
+           {/* Conditionally show or disable based on mode */}
+           <div className={`mb-4 p-3 border rounded ${mode === 'selfie' ? 'bg-yellow-50' : 'bg-gray-200 opacity-50'}`}>
+                <h4 className={`text-md font-semibold mb-1 ${mode === 'selfie' ? 'text-yellow-800' : 'text-gray-500'}`}>Selfie Correction (Debug)</h4>
+                <label htmlFor="brightness-slider" className="block mb-1 text-sm">Brightness: {selfieBrightness.toFixed(2)}</label>
+                <input
+                    id="brightness-slider"
+                    type="range" min="0.5" max="2.5" step="0.05"
+                    value={selfieBrightness}
+                    onChange={(e) => setSelfieBrightness(parseFloat(e.target.value))}
+                    className="w-full accent-yellow-600 disabled:accent-gray-400"
+                    disabled={mode !== 'selfie'} // Disable if not in selfie mode
+                    />
+                <label htmlFor="contrast-slider" className="block mb-1 mt-2 text-sm">Contrast: {selfieContrast.toFixed(2)}</label>
+                <input
+                    id="contrast-slider"
+                    type="range" min="0.5" max="2.5" step="0.05"
+                    value={selfieContrast}
+                    onChange={(e) => setSelfieContrast(parseFloat(e.target.value))}
+                    className="w-full accent-yellow-600 disabled:accent-gray-400"
+                    disabled={mode !== 'selfie'} // Disable if not in selfie mode
+                />
+             </div>
+            {/* --- END NEW SLIDERS --- */}
+
+           <p className="mt-4">Effect controls will go here.</p>
+           {/* Example Effect Slider Placeholder */}
+           {/* <label htmlFor="effect-slider" className="block mb-1">Effect Intensity:</label>
+           <input id="effect-slider" type="range" min="0" max="1" step="0.01" defaultValue="0.5" className="w-full"/> */}
         </div>
     </div>
   );

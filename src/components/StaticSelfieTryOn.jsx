@@ -1,11 +1,15 @@
-// src/components/StaticSelfieTryOn.jsx - REVERTED
+// src/components/StaticSelfieTryOn.jsx - Accepts Correction Props
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import TryOnRenderer from './TryOnRenderer';
 
-// No extra props needed for correction yet
-const StaticSelfieTryOn = ({ faceLandmarker }) => {
-  console.log("StaticSelfieTryOn rendering.");
+// --- Accept new props ---
+const StaticSelfieTryOn = ({
+    faceLandmarker,
+    selfieBrightness, // Accept brightness prop
+    selfieContrast    // Accept contrast prop
+}) => {
+  console.log("StaticSelfieTryOn rendering. Correction props:", { selfieBrightness, selfieContrast });
 
   // State
   const [isPreviewing, setIsPreviewing] = useState(true);
@@ -23,49 +27,63 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
   const rendererRef = useRef(null);
   const staticImageRef = useRef(null);
 
-  // --- Camera Access Logic (Keep as is) ---
-  useEffect(() => { /* ... */
-      let isMounted = true; let stream = null;
-      const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } console.log("Selfie Mode: Requesting camera..."); setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); console.log("Selfie Mode: Stream acquired."); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream.getTracks().forEach(track => track.stop()); } } catch (err) { console.error("Selfie Mode: Camera Error:", err); if (isMounted) { let message = "Camera Error."; if (err.name === "NotFoundError") message = "No camera found."; else if (err.name === "NotAllowedError") message = "Permission denied."; else if (err.name === "NotReadableError") message = "Camera in use."; setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } };
-      if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); }
-      return () => { isMounted = false; console.log("Cleaning up Selfie Camera..."); const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); };
+  // --- Camera Access Logic ---
+  useEffect(() => {
+    let isMounted = true; let stream = null;
+    const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } console.log("Selfie Mode: Requesting camera..."); setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); console.log("Selfie Mode: Stream acquired."); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream.getTracks().forEach(track => track.stop()); } } catch (err) { console.error("Selfie Mode: Camera Error:", err); if (isMounted) { let message = "Camera Error."; if (err.name === "NotFoundError") message = "No camera found."; else if (err.name === "NotAllowedError") message = "Permission denied."; else if (err.name === "NotReadableError") message = "Camera in use."; setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } };
+    if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); }
+    return () => { isMounted = false; console.log("Cleaning up Selfie Camera..."); const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); };
   }, [isPreviewing, faceLandmarker]);
 
-  // --- Selfie Capture (NO FILTER - Keep as is from reverted state)---
-  const handleTakeSelfie = useCallback(() => { /* ... */
-      if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; } if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; } console.log("Taking selfie..."); setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png'); console.log("Selfie Captured. URL length:", dataUrl.length); setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedSelfieResults(null); setIsDetecting(true); setDebugInfo('Capture complete. Analyzing...'); cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null);
+  // --- Selfie Capture ---
+  const handleTakeSelfie = useCallback(() => {
+    if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; } if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; } console.log("Taking selfie..."); setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png'); console.log("Selfie Captured. URL length:", dataUrl.length); setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedSelfieResults(null); setIsDetecting(true); setDebugInfo('Capture complete. Analyzing...'); cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null);
   }, [cameraStream, selfieDimensions]);
 
-  // --- Face Detection (Keep as is) ---
-  useEffect(() => { /* ... */
-    if (!capturedSelfieDataUrl || !faceLandmarker || !isDetecting) return; console.log("Detection Effect: Starting..."); setDebugInfo('Detecting...'); const imageElement = new Image(); imageElement.onload = async () => { console.log("Detection Effect: Image loaded."); staticImageRef.current = imageElement; setDebugInfo('Image loaded, detecting...'); try { if (faceLandmarker) { const results = faceLandmarker.detectForVideo(imageElement, performance.now()); console.log("Detection Effect: Finished."); if (results?.faceLandmarks?.length > 0) { setDebugInfo(`Detection OK. ${results.faceLandmarks.length} face(s). Landmarks[0]: ${results.faceLandmarks[0]?.length}`); } else { setDebugInfo('Detection OK. No face found.'); } setDetectedSelfieResults(results); } else { setDebugInfo('Error: Landmarker gone.'); } } catch(err) { setDebugInfo(`Detection Error: ${err.message}`); console.error("Detection Error:", err); } finally { setIsDetecting(false); } } ; imageElement.onerror = () => { setDebugInfo('Error: Img load failed.'); setIsDetecting(false); } ; imageElement.src = capturedSelfieDataUrl;
+  // --- Face Detection on Captured Selfie ---
+  useEffect(() => {
+    if (!capturedSelfieDataUrl || !faceLandmarker || !isDetecting) return; console.log("Detection Effect: Starting..."); setDebugInfo('Detecting...'); const imageElement = new Image(); imageElement.onload = async () => { console.log("Detection Effect: Image loaded."); staticImageRef.current = imageElement; setDebugInfo('Image loaded, detecting...'); try { if (faceLandmarker) { const results = faceLandmarker.detectForVideo(imageElement, performance.now()); console.log("Detection Effect: Finished."); if (results?.faceLandmarks?.length > 0) { setDebugInfo(`Detection OK. ${results.faceLandmarks.length} face(s). L[0]: ${results.faceLandmarks[0]?.length}`); } else { setDebugInfo('Detection OK. No face found.'); } setDetectedSelfieResults(results); } else { setDebugInfo('Error: Landmarker gone.'); } } catch(err) { setDebugInfo(`Detection Error: ${err.message}`); console.error("Detection Error:", err); } finally { setIsDetecting(false); } } ; imageElement.onerror = () => { setDebugInfo('Error: Img load failed.'); setIsDetecting(false); } ; imageElement.src = capturedSelfieDataUrl;
   }, [capturedSelfieDataUrl, faceLandmarker, isDetecting]);
 
-   // --- Effect to Trigger Rendering (No correction props passed) ---
+   // --- Effect to Trigger Rendering ---
   useEffect(() => {
     console.log("Render Trigger Effect:", { isPreviewing, isDetecting, hasRenderer: !!rendererRef.current, hasImage: !!staticImageRef.current, hasResults: !!detectedSelfieResults });
     if (!isPreviewing && rendererRef.current && staticImageRef.current) {
         if (!isDetecting) {
-            console.log("Render Trigger: Calling renderStaticImageResults.");
-            // Call without brightness/contrast
-            rendererRef.current.renderStaticImageResults(staticImageRef.current, detectedSelfieResults);
+            console.log("Render Trigger: Calling renderStaticImageResults w/ corrections.");
+            // --- Pass correction values to renderer ---
+            rendererRef.current.renderStaticImageResults(
+                staticImageRef.current,
+                detectedSelfieResults,
+                selfieBrightness, // Pass brightness prop
+                selfieContrast    // Pass contrast prop
+            );
         } else {
              console.log("Render Trigger: Rendering base image while detecting.");
-             // Call without brightness/contrast
-             rendererRef.current.renderStaticImageResults(staticImageRef.current, null);
+             // Pass current correction values even while detecting? Or defaults?
+             // Passing current values allows seeing effect while analyzing if needed, though confusing.
+             // Let's pass current correction values.
+             rendererRef.current.renderStaticImageResults(
+                 staticImageRef.current,
+                 null, // No results yet
+                 selfieBrightness,
+                 selfieContrast
+             );
         }
     } else if (isPreviewing && rendererRef.current){
         console.log("Render Trigger: Clearing canvas for preview.");
         rendererRef.current.clearCanvas(); // Clear renderer when switching back to preview
     }
-  }, [isPreviewing, isDetecting, detectedSelfieResults, selfieDimensions]); // Removed correction props from deps
+  // --- Add brightness/contrast props to dependencies ---
+  }, [isPreviewing, isDetecting, detectedSelfieResults, selfieDimensions, selfieBrightness, selfieContrast]);
 
-  // --- Retake Selfie (Keep as is) ---
-  const handleRetakeSelfie = () => { /* ... Reset state ... */
+
+  // --- Retake Selfie ---
+  const handleRetakeSelfie = () => {
     console.log("Retaking selfie..."); setIsPreviewing(true); setCapturedSelfieDataUrl(null); setDetectedSelfieResults(null); staticImageRef.current = null; setCameraError(null); setIsCameraLoading(true); setIsDetecting(false); setDebugInfo('');
   };
 
-  // --- JSX (Corrected Structure) ---
+  // --- JSX ---
   return (
     <div className="border p-4 rounded bg-green-50">
       <h2 className="text-xl font-semibold mb-2 text-center">Try On Selfie Mode</h2>
