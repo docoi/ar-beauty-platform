@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - Revert to Logic in Handles (Careful Version)
+// src/components/TryOnRenderer.jsx - Create NEW Texture Every Time
 
 import React, { useRef, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -11,19 +11,17 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
   const planeMeshRef = useRef(null);
-  const videoTextureRef = useRef(null); // Keep separate refs
-  const imageTextureRef = useRef(null);
+  // REMOVED videoTextureRef and imageTextureRef - will create new ones
   const isInitialized = useRef(false);
   const animationFrameHandle = useRef(null);
-  // Remove currentSourceElement/currentResults refs - state managed via handles
 
-  // --- Shaders with Correction ---
+  // --- Shaders ---
   const vertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
-  const fragmentShader = `uniform sampler2D uTexture; uniform bool uIsStaticImage; uniform float uBrightness; uniform float uContrast; varying vec2 vUv; vec3 cAdjust(vec3 c, float v){return 0.5+v*(c-0.5);} void main() { vec4 tColor = vec4(0.3, 0.3, 0.3, 1.0); bool textureValid = uTexture != sampler2D(0); if (textureValid) { tColor = texture2D(uTexture, vUv); } if (uIsStaticImage && textureValid) { tColor.rgb *= uBrightness; tColor.rgb = cAdjust(tColor.rgb, uContrast); tColor.rgb = clamp(tColor.rgb, 0.0, 1.0); } gl_FragColor = tColor; }`;
+  const fragmentShader = `uniform sampler2D uTexture; uniform bool uIsStaticImage; uniform float uBrightness; uniform float uContrast; varying vec2 vUv; vec3 cAdjust(vec3 c, float v){return 0.5+v*(c-0.5);} void main() { vec4 tColor = vec4(0.3, 0.3, 0.3, 1.0); bool textureValid = uTexture != sampler2D(0); if (textureValid) { tColor = texture2D(uTexture, vUv); } else { /* Keep default gray if no texture */ } if (uIsStaticImage && textureValid) { tColor.rgb *= uBrightness; tColor.rgb = cAdjust(tColor.rgb, uContrast); tColor.rgb = clamp(tColor.rgb, 0.0, 1.0); } gl_FragColor = tColor; }`;
 
   // --- Handle Resizing ---
   const handleResize = useCallback(() => { /* ... */
-    const canvas = canvasRef.current; if (!rendererInstanceRef.current || !cameraRef.current || !canvas) return; const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight; if (newWidth === 0 || newHeight === 0) return; const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return; /* console.log(`DEBUG: Resizing -> ${newWidth}x${newHeight}`); */ rendererInstanceRef.current.setSize(newWidth, newHeight); cameraRef.current.left = -newWidth / 2; cameraRef.current.right = newWidth / 2; cameraRef.current.top = newHeight / 2; cameraRef.current.bottom = -newHeight / 2; cameraRef.current.updateProjectionMatrix();
+    const canvas = canvasRef.current; if (!rendererInstanceRef.current || !cameraRef.current || !canvas) return; const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight; if (newWidth === 0 || newHeight === 0) return; const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return; rendererInstanceRef.current.setSize(newWidth, newHeight); cameraRef.current.left = -newWidth / 2; cameraRef.current.right = newWidth / 2; cameraRef.current.top = newHeight / 2; cameraRef.current.bottom = -newHeight / 2; cameraRef.current.updateProjectionMatrix();
    }, []);
 
   // --- Initialize Scene ---
@@ -33,7 +31,11 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
 
   // --- Effect for Initial Setup / Resize Observer ---
   useEffect(() => { /* ... */
-    initThreeScene(); let resizeObserver; if (canvasRef.current) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(canvasRef.current); } return () => { console.log("DEBUG: Cleanup running..."); resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false; videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); planeMeshRef.current?.geometry?.dispose(); planeMeshRef.current?.material?.map?.dispose(); planeMeshRef.current?.material?.dispose(); rendererInstanceRef.current?.dispose(); /* Clear refs */ videoTextureRef.current = null; imageTextureRef.current = null; planeMeshRef.current = null; sceneRef.current = null; cameraRef.current = null; rendererInstanceRef.current = null;};
+    initThreeScene(); let resizeObserver; if (canvasRef.current) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(canvasRef.current); }
+    return () => { console.log("DEBUG: Cleanup running..."); resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false;
+        // Dispose texture stored in uniform!
+        planeMeshRef.current?.material?.uniforms?.uTexture?.value?.dispose();
+        planeMeshRef.current?.geometry?.dispose(); planeMeshRef.current?.material?.dispose(); rendererInstanceRef.current?.dispose(); /* Clear refs */ planeMeshRef.current = null; sceneRef.current = null; cameraRef.current = null; rendererInstanceRef.current = null;};
    }, [initThreeScene, handleResize]);
 
   // --- Scale Plane ---
@@ -41,85 +43,61 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
       if (!cameraRef.current || !planeMeshRef.current || !textureWidth || !textureHeight) return; const canvas = canvasRef.current; if (!canvas) return; const cameraWidth = canvas.clientWidth; const cameraHeight = canvas.clientHeight; if (cameraWidth === 0 || cameraHeight === 0) return; const cameraAspect = cameraWidth / cameraHeight; const textureAspect = textureWidth / textureHeight; let scaleX, scaleY; if (cameraAspect > textureAspect) { scaleY = cameraHeight; scaleX = scaleY * textureAspect; } else { scaleX = cameraWidth; scaleY = scaleX / textureAspect; } planeMeshRef.current.scale.y = scaleY; planeMeshRef.current.scale.x = scaleX;
    }, []);
 
-  // --- Render Loop (Only Renders) ---
-  const renderLoop = useCallback(() => {
-       animationFrameHandle.current = requestAnimationFrame(renderLoop);
-       if (isInitialized.current && rendererInstanceRef.current && sceneRef.current && cameraRef.current) {
-           try { rendererInstanceRef.current.render(sceneRef.current, cameraRef.current); }
-           catch (e) { console.error("!!! RENDER LOOP ERROR:", e); cancelAnimationFrame(animationFrameHandle.current); }
-       }
-  }, []);
+  // --- Render Loop ---
+  const renderLoop = useCallback(() => { /* ... */
+       animationFrameHandle.current = requestAnimationFrame(renderLoop); if (isInitialized.current && rendererInstanceRef.current && sceneRef.current && cameraRef.current) { try { rendererInstanceRef.current.render(sceneRef.current, cameraRef.current); } catch (e) { console.error("!!! RENDER LOOP ERROR:", e); cancelAnimationFrame(animationFrameHandle.current); } }
+   }, []);
 
   // --- Start Render Loop ---
   useEffect(() => { if (isInitialized.current) { cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop); } }, [renderLoop]);
 
-  // --- Expose Methods (Logic Back in Handles) ---
+  // --- Expose Methods (Create NEW Texture Every Time) ---
   useImperativeHandle(ref, () => ({
     renderResults: (videoElement, results) => { // For Mirror
-        if (!isInitialized.current || !planeMeshRef.current || !planeMeshRef.current.material.uniforms || !videoElement || videoElement.readyState < 2) {
-            // console.log("Handle Mirror: Waiting..."); // Reduce noise
-            return;
-        }
+        if (!isInitialized.current || !planeMeshRef.current || !planeMeshRef.current.material.uniforms || !videoElement || videoElement.readyState < 2) return;
         const uniforms = planeMeshRef.current.material.uniforms;
         const videoW = videoElement.videoWidth; const videoH = videoElement.videoHeight;
 
         try {
-            // Update video texture if needed
-            if (uniforms.uTexture.value !== videoTextureRef.current || videoTextureRef.current?.image !== videoElement) {
-                console.log("Handle Mirror: Creating/Assigning Video Texture");
-                videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); imageTextureRef.current = null;
-                videoTextureRef.current = new THREE.VideoTexture(videoElement);
-                videoTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                uniforms.uTexture.value = videoTextureRef.current;
-                planeMeshRef.current.material.needsUpdate = true; // Update material state
-            } else {
-                // If texture exists, maybe material still needs update?
-                 planeMeshRef.current.material.needsUpdate = true;
-            }
-            uniforms.uIsStaticImage.value = false; // Set flag
+            // *** ALWAYS CREATE NEW TEXTURE ***
+            console.log("Handle Mirror: Creating NEW Video Texture");
+            // Dispose texture currently in the uniform before replacing
+            uniforms.uTexture.value?.dispose();
+            const newTexture = new THREE.VideoTexture(videoElement);
+            newTexture.colorSpace = THREE.SRGBColorSpace;
+            uniforms.uTexture.value = newTexture; // Assign new texture
+            uniforms.uIsStaticImage.value = false;
+            planeMeshRef.current.material.needsUpdate = true;
 
-            // Scale and mirror plane
+            // Scale and mirror
             if (videoW > 0) { fitPlaneToCamera(videoW, videoH); planeMeshRef.current.scale.x = -Math.abs(planeMeshRef.current.scale.x); }
             else { planeMeshRef.current.scale.set(0,0,0); }
-
         } catch (e) { console.error("!!! ERROR inside renderResults handle:", e); }
     },
     renderStaticImageResults: (imageElement, results) => { // For Selfie
-        console.log("Handle: renderStaticImageResults called.");
-        if (!isInitialized.current || !planeMeshRef.current || !planeMeshRef.current.material.uniforms || !imageElement || !imageElement.complete || imageElement.naturalWidth === 0) {
-             console.log("Handle Selfie: Waiting...");
-             return;
-        }
+        console.log("Handle Selfie: Creating NEW Image Texture");
+        if (!isInitialized.current || !planeMeshRef.current || !planeMeshRef.current.material.uniforms || !imageElement || !imageElement.complete || imageElement.naturalWidth === 0) return;
         const uniforms = planeMeshRef.current.material.uniforms;
         const imgWidth = imageElement.naturalWidth; const imgHeight = imageElement.naturalHeight;
 
         try {
-            // Update image texture if needed
-            if (uniforms.uTexture.value !== imageTextureRef.current || !imageTextureRef.current || imageTextureRef.current.image !== imageElement) {
-                console.log("Handle Selfie: Creating/Assigning Image Texture");
-                videoTextureRef.current?.dispose(); videoTextureRef.current = null;
-                imageTextureRef.current?.dispose();
-                imageTextureRef.current = new THREE.Texture(imageElement);
-                imageTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                imageTextureRef.current.needsUpdate = true; // Image needs this flag
-                uniforms.uTexture.value = imageTextureRef.current;
-                planeMeshRef.current.material.needsUpdate = true; // Update material state
-            } else if (imageTextureRef.current) {
-                 imageTextureRef.current.needsUpdate = true; // Ensure flag set
-                 planeMeshRef.current.material.needsUpdate = true; // Update material state
-            }
+             // *** ALWAYS CREATE NEW TEXTURE ***
+            // Dispose texture currently in the uniform before replacing
+            uniforms.uTexture.value?.dispose();
+            const newTexture = new THREE.Texture(imageElement);
+            newTexture.colorSpace = THREE.SRGBColorSpace;
+            newTexture.needsUpdate = true;
+            uniforms.uTexture.value = newTexture; // Assign new texture
+            uniforms.uIsStaticImage.value = true;
+            planeMeshRef.current.material.needsUpdate = true;
 
-            uniforms.uIsStaticImage.value = true; // Set flag for shader correction
-            // Default brightness/contrast are set in init
-
-            // Scale plane (no mirroring)
+            // Scale (no mirror)
             if (imgWidth > 0) { fitPlaneToCamera(imgWidth, imgHeight); planeMeshRef.current.scale.x = Math.abs(planeMeshRef.current.scale.x); }
             else { planeMeshRef.current.scale.set(0,0,0); }
-
         } catch(e) { console.error("!!! ERROR inside renderStaticImageResults handle:", e); }
     },
-    clearCanvas: () => { /* ... Keep clearCanvas method ... */
-         console.log("Handle: Clearing canvas source."); const uniforms = planeMeshRef.current?.material?.uniforms; if (planeMeshRef.current?.material) { if (uniforms?.uTexture?.value) { uniforms.uTexture.value.dispose(); } if (uniforms) uniforms.uTexture.value = null; planeMeshRef.current.material.needsUpdate = true; planeMeshRef.current.scale.set(0,0,0); } videoTextureRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current?.dispose(); imageTextureRef.current = null;
+    clearCanvas: () => { /* ... Keep clearCanvas method - dispose uniform texture */
+        console.log("Handle: Clearing canvas source."); const uniforms = planeMeshRef.current?.material?.uniforms; if (planeMeshRef.current?.material) { if (uniforms?.uTexture?.value) { uniforms.uTexture.value.dispose(); } if (uniforms) uniforms.uTexture.value = null; planeMeshRef.current.material.needsUpdate = true; planeMeshRef.current.scale.set(0,0,0); }
     }
   }));
 
