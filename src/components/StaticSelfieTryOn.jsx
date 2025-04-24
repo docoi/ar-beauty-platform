@@ -1,11 +1,15 @@
-// src/components/StaticSelfieTryOn.jsx - REVERTED (No correction props)
+// src/components/StaticSelfieTryOn.jsx - Accepts Correction Props
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import TryOnRenderer from './TryOnRenderer';
 
-// No extra props needed for correction yet
-const StaticSelfieTryOn = ({ faceLandmarker }) => {
-  console.log("StaticSelfieTryOn rendering.");
+// --- Accept new props ---
+const StaticSelfieTryOn = ({
+    faceLandmarker,
+    selfieBrightness, // Accept brightness prop
+    selfieContrast    // Accept contrast prop
+}) => {
+  console.log("StaticSelfieTryOn rendering. Correction props:", { selfieBrightness, selfieContrast });
 
   // State
   const [isPreviewing, setIsPreviewing] = useState(true);
@@ -36,7 +40,7 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
     if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; } if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; } console.log("Taking selfie..."); setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png'); console.log("Selfie Captured. URL length:", dataUrl.length); setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedSelfieResults(null); setIsDetecting(true); setDebugInfo('Capture complete. Analyzing...'); cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null);
   }, [cameraStream, selfieDimensions]);
 
-  // --- Face Detection ---
+  // --- Face Detection on Captured Selfie ---
   useEffect(() => {
     if (!capturedSelfieDataUrl || !faceLandmarker || !isDetecting) return; console.log("Detection Effect: Starting..."); setDebugInfo('Detecting...'); const imageElement = new Image(); imageElement.onload = async () => { console.log("Detection Effect: Image loaded."); staticImageRef.current = imageElement; setDebugInfo('Image loaded, detecting...'); try { if (faceLandmarker) { const results = faceLandmarker.detectForVideo(imageElement, performance.now()); console.log("Detection Effect: Finished."); if (results?.faceLandmarks?.length > 0) { setDebugInfo(`Detection OK. ${results.faceLandmarks.length} face(s). L[0]: ${results.faceLandmarks[0]?.length}`); } else { setDebugInfo('Detection OK. No face found.'); } setDetectedSelfieResults(results); } else { setDebugInfo('Error: Landmarker gone.'); } } catch(err) { setDebugInfo(`Detection Error: ${err.message}`); console.error("Detection Error:", err); } finally { setIsDetecting(false); } } ; imageElement.onerror = () => { setDebugInfo('Error: Img load failed.'); setIsDetecting(false); } ; imageElement.src = capturedSelfieDataUrl;
   }, [capturedSelfieDataUrl, faceLandmarker, isDetecting]);
@@ -46,20 +50,34 @@ const StaticSelfieTryOn = ({ faceLandmarker }) => {
     console.log("Render Trigger Effect:", { isPreviewing, isDetecting, hasRenderer: !!rendererRef.current, hasImage: !!staticImageRef.current, hasResults: !!detectedSelfieResults });
     if (!isPreviewing && rendererRef.current && staticImageRef.current) {
         if (!isDetecting) {
-            console.log("Render Trigger: Calling renderStaticImageResults.");
-            // Call without brightness/contrast
-            rendererRef.current.renderStaticImageResults(staticImageRef.current, detectedSelfieResults);
+            console.log("Render Trigger: Calling renderStaticImageResults w/ corrections.");
+            // --- Pass correction values to renderer ---
+            rendererRef.current.renderStaticImageResults(
+                staticImageRef.current,
+                detectedSelfieResults,
+                selfieBrightness, // Pass brightness prop
+                selfieContrast    // Pass contrast prop
+            );
         } else {
              console.log("Render Trigger: Rendering base image while detecting.");
-             // Call without brightness/contrast
-             rendererRef.current.renderStaticImageResults(staticImageRef.current, null);
+             // Pass current correction values even while detecting? Yes.
+             rendererRef.current.renderStaticImageResults(
+                 staticImageRef.current,
+                 null, // No results yet
+                 selfieBrightness,
+                 selfieContrast
+             );
         }
     } else if (isPreviewing && rendererRef.current){
+        // When switching back TO preview, ensure renderer is cleared
+        // The imperative clear might be better handled by the parent on tab switch?
+        // For now, clear it here too.
         console.log("Render Trigger: Clearing canvas for preview.");
-        rendererRef.current.clearCanvas(); // Clear renderer when switching back to preview
+        rendererRef.current.clearCanvas();
     }
-    // No correction props needed in dependency array
-  }, [isPreviewing, isDetecting, detectedSelfieResults, selfieDimensions]);
+  // --- Add brightness/contrast props to dependencies ---
+  }, [isPreviewing, isDetecting, detectedSelfieResults, selfieDimensions, selfieBrightness, selfieContrast]);
+
 
   // --- Retake Selfie ---
   const handleRetakeSelfie = () => {
