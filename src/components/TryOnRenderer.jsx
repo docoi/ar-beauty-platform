@@ -10,42 +10,64 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
   const rendererInstanceRef = useRef(null);
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
-  const videoTextureRef = useRef(null); // Keep separate refs
+  const videoTextureRef = useRef(null);
   const imageTextureRef = useRef(null);
-  const planeMeshRef = useRef(null);
+  const planeMeshRef = useRef(null); // Ref to the Mesh object
   const isInitialized = useRef(false);
-  const currentSourceElement = useRef(null); // Renamed for clarity
+  const currentSourceElement = useRef(null);
   const currentResults = useRef(null);
   const animationFrameHandle = useRef(null);
 
-  // --- Shader Definitions (Keep as is) ---
+  // --- Shader Definitions ---
   const basicVertexShader = `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
   `;
+
+  // *** MODIFIED FRAGMENT SHADER ***
   const basicFragmentShader = `
     uniform sampler2D uTexture;
+    uniform bool uIsStaticImage; // NEW: Flag to indicate source type
+    uniform float uBrightness;    // NEW: Brightness adjustment
+    uniform float uContrast;      // NEW: Contrast adjustment (optional)
     varying vec2 vUv;
-    void main() { gl_FragColor = texture2D(uTexture, vUv); }
+
+    // Helper for contrast
+    // vec3 contrast(vec3 color, float value) {
+    //    return 0.5 + value * (color - 0.5);
+    // }
+
+    void main() {
+      vec4 textureColor = texture2D(uTexture, vUv);
+
+      // Apply correction only if it's the static image
+      if (uIsStaticImage) {
+        // Apply brightness correction
+        textureColor.rgb *= uBrightness;
+
+        // Optional: Apply contrast (can make darks darker, adjust carefully)
+        // textureColor.rgb = contrast(textureColor.rgb, uContrast);
+
+        // Clamp colors to avoid exceeding 1.0 (can cause issues)
+        // textureColor.rgb = clamp(textureColor.rgb, 0.0, 1.0); // Basic clamp
+      }
+
+      gl_FragColor = textureColor;
+    }
   `;
+  // --- END SHADER MODIFICATION ---
 
   // --- Handle Resizing (Keep as is) ---
   const handleResize = useCallback(() => { /* ... */
-      const canvas = canvasRef.current;
-      if (!rendererInstanceRef.current || !cameraRef.current || !canvas) return;
-      const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight;
-      if (newWidth === 0 || newHeight === 0) return;
-      const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2());
-      if (currentSize.x === newWidth && currentSize.y === newHeight) return;
-      console.log(`Renderer: Resizing canvas -> ${newWidth}x${newHeight}.`);
+      const canvas = canvasRef.current; if (!rendererInstanceRef.current || !cameraRef.current || !canvas) return;
+      const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight; if (newWidth === 0 || newHeight === 0) return;
+      const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return;
       rendererInstanceRef.current.setSize(newWidth, newHeight);
-      cameraRef.current.left = -newWidth / 2; cameraRef.current.right = newWidth / 2;
-      cameraRef.current.top = newHeight / 2; cameraRef.current.bottom = -newHeight / 2;
-      cameraRef.current.updateProjectionMatrix();
+      cameraRef.current.left = -newWidth / 2; cameraRef.current.right = newWidth / 2; cameraRef.current.top = newHeight / 2; cameraRef.current.bottom = -newHeight / 2; cameraRef.current.updateProjectionMatrix();
   }, []);
 
-  // --- Initialize Three.js Scene (Keep as is) ---
-  const initThreeScene = useCallback(() => { /* ... */
+  // --- Initialize Three.js Scene ---
+  const initThreeScene = useCallback(() => {
     if (!canvasRef.current || isInitialized.current) return;
     console.log("Renderer: Initializing Three.js scene...");
     try {
@@ -58,15 +80,24 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
       rendererInstanceRef.current.setSize(initialWidth, initialHeight);
       rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio);
       rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
+
       const planeGeometry = new THREE.PlaneGeometry(1, 1);
+      // *** UPDATE SHADERMATERIAL WITH NEW UNIFORMS ***
       const planeMaterial = new THREE.ShaderMaterial({
           vertexShader: basicVertexShader, fragmentShader: basicFragmentShader,
-          uniforms: { uTexture: { value: null } }, side: THREE.DoubleSide,
+          uniforms: {
+              uTexture: { value: null },
+              uIsStaticImage: { value: false }, // Default to false (video)
+              uBrightness: { value: 1.3 },      // Default brightness boost (adjust as needed)
+              uContrast: { value: 1.0 },        // Default contrast (1.0 = no change)
+          },
+          side: THREE.DoubleSide,
       });
+      // *** END SHADERMATERIAL UPDATE ***
       planeMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial);
       planeMeshRef.current.position.z = 0; planeMeshRef.current.scale.set(1, 1, 1);
       sceneRef.current.add(planeMeshRef.current); isInitialized.current = true;
-      console.log("Renderer: Three.js scene initialized with ShaderMaterial.");
+      console.log("Renderer: Scene initialized with updated ShaderMaterial.");
       handleResize();
     } catch (error) { console.error("Error initializing Three.js:", error); }
   }, [handleResize, basicVertexShader, basicFragmentShader]);
@@ -74,185 +105,74 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
   // --- Effect for Initial Setup and Resize Observer (Keep as is) ---
   useEffect(() => { /* ... */
     initThreeScene();
-    let resizeObserver;
-    if (canvasRef.current) {
-        resizeObserver = new ResizeObserver(() => { handleResize(); });
-        resizeObserver.observe(canvasRef.current);
-    }
-    return () => {
-        console.log("Renderer: Cleaning up...");
-        resizeObserver?.disconnect();
-        cancelAnimationFrame(animationFrameHandle.current);
-        isInitialized.current = false;
-        videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose();
-        planeMeshRef.current?.material?.uniforms?.uTexture?.value?.dispose();
-        planeMeshRef.current?.geometry?.dispose(); planeMeshRef.current?.material?.dispose();
-        rendererInstanceRef.current?.dispose();
-        videoTextureRef.current = null; imageTextureRef.current = null; planeMeshRef.current = null;
-        sceneRef.current = null; cameraRef.current = null; rendererInstanceRef.current = null;
-        currentSourceElement.current = null; currentResults.current = null;
-    };
+    let resizeObserver; if (canvasRef.current) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(canvasRef.current); }
+    return () => { /* ... cleanup ... */ console.log("Renderer: Cleaning up..."); resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false; videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); planeMeshRef.current?.material?.uniforms?.uTexture?.value?.dispose(); planeMeshRef.current?.geometry?.dispose(); planeMeshRef.current?.material?.dispose(); rendererInstanceRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current = null; planeMeshRef.current = null; sceneRef.current = null; cameraRef.current = null; rendererInstanceRef.current = null; currentSourceElement.current = null; currentResults.current = null; };
   }, [initThreeScene, handleResize]);
 
   // --- Scale Plane to Fit Camera View (Keep as is) ---
   const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */
-      if (!cameraRef.current || !planeMeshRef.current || !textureWidth || !textureHeight) return;
-      const canvas = canvasRef.current; if (!canvas) return;
-      const cameraWidth = canvas.clientWidth; const cameraHeight = canvas.clientHeight;
-      if (cameraWidth === 0 || cameraHeight === 0) return;
-      const cameraAspect = cameraWidth / cameraHeight; const textureAspect = textureWidth / textureHeight;
-      let scaleX, scaleY;
-      if (cameraAspect > textureAspect) { scaleY = cameraHeight; scaleX = scaleY * textureAspect; }
-      else { scaleX = cameraWidth; scaleY = scaleX / textureAspect; }
-      planeMeshRef.current.scale.y = scaleY; // Keep Y scale positive
-      planeMeshRef.current.scale.x = scaleX; // X scale will be flipped for mirror later
+      if (!cameraRef.current || !planeMeshRef.current || !textureWidth || !textureHeight) return; const canvas = canvasRef.current; if (!canvas) return; const cameraWidth = canvas.clientWidth; const cameraHeight = canvas.clientHeight; if (cameraWidth === 0 || cameraHeight === 0) return; const cameraAspect = cameraWidth / cameraHeight; const textureAspect = textureWidth / textureHeight; let scaleX, scaleY; if (cameraAspect > textureAspect) { scaleY = cameraHeight; scaleX = scaleY * textureAspect; } else { scaleX = cameraWidth; scaleY = scaleX / textureAspect; } planeMeshRef.current.scale.y = scaleY; planeMeshRef.current.scale.x = scaleX;
   }, []);
 
   // --- Main Render Loop Logic ---
   const renderLoop = useCallback(() => {
-       animationFrameHandle.current = requestAnimationFrame(renderLoop); // Schedule next frame first
+       animationFrameHandle.current = requestAnimationFrame(renderLoop);
+       if (!isInitialized.current || !rendererInstanceRef.current || !sceneRef.current || !cameraRef.current || !planeMeshRef.current || !planeMeshRef.current.material?.uniforms) return; // Added uniforms check
 
-       if (!isInitialized.current || !rendererInstanceRef.current || !sceneRef.current || !cameraRef.current || !planeMeshRef.current || !planeMeshRef.current.material?.uniforms?.uTexture) {
-          return; // Not ready yet
-       }
-
-       const sourceElement = currentSourceElement.current; // Get the latest source
-       const uTextureUniform = planeMeshRef.current.material.uniforms.uTexture;
-       let sourceWidth = 0;
-       let sourceHeight = 0;
+       const sourceElement = currentSourceElement.current;
+       const uniforms = planeMeshRef.current.material.uniforms; // Shortcut
+       let sourceWidth = 0, sourceHeight = 0, needsTextureUpdate = false;
        let isVideo = sourceElement instanceof HTMLVideoElement;
        let isImage = sourceElement instanceof HTMLImageElement;
 
        // --- 1. Get Source Dimensions ---
-       if (isVideo && sourceElement.readyState >= 2) { // HAVE_CURRENT_DATA
-           sourceWidth = sourceElement.videoWidth;
-           sourceHeight = sourceElement.videoHeight;
-       } else if (isImage && sourceElement.complete && sourceElement.naturalWidth > 0) { // Image loaded and has size
-            sourceWidth = sourceElement.naturalWidth;
-            sourceHeight = sourceElement.naturalHeight;
-       } else if (!sourceElement) {
-           // No source element, reset dimensions
-            sourceWidth = 0;
-            sourceHeight = 0;
-       }
-        // else: video/image not ready yet, dimensions remain 0
+       if (isVideo && sourceElement.readyState >= 2) { sourceWidth = sourceElement.videoWidth; sourceHeight = sourceElement.videoHeight; }
+       else if (isImage && sourceElement.complete && sourceElement.naturalWidth > 0) { sourceWidth = sourceElement.naturalWidth; sourceHeight = sourceElement.naturalHeight; }
+       else if (!sourceElement) { sourceWidth = 0; sourceHeight = 0; }
 
-       // --- 2. Manage Textures ---
-       let textureAssignedThisFrame = false; // Flag to track assignment
+       // --- 2. Manage Textures & Update Uniforms ---
+       let currentTexture = uniforms.uTexture.value;
        if (isVideo && sourceWidth > 0) {
-            // Video source is active and ready
-            if (uTextureUniform.value !== videoTextureRef.current || !videoTextureRef.current) {
-                 // If uniform doesn't hold the correct video texture, or no video texture exists
-                 console.log("RenderLoop: Assigning VIDEO Texture to Uniform.");
-                 videoTextureRef.current?.dispose(); // Dispose previous video texture ref if any
-                 imageTextureRef.current?.dispose(); // Dispose image texture ref if switching
-                 imageTextureRef.current = null;
-                 videoTextureRef.current = new THREE.VideoTexture(sourceElement); // Create new
-                 videoTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                 uTextureUniform.value = videoTextureRef.current; // Assign to uniform
-                 textureAssignedThisFrame = true;
-            }
+            if (currentTexture !== videoTextureRef.current || !videoTextureRef.current) { /* ... Assign video texture ... */
+                 console.log("RenderLoop: Assigning VIDEO Texture."); videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); imageTextureRef.current = null; videoTextureRef.current = new THREE.VideoTexture(sourceElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; uTextureUniform.value = videoTextureRef.current; needsTextureUpdate = true; }
+            uniforms.uIsStaticImage.value = false; // Set flag for shader
        } else if (isImage && sourceWidth > 0) {
-            // Image source is active and ready
-            if (uTextureUniform.value !== imageTextureRef.current || !imageTextureRef.current) {
-                // If uniform doesn't hold the correct image texture, or no image texture exists
-                 console.log("RenderLoop: Assigning IMAGE Texture to Uniform.");
-                 videoTextureRef.current?.dispose(); // Dispose video texture ref if switching
-                 videoTextureRef.current = null;
-                 imageTextureRef.current?.dispose(); // Dispose previous image texture ref
-                 imageTextureRef.current = new THREE.Texture(sourceElement); // Create new
-                 imageTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                 imageTextureRef.current.needsUpdate = true; // Mark image texture for upload
-                 uTextureUniform.value = imageTextureRef.current; // Assign to uniform
-                 textureAssignedThisFrame = true;
-            }
-             // Ensure needsUpdate is set if it's the current image texture (might be needed after context loss)
-            if (imageTextureRef.current && uTextureUniform.value === imageTextureRef.current) {
-                imageTextureRef.current.needsUpdate = true;
-            }
+            if (currentTexture !== imageTextureRef.current || !imageTextureRef.current) { /* ... Assign image texture ... */
+                 console.log("RenderLoop: Assigning IMAGE Texture."); videoTextureRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(sourceElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; uTextureUniform.value = imageTextureRef.current; needsTextureUpdate = true; }
+            else if (imageTextureRef.current) { imageTextureRef.current.needsUpdate = true; } // Ensure update flag is set for existing image texture
+            uniforms.uIsStaticImage.value = true; // Set flag for shader
+            // *** You can adjust brightness/contrast uniforms here if needed ***
+            // uniforms.uBrightness.value = 1.3; // Example: make image brighter
+            // uniforms.uContrast.value = 1.1; // Example: slight contrast boost
        } else {
-            // No valid source, clear texture uniform
-            if (uTextureUniform.value !== null) {
-                console.log("RenderLoop: Clearing texture uniform (No valid source).");
-                 // Dispose the textures stored in refs
-                 videoTextureRef.current?.dispose();
-                 imageTextureRef.current?.dispose();
-                 videoTextureRef.current = null;
-                 imageTextureRef.current = null;
-                 uTextureUniform.value = null; // Clear uniform
-                 textureAssignedThisFrame = true;
-            }
+            if (uniforms.uTexture.value !== null) { /* ... Clear texture uniform ... */ console.log("RenderLoop: Clearing texture uniform."); videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current = null; uTextureUniform.value = null; needsTextureUpdate = true; }
+            uniforms.uIsStaticImage.value = false; // Reset flag
        }
-
-        // Force material update if texture was assigned or cleared
-        if (textureAssignedThisFrame) {
-             planeMeshRef.current.material.needsUpdate = true;
-        }
-
+       if (needsTextureUpdate) { planeMeshRef.current.material.needsUpdate = true; }
 
        // --- 3. Update Plane Scale & Mirroring ---
-       if (uTextureUniform.value && sourceWidth > 0 && sourceHeight > 0) { // Only scale if texture is set
-            fitPlaneToCamera(sourceWidth, sourceHeight);
-            planeMeshRef.current.scale.x = Math.abs(planeMeshRef.current.scale.x) * (isVideo ? -1 : 1);
-       } else {
-            // No texture, hide plane
-           if (planeMeshRef.current.scale.x !== 0) { // Avoid setting scale repeatedly
-                 console.log("RenderLoop: Hiding plane (no texture).")
-                 planeMeshRef.current.scale.set(0,0,0);
-           }
-       }
-
+       if (uniforms.uTexture.value && sourceWidth > 0 && sourceHeight > 0) { fitPlaneToCamera(sourceWidth, sourceHeight); planeMeshRef.current.scale.x = Math.abs(planeMeshRef.current.scale.x) * (isVideo ? -1 : 1); }
+       else { if (planeMeshRef.current.scale.x !== 0) { planeMeshRef.current.scale.set(0,0,0); } }
 
        // --- 4. TODO: Update Shader Uniforms (Effects) ---
-
 
        // --- 5. Render Scene ---
        rendererInstanceRef.current.render(sceneRef.current, cameraRef.current);
 
   }, [fitPlaneToCamera]); // Include dependency
 
-
   // --- Start Render Loop ---
-  useEffect(() => {
-    console.log("Renderer: UseEffect starting render loop.");
-    if (isInitialized.current) {
-        cancelAnimationFrame(animationFrameHandle.current);
-        animationFrameHandle.current = requestAnimationFrame(renderLoop);
-        console.log("Render loop requested with handle:", animationFrameHandle.current);
-    } else { console.warn("Render loop start skipped, not initialized."); }
-  }, [renderLoop]);
-
+  useEffect(() => { /* ... start loop ... */ console.log("Renderer: UseEffect starting render loop."); if (isInitialized.current) { cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop); } else { console.warn("Render loop start skipped."); } }, [renderLoop]);
 
   // --- Expose Methods ---
-  useImperativeHandle(ref, () => ({
-    renderResults: (videoElement, results) => {
-        // Update refs, renderLoop will pick them up
-        currentSourceElement.current = videoElement;
-        currentResults.current = results;
-    },
-    renderStaticImageResults: (imageElement, results) => {
-        console.log("ImperativeHandle: renderStaticImageResults called.");
-        currentSourceElement.current = imageElement;
-        currentResults.current = results;
-    },
-    clearCanvas: () => {
-        console.log("ImperativeHandle: Clearing canvas source.");
-        currentSourceElement.current = null;
-        currentResults.current = null;
-    }
+  useImperativeHandle(ref, () => ({ /* ... keep imperative handles ... */
+    renderResults: (videoElement, results) => { currentSourceElement.current = videoElement; currentResults.current = results; },
+    renderStaticImageResults: (imageElement, results) => { console.log("ImperativeHandle: renderStaticImageResults."); currentSourceElement.current = imageElement; currentResults.current = results; },
+    clearCanvas: () => { console.log("ImperativeHandle: Clearing canvas source."); currentSourceElement.current = null; currentResults.current = null; }
   }));
 
-
-  // The canvas element for Three.js
-  return (
-    <canvas
-      ref={canvasRef}
-      className={`renderer-canvas ${className || ''}`}
-      style={{ display: 'block', width: '100%', height: '100%' }}
-    >
-      Your browser does not support the HTML canvas element or WebGL.
-    </canvas>
-  );
+  // --- JSX ---
+  return ( /* ... keep canvas return ... */ <canvas ref={canvasRef} className={`renderer-canvas ${className || ''}`} style={{ display: 'block', width: '100%', height: '100%' }} /> );
 });
 
 TryOnRenderer.displayName = 'TryOnRenderer';
