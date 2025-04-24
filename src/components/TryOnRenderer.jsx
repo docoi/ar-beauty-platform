@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - Implement Post-Processing Pipeline
+// src/components/TryOnRenderer.jsx - Fix Mirror Color, Refine Uniform Update
 
 import React, { useRef, useImperativeHandle, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -15,107 +15,51 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
     // Scene 1 (Base: Video/Image Plane with MeshBasicMaterial)
     const baseSceneRef = useRef(null);
     const baseCameraRef = useRef(null);
-    const basePlaneMeshRef = useRef(null); // Mesh with MeshBasicMaterial
+    const basePlaneMeshRef = useRef(null);
     const videoTextureRef = useRef(null);
     const imageTextureRef = useRef(null);
 
     // Scene 2 (Post-Processing: Fullscreen Quad + Effect Shader)
     const postSceneRef = useRef(null);
-    const postCameraRef = useRef(null); // Simple orthographic for fullscreen quad
+    const postCameraRef = useRef(null);
     const postMaterialRef = useRef(null); // Ref to the ShaderMaterial
 
     // Off-screen Render Target
     const renderTargetRef = useRef(null);
 
-    // State Refs (Updated by imperative handles, read by render loop)
+    // State Refs (Track current state for uniform updates)
     const currentSourceElement = useRef(null);
-    const isStaticImage = useRef(false); // Track if current source is static image
-    const currentBrightness = useRef(1.5); // Default correction values
-    const currentContrast = useRef(1.3);
-    // const currentMediaPipeResults = useRef(null); // For effects later
+    const isStaticImage = useRef(false);
+    // REMOVED currentBrightness/currentContrast refs - use uniforms directly
 
     // --- Shaders for Post-Processing ---
-    const postVertexShader = `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = vec4(position, 1.0); // Position is already -1 to 1
-        }
-    `;
-    const postFragmentShader = `
-        uniform sampler2D uSceneTexture; // Texture from the first render pass
-        uniform bool uIsStaticImage;
-        uniform float uBrightness;
-        uniform float uContrast;
-        varying vec2 vUv;
-
-        vec3 contrastAdjust(vec3 color, float value) { return 0.5 + value * (color - 0.5); }
-
-        void main() {
-            // Sample the texture rendered by the base scene
-            vec4 sceneColor = texture2D(uSceneTexture, vUv);
-
-            // Apply correction only if it's the static image
-            if (uIsStaticImage) {
-                sceneColor.rgb *= uBrightness;
-                sceneColor.rgb = contrastAdjust(sceneColor.rgb, uContrast);
-                sceneColor.rgb = clamp(sceneColor.rgb, 0.0, 1.0); // Clamp result
-            }
-
-            // TODO: Apply serum/makeup effects here based on segmentation/landmarks
-            // if (isSkinPixel) { sceneColor.rgb = applySerumEffect(sceneColor.rgb); }
-
-            gl_FragColor = sceneColor; // Output final color
-        }
-    `;
+    const postVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`;
+    const postFragmentShader = `uniform sampler2D uSceneTexture; uniform bool uIsStaticImage; uniform float uBrightness; uniform float uContrast; varying vec2 vUv; vec3 cAdjust(vec3 c, float v){ return 0.5 + v * (c - 0.5); } void main() { vec4 sColor = texture2D(uSceneTexture, vUv); if (uIsStaticImage) { sColor.rgb *= uBrightness; sColor.rgb = cAdjust(sColor.rgb, uContrast); sColor.rgb = clamp(sColor.rgb, 0.0, 1.0); } gl_FragColor = sColor; }`;
 
     // --- Handle Resizing ---
-    const handleResize = useCallback(() => {
-        const canvas = canvasRef.current;
-        if (!rendererInstanceRef.current || !baseCameraRef.current || !postCameraRef.current || !canvas || !renderTargetRef.current) return;
-        const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight;
-        if (newWidth === 0 || newHeight === 0) return;
-        const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2());
-        if (currentSize.x === newWidth && currentSize.y === newHeight) return;
-
-        console.log(`DEBUG: Resizing -> ${newWidth}x${newHeight}`);
-        rendererInstanceRef.current.setSize(newWidth, newHeight); // Resize renderer
-        renderTargetRef.current.setSize(newWidth, newHeight); // Resize render target IMPORTANT!
-        // Update base camera
-        baseCameraRef.current.left = -newWidth / 2; baseCameraRef.current.right = newWidth / 2;
-        baseCameraRef.current.top = newHeight / 2; baseCameraRef.current.bottom = -newHeight / 2;
-        baseCameraRef.current.updateProjectionMatrix();
-        // Post camera usually doesn't need update if using simple quad
-        // postCameraRef.current.updateProjectionMatrix();
-
+    const handleResize = useCallback(() => { /* ... */
+        const canvas = canvasRef.current; if (!rendererInstanceRef.current || !baseCameraRef.current || !postCameraRef.current || !canvas || !renderTargetRef.current) return; const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight; if (newWidth === 0 || newHeight === 0) return; const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return; console.log(`DEBUG: Resizing -> ${newWidth}x${newHeight}`); rendererInstanceRef.current.setSize(newWidth, newHeight); renderTargetRef.current.setSize(newWidth, newHeight); baseCameraRef.current.left = -newWidth / 2; baseCameraRef.current.right = newWidth / 2; baseCameraRef.current.top = newHeight / 2; baseCameraRef.current.bottom = -newHeight / 2; baseCameraRef.current.updateProjectionMatrix();
     }, []);
 
     // --- Initialize Scene ---
     const initThreeScene = useCallback(() => {
-        if (!canvasRef.current || isInitialized.current) return; console.log("DEBUG: initThreeScene START (Post-Processing)"); try { const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480;
-        // --- Renderer ---
-        rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); rendererInstanceRef.current.setSize(initialWidth, initialHeight); rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio); rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
-        // --- Render Target ---
-        renderTargetRef.current = new THREE.WebGLRenderTarget(initialWidth, initialHeight, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, colorSpace: THREE.SRGBColorSpace }); console.log("DEBUG: RenderTarget created.");
+        if (!canvasRef.current || isInitialized.current) return; console.log("DEBUG: initThreeScene START (Post-Processing)"); try { const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480; rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); rendererInstanceRef.current.setSize(initialWidth, initialHeight); rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio); rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace; renderTargetRef.current = new THREE.WebGLRenderTarget(initialWidth, initialHeight, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, colorSpace: THREE.SRGBColorSpace }); console.log("DEBUG: RenderTarget created.");
         // --- Base Scene (Scene 1) ---
-        baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1;
-        const planeGeometry = new THREE.PlaneGeometry(1, 1); const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff }); // Use MeshBasicMaterial here
-        basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); basePlaneMeshRef.current.position.z = 0; basePlaneMeshRef.current.scale.set(1, 1, 1); baseSceneRef.current.add(basePlaneMeshRef.current); console.log("DEBUG: Base scene created.");
+        baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1; const planeGeometry = new THREE.PlaneGeometry(1, 1); const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff }); basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); basePlaneMeshRef.current.position.z = 0; basePlaneMeshRef.current.scale.set(1, 1, 1); baseSceneRef.current.add(basePlaneMeshRef.current); console.log("DEBUG: Base scene created.");
         // --- Post-Processing Scene (Scene 2) ---
         postSceneRef.current = new THREE.Scene(); postCameraRef.current = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1); const postPlaneGeometry = new THREE.PlaneGeometry(2, 2);
-        postMaterialRef.current = new THREE.ShaderMaterial({ vertexShader: postVertexShader, fragmentShader: postFragmentShader, uniforms: { uSceneTexture: { value: renderTargetRef.current.texture }, uIsStaticImage: { value: false }, uBrightness: { value: currentBrightness.current }, uContrast: { value: currentContrast.current }, }, depthWrite: false, depthTest: false, }); // Assign RT texture
+        postMaterialRef.current = new THREE.ShaderMaterial({ vertexShader: postVertexShader, fragmentShader: postFragmentShader, uniforms: { uSceneTexture: { value: renderTargetRef.current.texture }, uIsStaticImage: { value: false }, uBrightness: { value: 1.0 }, /* Start neutral */ uContrast: { value: 1.0 }, /* Start neutral */ }, depthWrite: false, depthTest: false, });
         const postPlaneMesh = new THREE.Mesh(postPlaneGeometry, postMaterialRef.current); postSceneRef.current.add(postPlaneMesh); console.log("DEBUG: Post-processing scene created.");
         isInitialized.current = true; console.log("DEBUG: Scene initialization complete."); handleResize(); } catch (error) { console.error("DEBUG: initThreeScene ERROR:", error); }
     }, [handleResize, postVertexShader, postFragmentShader]);
 
     // --- Effect for Initial Setup / Resize Observer ---
-    useEffect(() => {
-        initThreeScene(); let resizeObserver; if (canvasRef.current) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(canvasRef.current); }
-        return () => { console.log("DEBUG: Cleanup running..."); resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false; videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); renderTargetRef.current?.dispose(); basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose(); postMaterialRef.current?.uniforms?.uSceneTexture?.value?.dispose(); postMaterialRef.current?.dispose(); rendererInstanceRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current = null; basePlaneMeshRef.current = null; postMaterialRef.current = null; sceneRef.current = null; cameraRef.current = null; postSceneRef.current = null; postCameraRef.current = null; renderTargetRef.current = null; rendererInstanceRef.current = null; currentSourceElement.current = null; };
+    useEffect(() => { /* ... */
+        initThreeScene(); let resizeObserver; if (canvasRef.current) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(canvasRef.current); } return () => { /* ... cleanup ... */ console.log("DEBUG: Cleanup running..."); resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false; videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); renderTargetRef.current?.dispose(); basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose(); postMaterialRef.current?.uniforms?.uSceneTexture?.value?.dispose(); postMaterialRef.current?.dispose(); rendererInstanceRef.current?.dispose(); /* Clear refs */ };
     }, [initThreeScene, handleResize]);
 
     // --- Scale Base Plane ---
-    const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => {
+    const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */
         if (!baseCameraRef.current || !basePlaneMeshRef.current || !textureWidth || !textureHeight) return; const canvas = canvasRef.current; if (!canvas) return; const cameraWidth = canvas.clientWidth; const cameraHeight = canvas.clientHeight; if (cameraWidth === 0 || cameraHeight === 0) return; const cameraAspect = cameraWidth / cameraHeight; const textureAspect = textureWidth / textureHeight; let scaleX, scaleY; if (cameraAspect > textureAspect) { scaleY = cameraHeight; scaleX = scaleY * textureAspect; } else { scaleX = cameraWidth; scaleY = scaleX / textureAspect; } basePlaneMeshRef.current.scale.y = scaleY; basePlaneMeshRef.current.scale.x = scaleX;
     }, []);
 
@@ -132,15 +76,9 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
         let textureToAssign = null;
 
         // --- 1. Update Base Scene Texture ---
-        if (isVideo && sourceElement.readyState >= 2) {
-            sourceWidth = sourceElement.videoWidth; sourceHeight = sourceElement.videoHeight;
-            if (videoTextureRef.current?.image !== sourceElement) { videoTextureRef.current?.dispose(); videoTextureRef.current = new THREE.VideoTexture(sourceElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; }
-            textureToAssign = videoTextureRef.current;
-        } else if (isImage && sourceElement.complete && sourceElement.naturalWidth > 0) {
-             sourceWidth = sourceElement.naturalWidth; sourceHeight = sourceElement.naturalHeight;
-             if (imageTextureRef.current?.image !== sourceElement) { imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(sourceElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; } else { imageTextureRef.current.needsUpdate = true; }
-             textureToAssign = imageTextureRef.current;
-        } else { textureToAssign = null; if(videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null;} if(imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null;} }
+        if (isVideo && sourceElement.readyState >= 2) { /* ... video texture logic ... */ sourceWidth = sourceElement.videoWidth; sourceHeight = sourceElement.videoHeight; if (videoTextureRef.current?.image !== sourceElement) { videoTextureRef.current?.dispose(); videoTextureRef.current = new THREE.VideoTexture(sourceElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; } textureToAssign = videoTextureRef.current; }
+        else if (isImage && sourceElement.complete && sourceElement.naturalWidth > 0) { /* ... image texture logic ... */ sourceWidth = sourceElement.naturalWidth; sourceHeight = sourceElement.naturalHeight; if (imageTextureRef.current?.image !== sourceElement) { imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(sourceElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; } else { imageTextureRef.current.needsUpdate = true; } textureToAssign = imageTextureRef.current; }
+        else { /* ... no source / clear texture refs ... */ textureToAssign = null; if(videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null;} if(imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null;} }
 
         if (baseMaterial.map !== textureToAssign) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; }
 
@@ -149,24 +87,12 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
         else { if (basePlaneMeshRef.current.scale.x !== 0) { basePlaneMeshRef.current.scale.set(0,0,0); } }
 
         // --- 3. Render Base Scene to Target ---
-        if (basePlaneMeshRef.current.scale.x !== 0) { // Only render base if plane is visible
-            rendererInstanceRef.current.setRenderTarget(renderTargetRef.current);
-            rendererInstanceRef.current.render(baseSceneRef.current, baseCameraRef.current);
-            rendererInstanceRef.current.setRenderTarget(null); // Reset render target
-        } else {
-             // If base plane is hidden, maybe clear the render target?
-             rendererInstanceRef.current.setRenderTarget(renderTargetRef.current);
-             rendererInstanceRef.current.clear(); // Clear RT
-             rendererInstanceRef.current.setRenderTarget(null);
-        }
+        if (basePlaneMeshRef.current.scale.x !== 0) { rendererInstanceRef.current.setRenderTarget(renderTargetRef.current); rendererInstanceRef.current.render(baseSceneRef.current, baseCameraRef.current); rendererInstanceRef.current.setRenderTarget(null); }
+        else { rendererInstanceRef.current.setRenderTarget(renderTargetRef.current); rendererInstanceRef.current.clear(); rendererInstanceRef.current.setRenderTarget(null); }
 
-
-        // --- 4. Update Post-Processing Uniforms ---
+        // --- 4. Update Post-Processing Uniforms (Read directly from exposed refs) ---
         postUniforms.uSceneTexture.value = renderTargetRef.current.texture;
-        postUniforms.uIsStaticImage.value = isStaticImage.current; // Use state ref
-        postUniforms.uBrightness.value = currentBrightness.current; // Use state ref
-        postUniforms.uContrast.value = currentContrast.current;   // Use state ref
-        // Update other effect uniforms here...
+        // The isStaticImage, currentBrightness, currentContrast refs are updated directly by the handles below
 
         // --- 5. Render Post-Processing Scene to Screen ---
         rendererInstanceRef.current.render(postSceneRef.current, postCameraRef.current);
@@ -176,28 +102,34 @@ const TryOnRenderer = forwardRef(({ videoWidth, videoHeight, className }, ref) =
     // --- Start Render Loop ---
     useEffect(() => { if (isInitialized.current) { cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop); } }, [renderLoop]);
 
-    // --- Expose Methods ---
+    // --- Expose Methods (Update Uniforms Directly) ---
     useImperativeHandle(ref, () => ({
-        renderResults: (videoElement, results) => {
-            currentSourceElement.current = videoElement;
-            isStaticImage.current = false; // Update state ref
-            // currentMediaPipeResults.current = results; // Store results later
+        renderResults: (videoElement, results) => { // For Mirror
+             if (!postMaterialRef.current?.uniforms) return; // Ensure uniforms are ready
+             currentSourceElement.current = videoElement;
+             postMaterialRef.current.uniforms.uIsStaticImage.value = false;
+             // Set default neutral corrections for video
+             postMaterialRef.current.uniforms.uBrightness.value = 1.0;
+             postMaterialRef.current.uniforms.uContrast.value = 1.0;
+             // Store results if needed later
         },
-        renderStaticImageResults: (imageElement, results, brightness, contrast) => {
+        renderStaticImageResults: (imageElement, results, brightness, contrast) => { // For Selfie
             console.log("Handle: renderStaticImageResults.", { brightness, contrast });
+            if (!postMaterialRef.current?.uniforms || !imageElement) return; // Ensure uniforms are ready
             currentSourceElement.current = imageElement;
-            isStaticImage.current = true; // Update state ref
-            // Clamp brightness/contrast values just in case sliders exceed shader limits
-            currentBrightness.current = Math.max(0.1, brightness); // Ensure brightness > 0
-            currentContrast.current = Math.max(0.1, contrast);   // Ensure contrast > 0
-            // currentMediaPipeResults.current = results; // Store results later
+            postMaterialRef.current.uniforms.uIsStaticImage.value = true;
+            // Update uniforms directly with values from parent
+            postMaterialRef.current.uniforms.uBrightness.value = Math.max(0.1, brightness);
+            postMaterialRef.current.uniforms.uContrast.value = Math.max(0.1, contrast);
+             // Store results if needed later
         },
         clearCanvas: () => {
              console.log("Handle: Clearing canvas source.");
              currentSourceElement.current = null;
-             isStaticImage.current = false;
-             // currentMediaPipeResults.current = null;
-             // The render loop will clear the texture from baseMaterial.map
+             if (postMaterialRef.current?.uniforms) {
+                 postMaterialRef.current.uniforms.uIsStaticImage.value = false;
+             }
+             // Render loop will clear the texture from baseMaterial.map
         }
     }));
 
