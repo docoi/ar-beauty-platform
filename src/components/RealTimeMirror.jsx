@@ -1,4 +1,4 @@
-// src/components/RealTimeMirror.jsx - Fixed animationFrameHandle typo
+// src/components/RealTimeMirror.jsx - Add Render Condition Log
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // Should use the one with bare-minimum shader for now
@@ -9,62 +9,36 @@ const RealTimeMirror = forwardRef(({
 }, ref) => {
   console.log("RealTimeMirror rendering...");
   const videoRef = useRef(null);
-  // const rendererRef = useRef(null); // No longer needed for method calls
-  const animationFrameRef = useRef(null); // *** CORRECT NAME IS animationFrameRef ***
+  const animationFrameRef = useRef(null);
   const [videoStream, setVideoStream] = useState(null);
   const videoStreamRef = useRef(null);
   const [isCameraLoading, setIsCameraLoading] = useState(true);
   const [cameraError, setCameraError] = useState(null);
-  const [videoDimensions, setVideoDimensions] = useState({ width: 640, height: 480 });
+  const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
   const [latestResults, setLatestResults] = useState(null);
 
   // Effect to keep ref in sync with state
-  useEffect(() => { /* ... sync ref ... */ }, [videoStream]);
+  useEffect(() => { /* ... */ }, [videoStream]);
   // Imperative handle for parent
   useImperativeHandle(ref, () => ({ /* ... */ }));
-
   // Effect for camera access
-  useEffect(() => {
-    let isMounted = true; let stream = null;
-    const enableStream = async () => { /* ... */ console.log("Mirror Mode: enableStream - Requesting stream..."); try { /* ... */ if (isMounted && videoRef.current) { /* ... */ videoRef.current.onloadedmetadata = () => { /* ... */ console.log("RealTimeMirror: Starting initial prediction loop from onloadedmetadata."); cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = requestAnimationFrame(predictWebcam); }; /* ... */ } /* ... */ } catch (err) { /* ... */ } }; enableStream();
-    return () => { isMounted = false; console.log("Cleaning up RealTimeMirror (useEffect cleanup)..."); cancelAnimationFrame(animationFrameRef.current); /* *** USE CORRECT REF NAME *** */ const currentStream = videoStreamRef.current; /* ... stop tracks ... */; if (videoRef.current) { /* ... reset srcObject ... */ } setVideoStream(null); setLatestResults(null); /* Clear results */ /* rendererRef.current?.clearCanvas(); // Cannot call this if ref isn't used */ console.log("RealTimeMirror cleanup complete."); };
-  }, [faceLandmarker]);
-
-
+  useEffect(() => { /* ... */ }, [faceLandmarker]);
   // Prediction Loop Callback
-  const predictWebcam = useCallback(() => {
-    // *** USE CORRECT REF NAME ***
-    animationFrameRef.current = requestAnimationFrame(predictWebcam); // Schedule next
-
-    if (!faceLandmarker || !videoRef.current || videoRef.current.readyState < 2 ) { return; }
-
-    const video = videoRef.current;
-    try {
-        const results = faceLandmarker.detectForVideo(video, performance.now());
-        setLatestResults(results); // Update state
-    } catch (error) { console.error(`PredictWebcam: Error during faceLandmarker.detectForVideo:`, error); setLatestResults(null); }
-  }, [faceLandmarker]);
-
-
+  const predictWebcam = useCallback(() => { /* ... */ }, [faceLandmarker]);
   // Effect to manage loop start/stop
-  useEffect(() => {
-       if (videoStream && faceLandmarker) {
-           console.log("RealTimeMirror: Starting prediction loop (stream/landmarker ready).");
-           // *** USE CORRECT REF NAME ***
-           cancelAnimationFrame(animationFrameRef.current);
-           animationFrameRef.current = requestAnimationFrame(predictWebcam);
-       } else {
-           console.log("RealTimeMirror: Stopping prediction loop (stream/landmarker not ready).");
-            // *** USE CORRECT REF NAME ***
-           cancelAnimationFrame(animationFrameRef.current);
-       }
-       return () => {
-           console.log("RealTimeMirror: Cleaning up loop start/stop effect.");
-            // *** USE CORRECT REF NAME ***
-           cancelAnimationFrame(animationFrameRef.current);
-       };
-   }, [videoStream, faceLandmarker, predictWebcam]);
+  useEffect(() => { /* ... */ }, [videoStream, faceLandmarker, predictWebcam]);
 
+
+  // *** ADD LOG BEFORE RETURN ***
+  const shouldRenderTryOn = videoStream && !isCameraLoading && !cameraError && videoDimensions.width > 0;
+  console.log("RealTimeMirror render check:", {
+      hasStream: !!videoStream,
+      isLoading: isCameraLoading,
+      hasError: !!cameraError,
+      hasDims: videoDimensions.width > 0,
+      shouldRender: shouldRenderTryOn // Log the combined condition
+  });
+  // *** END LOG ***
 
   // --- JSX ---
   return (
@@ -74,9 +48,9 @@ const RealTimeMirror = forwardRef(({
        {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
       <div className="relative w-full max-w-md mx-auto" style={{ paddingTop: `${videoDimensions.width > 0 ? (videoDimensions.height / videoDimensions.width) * 100 : 75}%` }}>
         <video ref={videoRef} autoPlay playsInline muted className="absolute top-0 left-0 w-0 h-0 -z-10" />
-        {videoStream && !isCameraLoading && !cameraError && videoDimensions.width > 0 ? (
+        {/* Use the pre-calculated boolean */}
+        {shouldRenderTryOn ? (
           <TryOnRenderer // Pass props
-            // ref={rendererRef} // No longer passing ref down
             videoElement={videoRef.current}
             imageElement={null}
             mediaPipeResults={latestResults}
@@ -88,7 +62,8 @@ const RealTimeMirror = forwardRef(({
           />
         ) : (
            <div className="absolute inset-0 flex items-center justify-center bg-gray-200 rounded shadow">
-              <p className="text-gray-500">{cameraError ? 'Camera Error' : (isCameraLoading ? 'Loading Camera...' : 'Initializing...')}</p>
+               {/* Simplify loading message display */}
+              <p className="text-gray-500">{cameraError || (isCameraLoading ? 'Loading Camera...' : 'Initializing...')}</p>
            </div>
         )}
       </div>
