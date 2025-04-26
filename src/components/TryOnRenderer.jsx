@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - CORRECTED - Fix className Prop Usage
+// src/components/TryOnRenderer.jsx - CORRECTED - Fix className Prop Usage in version from Msg #77
 
 import React, { useRef, forwardRef, useEffect, useCallback, useState, useMemo } from 'react';
 import * as THREE from 'three';
@@ -18,7 +18,7 @@ const TryOnRenderer = forwardRef(({
  }, ref) => { // Added ref here
 
     // --- Core Refs ---
-    const canvasRef = useRef(null); // Ref for the canvas element
+    const canvasRef = useRef(null); // *** ENSURE THIS IS DEFINED ***
     const rendererInstanceRef = useRef(null);
     const animationFrameHandle = useRef(null);
     const isInitialized = useRef(false);
@@ -36,13 +36,13 @@ const TryOnRenderer = forwardRef(({
     // --- Internal State Refs (updated by props) ---
     const currentSource = useRef(null);
     const currentResults = useRef(null);
-    const currentIsStatic = useRef(false);
+    const currentIsStatic = useRef(false); // Tracks the internal state based on prop
     const currentBrightness = useRef(1.0);
     const currentContrast = useRef(1.0);
     const currentIntensity = useRef(0.5);
 
 
-    // --- Shaders --- (Includes Debug Color Logic)
+    // --- Shaders --- (Includes Debug Color Logic from Msg #77)
     const postVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`;
     const postFragmentShader = `
         uniform sampler2D uSceneTexture;
@@ -88,7 +88,7 @@ const TryOnRenderer = forwardRef(({
          const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return;
          console.log(`DEBUG: Resizing -> ${newWidth}x${newHeight}`);
          try { rendererInstanceRef.current.setSize(newWidth, newHeight); renderTargetRef.current.setSize(newWidth, newHeight); baseCameraRef.current.left = -newWidth / 2; baseCameraRef.current.right = newWidth / 2; baseCameraRef.current.top = newHeight / 2; baseCameraRef.current.bottom = -newHeight / 2; baseCameraRef.current.updateProjectionMatrix(); } catch(e) { console.error("Resize Error:", e);}
-    }, []); // Dependencies are stable refs
+    }, []);
 
 
     // --- Scale Base Plane ---
@@ -99,10 +99,10 @@ const TryOnRenderer = forwardRef(({
         if (viewAspect > textureAspect) { scaleX = viewWidth; scaleY = scaleX / textureAspect; } else { scaleY = viewHeight; scaleX = scaleY * textureAspect; }
         const currentScale = basePlaneMeshRef.current.scale; const currentSignX = Math.sign(currentScale.x) || 1; const newScaleXWithSign = scaleX * currentSignX;
         if (Math.abs(currentScale.y - scaleY) > 0.01 || Math.abs(currentScale.x - newScaleXWithSign) > 0.01) { currentScale.y = scaleY; currentScale.x = newScaleXWithSign; /*console.log(...)*/ }
-     }, []); // Dependencies are stable refs
+     }, []);
 
 
-    // --- Render Loop --- (Reads internal refs, includes needsUpdate fix)
+    // --- Render Loop --- (Reads internal refs, includes needsUpdate fix, defines isStatic)
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
         if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !postSceneRef.current || !postCameraRef.current || !basePlaneMeshRef.current || !postMaterialRef.current || !renderTargetRef.current) return;
@@ -111,9 +111,14 @@ const TryOnRenderer = forwardRef(({
             const postUniforms = postMaterialRef.current.uniforms;
             if (!postUniforms) { console.warn("RenderLoop skipped: postUniforms not ready."); return; }
 
+            // *** Read internal state refs ***
             const sourceElement = currentSource.current;
             const results = currentResults.current;
             const isStatic = currentIsStatic.current; // *** Defined from ref ***
+            // const brightness = currentBrightness.current; // Not used in debug shader
+            // const contrast = currentContrast.current;   // Not used in debug shader
+            // const intensity = currentIntensity.current; // Not used in debug shader
+
             const baseMaterial = basePlaneMeshRef.current.material;
             let sourceWidth = 0, sourceHeight = 0;
             let isVideo = sourceElement instanceof HTMLVideoElement;
@@ -179,7 +184,7 @@ const TryOnRenderer = forwardRef(({
     return (
         <canvas
             ref={canvasRef}
-            // *** USE className prop correctly ***
+            // *** Use className prop correctly ***
             className={`renderer-canvas ${className || ''}`}
             // *** -------------------------- ***
             style={{ display: 'block', width: '100%', height: '100%' }}
