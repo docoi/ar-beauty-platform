@@ -1,4 +1,4 @@
-// src/components/RealTimeMirror.jsx - COMPLETE - Pass videoRef as Prop
+// src/components/RealTimeMirror.jsx - COMPLETE - Prop-Driven, Passes videoRefProp
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // Expects prop-driven version
@@ -74,7 +74,7 @@ const RealTimeMirror = forwardRef(({
         {shouldRenderTryOn ? (
           <TryOnRenderer
             // *** Pass videoRef itself as a prop ***
-            videoRefProp={videoRef}
+            videoRefProp={videoRef} // Pass the ref object
             imageElement={null}
             mediaPipeResults={latestResults}
             isStatic={false}

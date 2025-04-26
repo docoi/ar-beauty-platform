@@ -1,4 +1,4 @@
-// src/pages/VirtualTryOnPage.jsx - FINAL (Removed B/C Sliders/State, Fixed Rendering)
+// src/pages/VirtualTryOnPage.jsx - COMPLETE - No B/C Sliders, Fixed Rendering
 
 import React, { useState, useEffect, useRef } from 'react';
 import useFaceLandmarker from '../hooks/useFaceLandmarker';
@@ -11,7 +11,7 @@ const VirtualTryOnPage = () => {
   const [mode, setMode] = useState('mirror');
   const { faceLandmarker, isLoading, error } = useFaceLandmarker();
   const [effectIntensity, setEffectIntensity] = useState(0.5); // Keep intensity state
-  const activeRendererRef = useRef(null);
+  const activeRendererRef = useRef(null); // Keep potentially for future use
 
   // REMOVED B/C state
 
@@ -19,11 +19,12 @@ const VirtualTryOnPage = () => {
     console.log("Hook State Update:", { isLoading, error: error?.message, faceLandmarker: !!faceLandmarker });
   }, [isLoading, error, faceLandmarker]);
 
+  // Effect to update renderer intensity - currently no-op in children
   useEffect(() => {
-      if (activeRendererRef.current && typeof activeRendererRef.current.updateEffectIntensity === 'function') {
-          console.log("VirtualTryOnPage: Updating renderer intensity via ref to", effectIntensity);
-          activeRendererRef.current.updateEffectIntensity(effectIntensity);
-      }
+      // if (activeRendererRef.current && typeof activeRendererRef.current.updateEffectIntensity === 'function') {
+      //     console.log("VirtualTryOnPage: Updating renderer intensity via ref to", effectIntensity);
+      //     activeRendererRef.current.updateEffectIntensity(effectIntensity);
+      // }
   }, [effectIntensity]);
 
 
@@ -58,7 +59,7 @@ const VirtualTryOnPage = () => {
         {/* Check Mirror Mode */}
         {mode === 'mirror' && faceLandmarker && (
           <RealTimeMirror
-            ref={activeRendererRef}
+            ref={activeRendererRef} // Keep ref assignment just in case
             faceLandmarker={faceLandmarker}
             effectIntensity={effectIntensity}
            />
@@ -67,7 +68,7 @@ const VirtualTryOnPage = () => {
         {/* Check Selfie Mode */}
         {mode === 'selfie' && faceLandmarker && (
           <StaticSelfieTryOn
-            ref={activeRendererRef}
+            ref={activeRendererRef} // Keep ref assignment just in case
             faceLandmarker={faceLandmarker}
             effectIntensity={effectIntensity}
             // No B/C props needed
