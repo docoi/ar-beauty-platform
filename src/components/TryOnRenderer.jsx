@@ -1,21 +1,25 @@
-// src/components/TryOnRenderer.jsx - Ensure Base Scene Renders
+// src/components/TryOnRenderer.jsx - Read Props Directly in Loop
 
 import React, { useRef, forwardRef, useEffect, useCallback, useState, useMemo } from 'react';
 import * as THREE from 'three';
 
-// ... console log revision ...
+console.log(`Using Three.js revision: ${THREE.REVISION}`);
 
-const TryOnRenderer = forwardRef(({ videoElement, imageElement, mediaPipeResults, isStatic, brightness, contrast, effectIntensity, className }, ref) => {
+const TryOnRenderer = forwardRef(({
+    videoElement, imageElement, mediaPipeResults, isStatic,
+    brightness, contrast, effectIntensity, className
+ }, ref) => {
 
     // ... refs ...
-    const canvasRef = useRef(null); // Ensure all refs are defined
-    const rendererInstanceRef = useRef(null); const animationFrameHandle = useRef(null); const isInitialized = useRef(false);
-    const baseSceneRef = useRef(null); const baseCameraRef = useRef(null); const basePlaneMeshRef = useRef(null);
-    const videoTextureRef = useRef(null); const imageTextureRef = useRef(null);
-    const postSceneRef = useRef(null); const postCameraRef = useRef(null); const postMaterialRef = useRef(null);
-    const segmentationTextureRef = useRef(null); const renderTargetRef = useRef(null);
-    const currentSource = useRef(null); const currentResults = useRef(null); const currentIsStatic = useRef(false);
-    const currentBrightness = useRef(1.0); const currentContrast = useRef(1.0); const currentIntensity = useRef(0.5);
+    const canvasRef = useRef(null); const rendererInstanceRef = useRef(null); const animationFrameHandle = useRef(null); const isInitialized = useRef(false); const baseSceneRef = useRef(null); const baseCameraRef = useRef(null); const basePlaneMeshRef = useRef(null); const videoTextureRef = useRef(null); const imageTextureRef = useRef(null); const postSceneRef = useRef(null); const postCameraRef = useRef(null); const postMaterialRef = useRef(null); const segmentationTextureRef = useRef(null); const renderTargetRef = useRef(null);
+    // REMOVE internal state refs for source/isStatic, read props directly
+    // const currentSource = useRef(null);
+    // const currentIsStatic = useRef(false);
+    // Keep refs for results/intensity/correction as they might be updated independently
+    const currentResults = useRef(null);
+    const currentBrightness = useRef(1.0);
+    const currentContrast = useRef(1.0);
+    const currentIntensity = useRef(0.5);
     const renderLoopCounter = useRef(0);
 
 
@@ -26,8 +30,16 @@ const TryOnRenderer = forwardRef(({ videoElement, imageElement, mediaPipeResults
         void main() { gl_FragColor = texture2D(uSceneTexture, vUv); }
     `;
 
-    // --- Update internal refs ---
-    // ... useEffects for props ... (remain the same)
+    // --- Update internal refs (ONLY for results/intensity/correction) ---
+    // REMOVE useEffect for source/isStatic props
+    // useEffect(() => { /* ... update currentSource, currentIsStatic ... */ }, [videoElement, imageElement, isStatic]);
+    useEffect(() => { currentResults.current = mediaPipeResults; }, [mediaPipeResults]);
+    useEffect(() => {
+        currentBrightness.current = isStatic ? Math.max(0.1, brightness || 1.0) : 1.0;
+        currentContrast.current = isStatic ? Math.max(0.1, contrast || 1.0) : 1.0;
+     }, [isStatic, brightness, contrast]); // Still need isStatic prop here
+    useEffect(() => { currentIntensity.current = effectIntensity; }, [effectIntensity]);
+
 
     // --- Handle Resizing ---
     const handleResize = useCallback(() => { /* ... */ }, []);
@@ -35,7 +47,7 @@ const TryOnRenderer = forwardRef(({ videoElement, imageElement, mediaPipeResults
     const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
 
 
-    // --- Render Loop --- (Adjust base render logic)
+    // --- Render Loop --- (Read Props Directly)
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
         if (!isInitialized.current /* ... etc ... */) return;
@@ -44,82 +56,46 @@ const TryOnRenderer = forwardRef(({ videoElement, imageElement, mediaPipeResults
         const logThisFrame = (currentCount % 100 === 0);
         // if (logThisFrame) console.log(`RenderLoop executing: Frame ${currentCount}`);
 
-
         try {
             const postUniforms = postMaterialRef.current.uniforms;
-            if (!postUniforms) { /*console.warn(...)*/; return; }
+            if (!postUniforms) { return; }
 
-            const sourceElement = currentSource.current;
-            const results = currentResults.current;
-            const isStatic = currentIsStatic.current;
+            // *** Read props directly ***
+            const sourceElement = isStatic ? imageElement : videoElement;
+            const results = currentResults.current; // Still use ref for results
+            // *** ------------------- ***
+
             const baseMaterial = basePlaneMeshRef.current.material;
             let sourceWidth = 0, sourceHeight = 0;
             let isVideo = sourceElement instanceof HTMLVideoElement;
             let isImage = sourceElement instanceof HTMLImageElement;
             let textureToAssign = null;
-            let textureJustCreated = false; // Flag
+            let textureJustCreated = false;
 
-            // 1. Update Base Texture
-            if (isVideo && sourceElement.readyState >= 2 && sourceElement.videoWidth > 0) {
-                sourceWidth = sourceElement.videoWidth; sourceHeight = sourceElement.videoHeight;
-                if (!videoTextureRef.current || videoTextureRef.current.image !== sourceElement) { // More robust check
-                    videoTextureRef.current?.dispose();
-                    videoTextureRef.current = new THREE.VideoTexture(sourceElement);
-                    videoTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                    console.log("DEBUG RenderLoop: Created Video Texture");
-                    textureJustCreated = true;
-                }
-                textureToAssign = videoTextureRef.current;
-            }
-            else if (isImage && sourceElement.complete && sourceElement.naturalWidth > 0) {
-                 sourceWidth = sourceElement.naturalWidth; sourceHeight = sourceElement.naturalHeight;
-                 if (!imageTextureRef.current || imageTextureRef.current.image !== sourceElement) {
-                     imageTextureRef.current?.dispose();
-                     imageTextureRef.current = new THREE.Texture(sourceElement);
-                     imageTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                     imageTextureRef.current.needsUpdate = true; // Important for initial upload
-                     console.log("DEBUG RenderLoop: Created Image Texture");
-                     textureJustCreated = true;
-                 } else if (imageTextureRef.current.needsUpdate) {
-                     // If needsUpdate was already true (e.g. from imperative handle), keep it true
-                     imageTextureRef.current.needsUpdate = true;
-                 }
-                 textureToAssign = imageTextureRef.current;
-            }
-            else { // No valid source
-                 textureToAssign = null;
-                 if(videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null; }
-                 if(imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null;}
-            }
-
-            // Assign texture if different or just created
-            if (baseMaterial.map !== textureToAssign || textureJustCreated) {
-                baseMaterial.map = textureToAssign;
-                baseMaterial.needsUpdate = true; // Crucial: Tell material to update
-                 console.log("DEBUG RenderLoop: Assigned texture to base material:", textureToAssign ? textureToAssign.constructor.name : 'null');
-            }
-             // Ensure needsUpdate is handled correctly for non-video textures
-             if (textureToAssign && textureToAssign.needsUpdate && !(textureToAssign instanceof THREE.VideoTexture)) {
-                 textureToAssign.needsUpdate = true; // This will be set false by three.js after upload
-             }
+            // 1. Update Base Texture (using sourceElement from props)
+             if (isVideo && sourceElement.readyState >= 2 && sourceElement.videoWidth > 0) { /* ... create/assign video texture ... */ textureToAssign = videoTextureRef.current; }
+             else if (isImage && sourceElement?.complete && sourceElement?.naturalWidth > 0) { /* ... create/assign image texture ... */ textureToAssign = imageTextureRef.current; } // Add checks for imageElement existence
+             else { textureToAssign = null; if(videoTextureRef.current) { /* ... */ } if(imageTextureRef.current) { /* ... */} }
+             const textureChanged = baseMaterial.map !== textureToAssign; if (textureChanged) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; console.log("DEBUG RenderLoop: Assigned texture to base material:", textureToAssign ? textureToAssign.constructor.name : 'null'); }
+             if (textureToAssign && textureToAssign.needsUpdate && !(textureToAssign instanceof THREE.VideoTexture)) { textureToAssign.needsUpdate = true; }
 
 
             // 2. Update Plane Scale & Mirroring
-            const planeVisible = !!baseMaterial.map && sourceWidth > 0 && sourceHeight > 0; // Check map directly
-            if (planeVisible) { fitPlaneToCamera(sourceWidth, sourceHeight); const scaleX = Math.abs(basePlaneMeshRef.current.scale.x); const newScaleX = isVideo ? -scaleX : scaleX; if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; } }
-            else { if (basePlaneMeshRef.current.scale.x !== 0 || basePlaneMeshRef.current.scale.y !== 0) { basePlaneMeshRef.current.scale.set(0, 0, 0); if (logThisFrame) console.log("DEBUG RenderLoop: Hiding base plane"); } }
+            // Calculate sourceWidth/sourceHeight based on the type
+            if (isVideo && sourceElement) { sourceWidth = sourceElement.videoWidth; sourceHeight = sourceElement.videoHeight; }
+            else if (isImage && sourceElement) { sourceWidth = sourceElement.naturalWidth; sourceHeight = sourceElement.naturalHeight; }
+            else { sourceWidth = 0; sourceHeight = 0; }
+
+            const planeVisible = !!baseMaterial.map && sourceWidth > 0 && sourceHeight > 0;
+             if (planeVisible) { fitPlaneToCamera(sourceWidth, sourceHeight); const scaleX = Math.abs(basePlaneMeshRef.current.scale.x); const newScaleX = isVideo ? -scaleX : scaleX; if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; } }
+             else { if (basePlaneMeshRef.current.scale.x !== 0 || basePlaneMeshRef.current.scale.y !== 0) { basePlaneMeshRef.current.scale.set(0, 0, 0); if (logThisFrame) console.log("DEBUG RenderLoop: Hiding base plane"); } }
 
 
             // 3. Render Base Scene to Target
             rendererInstanceRef.current.setRenderTarget(renderTargetRef.current);
-            rendererInstanceRef.current.setClearColor(0xff0000, 1); // Clear target to RED
+            rendererInstanceRef.current.setClearColor(0xff0000, 1); // Keep RED clear for debug
             rendererInstanceRef.current.clear();
             if (planeVisible) {
-                 // *** Force material update before rendering base scene ***
-                 if (baseMaterial.needsUpdate) {
-                    // This isn't strictly needed usually, but let's try forcing it
-                    // baseMaterial.needsUpdate = true; // Already set above if changed
-                 }
                  rendererInstanceRef.current.render(baseSceneRef.current, baseCameraRef.current);
                  if (logThisFrame) console.log(`DEBUG RenderLoop: Rendered base scene to target.`);
             } else {
@@ -131,15 +107,15 @@ const TryOnRenderer = forwardRef(({ videoElement, imageElement, mediaPipeResults
 
             // 4. Update Post-Processing Uniforms
             if (postUniforms.uSceneTexture) { postUniforms.uSceneTexture.value = renderTargetRef.current.texture; }
-
+            // ... (Segmentation mask update logic using currentResults.current) ...
 
             // 5. Render Post-Processing Scene to Screen
             rendererInstanceRef.current.render(postSceneRef.current, postCameraRef.current);
-             // if (logThisFrame) console.log(`DEBUG RenderLoop: Rendered post scene to screen.`);
-
+            // if (logThisFrame) console.log(`DEBUG RenderLoop: Rendered post scene to screen.`);
 
         } catch (error) { console.error("Error in renderLoop:", error); }
-    }, [fitPlaneToCamera]);
+    // Add props used directly in loop to dependency array
+    }, [fitPlaneToCamera, videoElement, imageElement, isStatic]);
 
 
     // --- Initialize Scene --- (Keep Bare Minimum Shader & ONLY uSceneTexture Uniform)
