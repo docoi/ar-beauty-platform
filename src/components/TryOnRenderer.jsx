@@ -109,8 +109,19 @@ const TryOnRenderer = forwardRef(({ /* ... props ... */ }, ref) => {
     useEffect(() => { /* ... */ }, [initThreeScene, handleResize]);
     // --- REMOVED useImperativeHandle ---
     // --- JSX ---
-    return ( <canvas ref={canvasRef} className={`renderer-canvas ${className || ''}`} style={{ display: 'block', width: '100%', height: '100%' }} /> );
-});
+// ... (Keep ALL the code above the return statement exactly as it was in message #77) ...
+
+    // --- JSX ---
+    return (
+        <canvas
+            ref={canvasRef}
+            // *** USE className prop here ***
+            className={`renderer-canvas ${className || ''}`}
+            // *** ---------------------- ***
+            style={{ display: 'block', width: '100%', height: '100%' }}
+        />
+    );
+}); // End of forwardRef
 
 TryOnRenderer.displayName = 'TryOnRenderer';
 export default TryOnRenderer;
