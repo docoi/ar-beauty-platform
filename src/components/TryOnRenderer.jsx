@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - COMPLETE - Prop-Driven, Bare Shader, Persistent needsUpdate
+// src/components/TryOnRenderer.jsx - COMPLETE - Log isStatic Prop in Loop
 
 import React, { useRef, forwardRef, useEffect, useCallback, useState, useMemo } from 'react';
 import * as THREE from 'three';
@@ -10,8 +10,11 @@ const TryOnRenderer = forwardRef(({
     videoRefProp,     // The actual ref object from parent
     imageElement,
     mediaPipeResults,
-    isStatic,
-    brightness, contrast, effectIntensity, className
+    isStatic,         // Boolean indicating if imageElement is the source
+    brightness,       // Brightness for static image
+    contrast,         // Contrast for static image
+    effectIntensity,  // Effect intensity
+    className
  }, ref) => { // Added ref here
 
     // --- Core Refs ---
@@ -52,39 +55,58 @@ const TryOnRenderer = forwardRef(({
 
 
     // --- Handle Resizing ---
-    const handleResize = useCallback(() => { /* ... */ }, []);
+    const handleResize = useCallback(() => {
+         const canvas = canvasRef.current; // Access canvasRef
+         if (!rendererInstanceRef.current || !baseCameraRef.current || !postCameraRef.current || !canvas || !renderTargetRef.current) return;
+         const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight; if (newWidth === 0 || newHeight === 0) return;
+         const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return;
+         console.log(`DEBUG: Resizing -> ${newWidth}x${newHeight}`);
+         try { rendererInstanceRef.current.setSize(newWidth, newHeight); renderTargetRef.current.setSize(newWidth, newHeight); baseCameraRef.current.left = -newWidth / 2; baseCameraRef.current.right = newWidth / 2; baseCameraRef.current.top = newHeight / 2; baseCameraRef.current.bottom = -newHeight / 2; baseCameraRef.current.updateProjectionMatrix(); } catch(e) { console.error("Resize Error:", e);}
+    }, []); // Dependencies are stable refs, no need to list
+
+
     // --- Scale Base Plane ---
-    const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
+    const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => {
+        const canvas = canvasRef.current; // Access canvasRef
+        if (!baseCameraRef.current || !basePlaneMeshRef.current || !textureWidth || !textureHeight || !canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) return;
+        const viewWidth = canvas.clientWidth; const viewHeight = canvas.clientHeight; const viewAspect = viewWidth / viewHeight; const textureAspect = textureWidth / textureHeight; let scaleX, scaleY;
+        if (viewAspect > textureAspect) { scaleX = viewWidth; scaleY = scaleX / textureAspect; } else { scaleY = viewHeight; scaleX = scaleY * textureAspect; }
+        const currentScale = basePlaneMeshRef.current.scale; const currentSignX = Math.sign(currentScale.x) || 1; const newScaleXWithSign = scaleX * currentSignX;
+        if (Math.abs(currentScale.y - scaleY) > 0.01 || Math.abs(currentScale.x - newScaleXWithSign) > 0.01) { currentScale.y = scaleY; currentScale.x = newScaleXWithSign; /*console.log(...)*/ }
+     }, []); // Dependencies are stable refs
 
 
-    // --- Render Loop --- (Read Props Directly for Source, Persistent needsUpdate)
+    // --- Render Loop --- (Read Props Directly for Source, Log isStatic)
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
         if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !postSceneRef.current || !postCameraRef.current || !basePlaneMeshRef.current || !postMaterialRef.current || !renderTargetRef.current) { return; }
 
         const currentCount = renderLoopCounter.current++;
-        const logThisFrame = (currentCount % 100 === 0);
+        const logThisFrame = (currentCount % 100 === 0); // Throttle logging
         // if (logThisFrame) console.log(`RenderLoop executing: Frame ${currentCount}`);
+
 
         try {
             const postUniforms = postMaterialRef.current.uniforms;
             if (!postUniforms) { if (logThisFrame) console.warn("RenderLoop skipped: postUniforms not ready."); return; }
 
-            // *** Read props directly for source ***
+            // *** Read props directly & LOG isStatic ***
             const results = currentResults.current; // Still use ref for this
             let sourceElement = null;
             let isVideo = false;
             let isImage = false;
 
-            // Read props passed down
-            if (isStatic && imageElement) {
-                sourceElement = imageElement;
+            // Log the prop value as read by the loop
+            if (logThisFrame) console.log(`DEBUG RenderLoop: isStatic prop = ${isStatic}`); // Log isStatic prop
+
+            if (isStatic && imageElement) { // Read isStatic prop
+                sourceElement = imageElement; // Read imageElement prop
                 isImage = true;
-            } else if (!isStatic && videoRefProp?.current) {
+            } else if (!isStatic && videoRefProp?.current) { // Read isStatic prop, check videoRefProp prop
                 sourceElement = videoRefProp.current;
                 isVideo = true;
             }
-             // *** ----------------------------- ***
+             // *** ---------------------------------- ***
 
 
             const baseMaterial = basePlaneMeshRef.current.material;
@@ -116,7 +138,7 @@ const TryOnRenderer = forwardRef(({
                  }
                  // *** ALWAYS set needsUpdate for image texture when active ***
                  if (imageTextureRef.current) {
-                    imageTextureRef.current.needsUpdate = true; // Set flag every frame for static image
+                    imageTextureRef.current.needsUpdate = true; // Set flag every frame
                  }
                  // *** --------------------------------------------------- ***
                  textureToAssign = imageTextureRef.current;
@@ -147,8 +169,7 @@ const TryOnRenderer = forwardRef(({
 
             // 3. Render Base Scene to Target
             rendererInstanceRef.current.setRenderTarget(renderTargetRef.current);
-            // Keep clear color blue for now to confirm base scene rendering
-            rendererInstanceRef.current.setClearColor(0x0000ff, 1);
+            rendererInstanceRef.current.setClearColor(0x0000ff, 1); // Keep BLUE for this test
             rendererInstanceRef.current.clear();
             if (planeVisible) {
                  rendererInstanceRef.current.render(baseSceneRef.current, baseCameraRef.current);
@@ -174,7 +195,7 @@ const TryOnRenderer = forwardRef(({
 
         } catch (error) { console.error("Error in renderLoop:", error); }
     // Add props back to dependency array
-    }, [fitPlaneToCamera, videoRefProp, imageElement, isStatic]);
+    }, [fitPlaneToCamera, videoRefProp, imageElement, isStatic]); // Dependency array includes props read directly
 
 
     // --- Initialize Scene --- (Keep Bare Minimum Shader & ONLY uSceneTexture Uniform)
