@@ -1,35 +1,67 @@
-// src/components/TryOnRenderer.jsx - Handle Canvas Source
+// src/components/TryOnRenderer.jsx - CORRECTED - Define isStatic in renderLoop
 
 import React, { useRef, forwardRef, useEffect, useCallback, useState, useMemo } from 'react';
 import * as THREE from 'three';
 
-// ... (Keep console.log THREE revision, forwardRef, props definition) ...
-const TryOnRenderer = forwardRef(({ videoElement, imageElement, /* etc... */ }, ref) => {
-    // ... (Keep refs) ...
+console.log(`Using Three.js revision: ${THREE.REVISION}`);
+
+const TryOnRenderer = forwardRef(({
+    videoElement, imageElement, mediaPipeResults, isStatic: isStaticProp, // Renamed prop slightly
+    brightness, contrast, effectIntensity, className
+ }, ref) => {
+
+    // --- Core Refs ---
+    const canvasRef = useRef(null);
+    // ... other refs ...
+    const postMaterialRef = useRef(null);
+    const renderTargetRef = useRef(null);
+    const segmentationTextureRef = useRef(null);
+    const isInitialized = useRef(false);
+    const animationFrameHandle = useRef(null);
+    const baseSceneRef = useRef(null);
+    const baseCameraRef = useRef(null);
+    const postSceneRef = useRef(null);
+    const postCameraRef = useRef(null);
+    const rendererInstanceRef = useRef(null);
+    const basePlaneMeshRef = useRef(null);
+    const videoTextureRef = useRef(null);
+    const imageTextureRef = useRef(null);
+
+    // --- Internal State Refs (updated by props) ---
+    const currentSource = useRef(null);
+    const currentResults = useRef(null);
+    const currentIsStatic = useRef(false); // Tracks the internal state based on prop
+    const currentBrightness = useRef(1.0);
+    const currentContrast = useRef(1.0);
+    const currentIntensity = useRef(0.5);
+
 
     // --- Shaders --- (Keep Bare Minimum)
-    const postVertexShader = `...`;
-    const postFragmentShader = `...`;
+    const postVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`;
+    const postFragmentShader = `
+        uniform sampler2D uSceneTexture; varying vec2 vUv;
+        void main() { gl_FragColor = texture2D(uSceneTexture, vUv); }
+    `;
 
     // --- Update internal refs when props change ---
     useEffect(() => {
-        console.log("TryOnRenderer Effect: Props changed", { videoElement, imageElement, isStatic });
-        // *** CHANGED: Source can be video OR image (canvas) element ***
-        if (isStatic && imageElement) { // Static selfie uses imageElement
-            currentSource.current = imageElement;
-        } else if (!isStatic && imageElement) { // Mirror mode uses imageElement (the intermediate canvas)
-             currentSource.current = imageElement;
-        } else if (!isStatic && videoElement) { // Fallback? Could potentially use video directly if canvas fails
-             console.warn("Using videoElement directly, expected imageElement (canvas)");
-             currentSource.current = videoElement;
-        }
-         else {
-            currentSource.current = null;
-        }
-        // *** END CHANGED ***
-        currentIsStatic.current = isStatic; // isStatic prop controls B/C shader logic
-    }, [videoElement, imageElement, isStatic]);
-    // ... (Keep other useEffect hooks for results, B/C, intensity) ...
+        // console.log("TryOnRenderer Effect: Props changed", { videoElement, imageElement, isStaticProp });
+        if (isStaticProp && imageElement) { currentSource.current = imageElement; }
+        else if (!isStaticProp && imageElement) { currentSource.current = imageElement; } // Mirror uses imageElement (canvas)
+        else if (!isStaticProp && videoElement) { currentSource.current = videoElement; } // Fallback
+         else { currentSource.current = null; }
+        currentIsStatic.current = isStaticProp; // Update internal ref based on prop
+    }, [videoElement, imageElement, isStaticProp]); // Depend on the prop
+
+    useEffect(() => { currentResults.current = mediaPipeResults; }, [mediaPipeResults]);
+
+    useEffect(() => {
+        // Use isStaticProp to decide if correction applies
+        currentBrightness.current = isStaticProp ? Math.max(0.1, brightness || 1.0) : 1.0;
+        currentContrast.current = isStaticProp ? Math.max(0.1, contrast || 1.0) : 1.0;
+    }, [isStaticProp, brightness, contrast]); // Depend on the prop
+
+    useEffect(() => { currentIntensity.current = effectIntensity; }, [effectIntensity]);
 
 
     // --- Handle Resizing ---
@@ -38,77 +70,73 @@ const TryOnRenderer = forwardRef(({ videoElement, imageElement, /* etc... */ }, 
     const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
 
 
-    // --- Render Loop --- (Handle Canvas Texture)
+    // --- Render Loop --- (Reads internal refs, safety checks added previously)
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
-        if (!isInitialized.current /* ... etc ... */) return;
+        if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !postSceneRef.current || !postCameraRef.current || !basePlaneMeshRef.current || !postMaterialRef.current || !renderTargetRef.current) return;
 
         try {
-            // ... (Get internal refs: sourceElement, results, isStatic, etc.) ...
+            const postUniforms = postMaterialRef.current.uniforms;
+            if (!postUniforms) { console.warn("RenderLoop skipped: postUniforms not ready."); return; }
+
+            // *** Read internal state refs ***
+            const sourceElement = currentSource.current;
+            const results = currentResults.current;
+            const isStatic = currentIsStatic.current; // *** DEFINE isStatic from ref ***
+            // const brightness = currentBrightness.current; // Not used in bare shader
+            // const contrast = currentContrast.current;   // Not used in bare shader
+            // const intensity = currentIntensity.current; // Not used in bare shader
+             // *** ----------------------- ***
 
             const baseMaterial = basePlaneMeshRef.current.material;
-            // ... (postUniforms) ...
             let sourceWidth = 0, sourceHeight = 0;
             let isVideo = sourceElement instanceof HTMLVideoElement;
-             // *** Treat HTMLCanvasElement like HTMLImageElement for texture purposes ***
             let isImage = sourceElement instanceof HTMLImageElement || sourceElement instanceof HTMLCanvasElement;
-             // *** ------------------------------------------------------------ ***
             let textureToAssign = null;
 
             // 1. Update Base Texture
-            if (isVideo && sourceElement.readyState >= 2 && sourceElement.videoWidth > 0) { /* ... video texture logic ... */ }
-            // *** CHANGED: Handle Image OR Canvas ***
-            else if (isImage && sourceElement.width > 0 && sourceElement.height > 0) { // Check width/height for canvas/image
-                sourceWidth = sourceElement.width; sourceHeight = sourceElement.height;
-                // Use imageTextureRef for both Image and Canvas sources
-                if (imageTextureRef.current?.image !== sourceElement) { // If source element changed
-                    imageTextureRef.current?.dispose();
-                    imageTextureRef.current = new THREE.Texture(sourceElement); // Create Texture from image/canvas
-                    imageTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                    imageTextureRef.current.needsUpdate = true; // Update needed on creation
-                    console.log(`DEBUG RenderLoop: Created/Replaced Image/Canvas Texture`);
-                } else {
-                    // Source is the same (likely canvas being updated), mark texture for update
-                    imageTextureRef.current.needsUpdate = true;
-                }
-                textureToAssign = imageTextureRef.current;
-            // *** END CHANGED ***
-            }
-            else { /* ... handle null source ... */ }
-
-            const textureChanged = baseMaterial.map !== textureToAssign;
-            if (textureChanged) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; /* ... log ... */ }
-            // *** REMOVED redundant needsUpdate setting here - handled above ***
-            // if (textureToAssign && textureToAssign.needsUpdate && !(textureToAssign instanceof THREE.VideoTexture)) { textureToAssign.needsUpdate = true; }
+             if (isVideo && sourceElement.readyState >= 2 && sourceElement.videoWidth > 0) { /* ... video texture logic ... */ }
+             else if (isImage && sourceElement.width > 0 && sourceElement.height > 0) { /* ... image/canvas texture logic ... */ }
+             else { /* ... handle null source ... */ }
+             const textureChanged = baseMaterial.map !== textureToAssign; if (textureChanged) { /* ... assign texture ... */ }
+             if (textureToAssign && textureToAssign.needsUpdate && !(textureToAssign instanceof THREE.VideoTexture)) { textureToAssign.needsUpdate = true; }
 
 
             // 2. Update Plane Scale & Mirroring
             const planeVisible = baseMaterial.map && sourceWidth > 0 && sourceHeight > 0;
-            if (planeVisible) {
+             if (planeVisible) {
                 fitPlaneToCamera(sourceWidth, sourceHeight);
-                 // *** Mirroring: Mirror mode needs flipping, static selfie doesn't ***
-                 // We passed isStatic=false for Mirror mode, even though source is canvas now
-                 const scaleX = Math.abs(basePlaneMeshRef.current.scale.x);
-                 const newScaleX = !isStatic ? -scaleX : scaleX; // Flip if NOT static (Mirror mode)
-                 // *** ------------------------------------------------------------ ***
+                const scaleX = Math.abs(basePlaneMeshRef.current.scale.x);
+                // *** Now uses the defined 'isStatic' variable ***
+                const newScaleX = !isStatic ? -scaleX : scaleX; // Flip if NOT static (Mirror mode uses canvas but isStatic=false)
                 if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; }
-            } else { /* ... hide plane ... */ }
+             } else { /* ... hide plane ... */ }
+
 
             // 3. Render Base Scene to Target
-            // ... render to target logic ...
+             if (planeVisible) { /* ... render to target ... */ }
+             else { /* ... clear target ... */ }
+
 
             // 4. Update Post-Processing Uniforms
-            // ... update uniforms ...
+            if (postUniforms.uSceneTexture) { postUniforms.uSceneTexture.value = renderTargetRef.current.texture; } else { /*...*/ }
+             // Update Segmentation Mask Texture (if uniform defined on material)
+             const segmentationMask = results?.segmentationMasks?.[0]; const maskUniform = postUniforms.uSegmentationMask;
+             if (maskUniform && segmentationMask?.mask) { /* ... update mask texture ... */ }
+             else if (maskUniform && maskUniform.value !== null) { maskUniform.value = null; }
+
 
             // 5. Render Post-Processing Scene to Screen
-            // ... render post scene ...
+            rendererInstanceRef.current.render(postSceneRef.current, postCameraRef.current);
 
         } catch (error) { console.error("Error in renderLoop:", error); }
     }, [fitPlaneToCamera]);
 
 
-    // --- Initialize Scene --- (Keep Bare Minimum Shader & Uniforms)
+    // --- Initialize Scene --- (Keep Bare Minimum Shader & ONLY uSceneTexture Uniform)
     const initThreeScene = useCallback(() => { /* ... */ }, [handleResize, postVertexShader, postFragmentShader, renderLoop]);
+
+
     // --- Effect for Initial Setup / Resize Observer ---
     useEffect(() => { /* ... */ }, [initThreeScene, handleResize]);
     // --- REMOVED useImperativeHandle ---
