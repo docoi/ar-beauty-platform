@@ -1,4 +1,4 @@
-// src/components/StaticSelfieTryOn.jsx - REVERTED to state from Msg #71
+// src/components/StaticSelfieTryOn.jsx - COMPLETE - Simplified Render Condition
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // Should use the one with bare-minimum shader
@@ -8,10 +8,10 @@ const FIXED_SELFIE_BRIGHTNESS = 2.15;
 const FIXED_SELFIE_CONTRAST = 0.55;
 // *** -------------------------------------- ***
 
+
 const StaticSelfieTryOn = forwardRef(({
     faceLandmarker,
     effectIntensity
-    // No B/C props expected
 }, ref) => {
   console.log("StaticSelfieTryOn rendering. Intensity prop:", effectIntensity );
 
@@ -22,52 +22,51 @@ const StaticSelfieTryOn = forwardRef(({
   const [cameraError, setCameraError] = useState(null);
   const [capturedSelfieDataUrl, setCapturedSelfieDataUrl] = useState(null);
   const [detectedSelfieResults, setDetectedSelfieResults] = useState(null);
-  const [selfieDimensions, setSelfieDimensions] = useState({ width: 0, height: 0 }); // Keep dimensions state
+  // REMOVED state for dimensions
+  // const [selfieDimensions, setSelfieDimensions] = useState({ width: 0, height: 0 });
   const [isDetecting, setIsDetecting] = useState(false);
   const [debugInfo, setDebugInfo] = useState('');
   // State to hold the loaded static image element
-  const [staticImageElement, setStaticImageElement] = useState(null);
+  const [staticImageElement, setStaticImageElement] = useState(null); // Keep this
 
 
   // Refs
   const selfieVideoRef = useRef(null);
-  // const rendererRef = useRef(null); // Not used in prop-driven model
+  // const rendererRef = useRef(null); // Not used
 
-  // Imperative handle
+  // Imperative handle (can be simplified if parent doesn't need intensity update this way)
   useImperativeHandle(ref, () => ({
       updateEffectIntensity: (intensity) => {
-          // If TryOnRenderer needs intensity updates via handle in the future
-          // if (rendererRef.current && typeof rendererRef.current.updateEffectIntensity === 'function') {
-          //     rendererRef.current.updateEffectIntensity(intensity);
-          // }
+          // If TryOnRenderer needed intensity updates via handle
       },
   }));
 
 
-  // Camera Access - Restore setting selfieDimensions
+  // Camera Access - REMOVE setting selfieDimensions here
   useEffect(() => {
-    let isMounted = true; let stream = null; const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream.getTracks().forEach(track => track.stop()); } } catch (err) { if (isMounted) { let message = "Camera Error."; /* ... error messages ... */ setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } }; if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); } return () => { isMounted = false; const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); };
+    let isMounted = true; let stream = null; const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { /* NO setSelfieDimensions here */ setIsCameraLoading(false); } }; } else if (stream) { stream.getTracks().forEach(track => track.stop()); } } catch (err) { /* ... */ } }; if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); } return () => { /* ... cleanup ... */ };
    }, [isPreviewing, faceLandmarker]);
 
-  // Selfie Capture - Restore dependency on selfieDimensions
+  // Selfie Capture - REMOVE dependency on selfieDimensions state
   const handleTakeSelfie = useCallback(() => {
-    if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; }
-    // Use selfieDimensions state here
-    if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; }
-    setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png'); setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedSelfieResults(null); setStaticImageElement(null); setIsDetecting(true); setDebugInfo('Capture complete. Analyzing...'); cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null);
-   }, [cameraStream, selfieDimensions]); // Restore dependency
+    if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { /*...*/ return; }
+    const videoWidth = selfieVideoRef.current.videoWidth; // Get dims directly
+    const videoHeight = selfieVideoRef.current.videoHeight;
+    if (!videoWidth || !videoHeight){ setCameraError("No video dims for capture."); setDebugInfo("Error: No video dims for capture."); return; }
+    setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = videoWidth; tempCanvas.height = videoHeight; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png'); setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedSelfieResults(null); setStaticImageElement(null); setIsDetecting(true); setDebugInfo('Capture complete. Analyzing...'); cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null);
+   }, [cameraStream]); // Removed selfieDimensions dependency
 
-  // Face Detection and Image Loading - Restore setting selfieDimensions
+  // Face Detection and Image Loading - REMOVE setting selfieDimensions
   useEffect(() => {
     if (!capturedSelfieDataUrl || !faceLandmarker || !isDetecting) { setStaticImageElement(null); return; }
     setDebugInfo('Loading Image...'); const imageElement = new Image();
-    imageElement.onload = async () => { console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); /* << Restore setting dimensions */ setStaticImageElement(imageElement); setDebugInfo('Image loaded, detecting...'); try { if (faceLandmarker) { const results = faceLandmarker.detectForVideo(imageElement, performance.now()); console.log("StaticSelfieTryOn: Detection complete.", results); /*...*/ setDetectedSelfieResults(results); } else { /*...*/ } } catch(err) { /*...*/ } finally { setIsDetecting(false); } } ;
+    imageElement.onload = async () => { console.log("StaticSelfieTryOn: Image loaded."); /* NO setSelfieDimensions here */ setStaticImageElement(imageElement); setDebugInfo('Image loaded, detecting...'); try { if (faceLandmarker) { const results = faceLandmarker.detectForVideo(imageElement, performance.now()); console.log("StaticSelfieTryOn: Detection complete.", results); /*...*/ setDetectedSelfieResults(results); } else { /*...*/ } } catch(err) { /*...*/ } finally { setIsDetecting(false); } } ;
     imageElement.onerror = () => { setDebugInfo('Error: Img load failed.'); setIsDetecting(false); setStaticImageElement(null); } ;
     imageElement.src = capturedSelfieDataUrl;
    }, [capturedSelfieDataUrl, faceLandmarker, isDetecting]); // Dependencies
 
 
-   // --- NO Effect needed to Trigger Rendering ---
+   // --- REMOVED Effect to Trigger Rendering via Handle ---
 
 
   // Retake Selfie - Ensure staticImageElement is cleared
@@ -75,7 +74,7 @@ const StaticSelfieTryOn = forwardRef(({
     setIsPreviewing(true); setCapturedSelfieDataUrl(null); setDetectedSelfieResults(null); setStaticImageElement(null); /* << Clear image element */ setCameraError(null); setIsCameraLoading(true); setIsDetecting(false); setDebugInfo('');
    };
 
-  // --- JSX --- (Restore original structure)
+  // --- JSX ---
   return (
     <div className="border p-4 rounded bg-green-50">
       <h2 className="text-xl font-semibold mb-2 text-center">Try On Selfie Mode</h2>
@@ -93,13 +92,15 @@ const StaticSelfieTryOn = forwardRef(({
          </>
       ) : ( // Render Captured UI when isPreviewing is false
         <>
-          <div className="relative w-full max-w-md mx-auto bg-gray-200 overflow-hidden rounded shadow" style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : 75}%` }}>
-            {/* Render TryOnRenderer only when image element is ready */}
-            {staticImageElement && selfieDimensions.width > 0 ? (
+          {/* *** SIMPLIFIED RENDER CONDITION for TryOnRenderer container *** */}
+           {/* Use a fixed aspect ratio for container or calculate differently if needed */}
+          <div className="relative w-full max-w-md mx-auto bg-gray-200 overflow-hidden rounded shadow" style={{ paddingTop: `133.33%` }}> {/* Example: 4:3 Aspect ratio */}
+            {/* Render based ONLY on staticImageElement existence */}
+            {staticImageElement ? (
               <TryOnRenderer
                 // Pass props as before
                 videoRefProp={null} // Pass null for video ref
-                imageElement={staticImageElement}
+                imageElement={staticImageElement} // Pass the loaded image element
                 mediaPipeResults={detectedSelfieResults}
                 isStatic={true}
                 brightness={FIXED_SELFIE_BRIGHTNESS}
@@ -108,6 +109,7 @@ const StaticSelfieTryOn = forwardRef(({
                 className="absolute top-0 left-0 w-full h-full"
               />
             ) : (
+              // Show "Loading Image..." only if not previewing and image isn't ready
               <div className="absolute inset-0 flex items-center justify-center"><p className="text-gray-500">Loading Image...</p></div>
             )}
           </div>
