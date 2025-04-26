@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - COMPLETE - Read videoRefProp, Blue Clear
+// src/components/TryOnRenderer.jsx - COMPLETE - Persistent needsUpdate for Image
 
 import React, { useRef, forwardRef, useEffect, useCallback, useState, useMemo } from 'react';
 import * as THREE from 'three';
@@ -73,7 +73,7 @@ const TryOnRenderer = forwardRef(({
      }, []); // Dependencies are stable refs
 
 
-    // --- Render Loop --- (Read Props Directly for Source)
+    // --- Render Loop --- (Read Props Directly for Source, Persistent needsUpdate)
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
         if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !postSceneRef.current || !postCameraRef.current || !basePlaneMeshRef.current || !postMaterialRef.current || !renderTargetRef.current) { return; }
@@ -92,14 +92,16 @@ const TryOnRenderer = forwardRef(({
             let isVideo = false;
             let isImage = false;
 
-            if (isStatic && imageElement) { // Read isStatic prop
-                sourceElement = imageElement; // Read imageElement prop
+            // Read props passed down
+            if (isStatic && imageElement) {
+                sourceElement = imageElement;
                 isImage = true;
-            } else if (!isStatic && videoRefProp?.current) { // Read isStatic prop, check videoRefProp prop
+            } else if (!isStatic && videoRefProp?.current) {
                 sourceElement = videoRefProp.current;
                 isVideo = true;
             }
-            // *** ----------------------------- ***
+             // *** ----------------------------- ***
+
 
             const baseMaterial = basePlaneMeshRef.current.material;
             let sourceWidth = 0, sourceHeight = 0;
@@ -124,18 +126,33 @@ const TryOnRenderer = forwardRef(({
                      imageTextureRef.current?.dispose();
                      imageTextureRef.current = new THREE.Texture(sourceElement);
                      imageTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                     imageTextureRef.current.needsUpdate = true;
+                     imageTextureRef.current.needsUpdate = true; // Mark for initial upload
                      console.log("DEBUG RenderLoop: Created Image Texture");
                      textureJustCreated = true;
-                 } else if (imageTextureRef.current?.needsUpdate) {
-                      imageTextureRef.current.needsUpdate = true;
                  }
+                 // *** ALWAYS set needsUpdate for image texture when active ***
+                 if (imageTextureRef.current) {
+                    imageTextureRef.current.needsUpdate = true;
+                 }
+                 // *** --------------------------------------------------- ***
                  textureToAssign = imageTextureRef.current;
             }
-            else { textureToAssign = null; if(videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null; } if(imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null;} }
+            else { // No valid source
+                textureToAssign = null;
+                if(videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null; }
+                if(imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null;}
+             }
 
-             if (baseMaterial.map !== textureToAssign || textureJustCreated) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; console.log("DEBUG RenderLoop: Assigned texture:", textureToAssign?.constructor?.name ?? 'null'); }
-             if (textureToAssign && textureToAssign.needsUpdate && !(textureToAssign instanceof THREE.VideoTexture)) { textureToAssign.needsUpdate = true; }
+             // Assign texture if needed
+             if (baseMaterial.map !== textureToAssign || textureJustCreated) {
+                 baseMaterial.map = textureToAssign;
+                 baseMaterial.needsUpdate = true; // Tell material about map change
+                 console.log("DEBUG RenderLoop: Assigned texture:", textureToAssign?.constructor?.name ?? 'null');
+             }
+             // This check below might now be redundant but ensures flag is true if texture exists
+             if (textureToAssign && textureToAssign.needsUpdate && !(textureToAssign instanceof THREE.VideoTexture)) {
+                 textureToAssign.needsUpdate = true;
+             }
 
 
             // 2. Update Plane Scale & Mirroring
@@ -171,8 +188,8 @@ const TryOnRenderer = forwardRef(({
             // if (logThisFrame) console.log(`DEBUG RenderLoop: Rendered post scene to screen.`);
 
         } catch (error) { console.error("Error in renderLoop:", error); }
-    // Only depends on fitPlaneToCamera, reads props/refs directly otherwise
-    }, [fitPlaneToCamera]);
+    // Add props used directly in loop to dependency array
+    }, [fitPlaneToCamera, videoRefProp, imageElement, isStatic]);
 
 
     // --- Initialize Scene --- (Keep Bare Minimum Shader & ONLY uSceneTexture Uniform)
