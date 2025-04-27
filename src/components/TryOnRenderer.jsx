@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - ADDED Mask Logging & EXAGGERATED Effect
+// src/components/TryOnRenderer.jsx - ROBUST Mask Check & Exaggerated Effect
 
 import React, { useRef, forwardRef, useEffect, useCallback, useState, useMemo } from 'react';
 import * as THREE from 'three';
@@ -39,6 +39,7 @@ const TryOnRenderer = forwardRef(({
     const currentContrast = useRef(1.0);
     const currentIntensity = useRef(0.5);
     const renderLoopCounter = useRef(0);
+    const lastMaskUpdateTime = useRef(0); // Optimization: Throttle mask updates
 
 
     // --- Shaders --- (EXAGGERATED Effect)
@@ -68,8 +69,7 @@ const TryOnRenderer = forwardRef(({
 
         // *** EXAGGERATED Hydration Effect Function (Bright Red) ***
         vec3 applyHydrationEffect(vec3 color) {
-            // Return bright red for testing visibility
-            return vec3(1.0, 0.0, 0.0);
+            return vec3(1.0, 0.0, 0.0); // Bright Red
         }
 
         void main() {
@@ -79,10 +79,11 @@ const TryOnRenderer = forwardRef(({
 
             if (uHasMask && uEffectIntensity > 0.0) {
                 float maskValue = texture2D(uSegmentationMask, vUv).r;
-                vec3 hydratedColor = applyHydrationEffect(correctedColor); // Will be red now
+                vec3 hydratedColor = applyHydrationEffect(correctedColor); // Will be red
 
                 // Blend using mask and intensity
-                finalColor = mix(correctedColor, hydratedColor, maskValue * uEffectIntensity);
+                // Add a small epsilon to maskValue to avoid potential artifacts at 0
+                finalColor = mix(correctedColor, hydratedColor, clamp(maskValue + 0.001, 0.0, 1.0) * uEffectIntensity);
             }
 
             finalColor = clamp(finalColor, 0.0, 1.0);
@@ -93,10 +94,7 @@ const TryOnRenderer = forwardRef(({
     // --- Update internal refs based on props ---
     useEffect(() => {
         currentResults.current = mediaPipeResults;
-        // *** ADDED LOGGING for mask presence in results ***
-        if (mediaPipeResults) {
-             console.log(`TryOnRenderer Effect: Received results. Has segmentationMasks? ${!!mediaPipeResults.segmentationMasks}, Has mask[0]? ${!!mediaPipeResults.segmentationMasks?.[0]}`);
-        }
+        // Basic log moved to mask effect hook
     }, [mediaPipeResults]);
 
     useEffect(() => {
@@ -109,82 +107,115 @@ const TryOnRenderer = forwardRef(({
     }, [effectIntensity]);
 
 
-    // --- Effect to manage Video Texture --- (No changes needed)
+    // --- Effect to manage Video Texture --- (No changes)
     useEffect(() => {
         const videoElement = videoRefProp?.current;
-        if (!isStatic && videoElement) { if (!videoTextureRef.current || videoTextureRef.current.image !== videoElement) { /* console.log("TryOnRenderer Effect: Creating/Updating Video Texture"); */ videoTextureRef.current?.dispose(); videoTextureRef.current = new THREE.VideoTexture(videoElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; } } else { if (videoTextureRef.current) { /* console.log("TryOnRenderer Effect: Disposing Video Texture"); */ videoTextureRef.current.dispose(); videoTextureRef.current = null; } }
+        if (!isStatic && videoElement) { if (!videoTextureRef.current || videoTextureRef.current.image !== videoElement) { videoTextureRef.current?.dispose(); videoTextureRef.current = new THREE.VideoTexture(videoElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; } } else { if (videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null; } }
     }, [isStatic, videoRefProp]);
 
 
-    // --- Effect to manage Image Texture --- (No changes needed)
+    // --- Effect to manage Image Texture --- (No changes)
     useEffect(() => {
-        if (isStatic && imageElement) { if (!imageTextureRef.current || imageTextureRef.current.image !== imageElement) { /* console.log("TryOnRenderer Effect: Creating/Updating Image Texture for:", imageElement); */ imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(imageElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; } else if (imageTextureRef.current && imageTextureRef.current.image === imageElement) { imageTextureRef.current.needsUpdate = true; } } else { if (imageTextureRef.current) { /* console.log("TryOnRenderer Effect: Disposing Image Texture"); */ imageTextureRef.current.dispose(); imageTextureRef.current = null; } }
+        if (isStatic && imageElement) { if (!imageTextureRef.current || imageTextureRef.current.image !== imageElement) { imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(imageElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; } else if (imageTextureRef.current && imageTextureRef.current.image === imageElement) { imageTextureRef.current.needsUpdate = true; } } else { if (imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null; } }
     }, [isStatic, imageElement]);
 
 
-    // --- Effect to manage Segmentation Mask Texture --- (ADDED Logging)
+    // --- ***** CORRECTED & OPTIMIZED Effect to manage Segmentation Mask Texture ***** ---
     useEffect(() => {
         const results = currentResults.current;
-        const segmentationMask = results?.segmentationMasks?.[0];
+        // *** Robust check: Ensure segmentationMasks exists, is an array, and has length > 0 ***
+        const hasMaskData = Array.isArray(results?.segmentationMasks) && results.segmentationMasks.length > 0;
 
-        // *** ADDED Logging: Log details about the mask object found ***
-        if (segmentationMask?.mask) {
-            const mask = segmentationMask.mask;
-            const maskData = segmentationMask.maskData;
-            const maskWidth = mask.width;
-            const maskHeight = mask.height;
+        if (hasMaskData) {
+            const segmentationMask = results.segmentationMasks[0]; // Now safe to access [0]
+            const mask = segmentationMask?.mask; // MediaPipe Mask object
+            const maskData = segmentationMask?.maskData; // Float32Array
+            const maskWidth = mask?.width;
+            const maskHeight = mask?.height;
 
-            console.log(`TryOnRenderer Mask Effect: Found mask object. Dimensions: ${maskWidth}x${maskHeight}. Data length: ${maskData?.length}`);
+            // Ensure we have all necessary mask components
+            if (mask && maskData && maskWidth > 0 && maskHeight > 0) {
 
-            if (!segmentationTextureRef.current || segmentationTextureRef.current.image.width !== maskWidth || segmentationTextureRef.current.image.height !== maskHeight) {
-                console.log(`TryOnRenderer Mask Effect: Creating new mask texture (${maskWidth}x${maskHeight})`);
-                segmentationTextureRef.current?.dispose();
-                segmentationTextureRef.current = new THREE.DataTexture(maskData, maskWidth, maskHeight, THREE.RedFormat, THREE.FloatType);
-                segmentationTextureRef.current.needsUpdate = true;
+                 // Optimization: Throttle texture updates in real-time mode
+                 const now = performance.now();
+                 const timeSinceLastUpdate = now - lastMaskUpdateTime.current;
+                 // Update mask texture max ~15 times per second (adjust threshold as needed)
+                 // Or always update if it's a static image
+                 const throttleThreshold = isStatic ? 0 : 66; // ~15fps = 1000ms/15 = 66ms
+
+                 if (timeSinceLastUpdate > throttleThreshold) {
+                    lastMaskUpdateTime.current = now; // Update timestamp
+
+                    // console.log(`TryOnRenderer Mask Effect: Processing mask ${maskWidth}x${maskHeight}`);
+
+                    try {
+                        if (!segmentationTextureRef.current || segmentationTextureRef.current.image.width !== maskWidth || segmentationTextureRef.current.image.height !== maskHeight) {
+                            console.log(`TryOnRenderer Mask Effect: Creating new mask texture (${maskWidth}x${maskHeight})`);
+                            segmentationTextureRef.current?.dispose();
+                            segmentationTextureRef.current = new THREE.DataTexture(maskData, maskWidth, maskHeight, THREE.RedFormat, THREE.FloatType);
+                            // Linear filter might be better for smoother mask edges
+                            segmentationTextureRef.current.minFilter = THREE.LinearFilter;
+                            segmentationTextureRef.current.magFilter = THREE.LinearFilter;
+                            segmentationTextureRef.current.needsUpdate = true;
+                        } else {
+                            // console.log(`TryOnRenderer Mask Effect: Updating existing mask texture data (Throttled)`);
+                            segmentationTextureRef.current.image.data = maskData;
+                            segmentationTextureRef.current.needsUpdate = true;
+                        }
+                    } catch (error) {
+                         console.error("Error creating/updating mask texture:", error);
+                         // Dispose potentially corrupted texture
+                         segmentationTextureRef.current?.dispose();
+                         segmentationTextureRef.current = null;
+                    }
+                 }
+                 // else { console.log("TryOnRenderer Mask Effect: Throttled mask update."); }
+
             } else {
-                // console.log(`TryOnRenderer Mask Effect: Updating existing mask texture data`);
-                segmentationTextureRef.current.image.data = maskData;
-                segmentationTextureRef.current.needsUpdate = true;
+                 console.warn("TryOnRenderer Mask Effect: Found segmentationMasks[0] but mask data is incomplete/invalid.");
+                 // No valid mask data, ensure texture is removed
+                 if (segmentationTextureRef.current) {
+                    segmentationTextureRef.current.dispose();
+                    segmentationTextureRef.current = null;
+                 }
             }
         } else {
-             // *** ADDED Logging: Log when no mask is found ***
-             console.log("TryOnRenderer Mask Effect: No segmentation mask found in results.");
+            // No mask data in results, ensure texture is nullified/disposed
             if (segmentationTextureRef.current) {
-                console.log("TryOnRenderer Mask Effect: Disposing existing mask texture.");
+                // console.log("TryOnRenderer Mask Effect: No valid segmentation mask found in results, disposing texture.");
                 segmentationTextureRef.current.dispose();
                 segmentationTextureRef.current = null;
             }
         }
-    }, [mediaPipeResults]);
+    }, [mediaPipeResults, isStatic]); // Add isStatic dependency for throttling logic
 
 
-    // --- Handle Resizing --- (No changes needed)
+    // --- Handle Resizing --- (No changes)
     const handleResize = useCallback(() => {
-         const canvas = canvasRef.current; if (!rendererInstanceRef.current || !baseCameraRef.current || !postCameraRef.current || !canvas || !renderTargetRef.current) return; const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight; if (newWidth === 0 || newHeight === 0) return; const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return; /*console.log(...)*/; try { rendererInstanceRef.current.setSize(newWidth, newHeight); renderTargetRef.current.setSize(newWidth, newHeight); baseCameraRef.current.left = -newWidth / 2; baseCameraRef.current.right = newWidth / 2; baseCameraRef.current.top = newHeight / 2; baseCameraRef.current.bottom = -newHeight / 2; baseCameraRef.current.updateProjectionMatrix(); } catch(e) { console.error("Resize Error:", e);}
+         const canvas = canvasRef.current; if (!rendererInstanceRef.current || !baseCameraRef.current || !postCameraRef.current || !canvas || !renderTargetRef.current) return; const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight; if (newWidth === 0 || newHeight === 0) return; const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return; try { rendererInstanceRef.current.setSize(newWidth, newHeight); renderTargetRef.current.setSize(newWidth, newHeight); baseCameraRef.current.left = -newWidth / 2; baseCameraRef.current.right = newWidth / 2; baseCameraRef.current.top = newHeight / 2; baseCameraRef.current.bottom = -newHeight / 2; baseCameraRef.current.updateProjectionMatrix(); } catch(e) { console.error("Resize Error:", e);}
     }, []);
 
 
-    // --- Scale Base Plane --- (No changes needed)
+    // --- Scale Base Plane --- (No changes)
     const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => {
         const canvas = canvasRef.current; if (!baseCameraRef.current || !basePlaneMeshRef.current || !textureWidth || !textureHeight || !canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) return; const viewWidth = canvas.clientWidth; const viewHeight = canvas.clientHeight; const viewAspect = viewWidth / viewHeight; const textureAspect = textureWidth / textureHeight; let scaleX, scaleY; if (viewAspect > textureAspect) { scaleX = viewWidth; scaleY = scaleX / textureAspect; } else { scaleY = viewHeight; scaleX = scaleY * textureAspect; } const currentScale = basePlaneMeshRef.current.scale; const currentSignX = Math.sign(currentScale.x) || 1; const newScaleXWithSign = scaleX * currentSignX; if (Math.abs(currentScale.y - scaleY) > 0.01 || Math.abs(currentScale.x - newScaleXWithSign) > 0.01) { currentScale.y = scaleY; currentScale.x = newScaleXWithSign; }
      }, []);
 
 
-    // --- Render Loop --- (ADDED Logging for uHasMask)
+    // --- Render Loop --- (No changes needed here, uses updated uniforms)
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
         if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !postSceneRef.current || !postCameraRef.current || !basePlaneMeshRef.current || !postMaterialRef.current || !renderTargetRef.current) { return; }
 
         const currentCount = renderLoopCounter.current++;
-        const logThisFrame = (currentCount % 100 === 0); // Log uniforms periodically
+        const logThisFrame = (currentCount % 150 === 0); // Log less frequently
 
         try {
             const postUniforms = postMaterialRef.current.uniforms;
             if (!postUniforms || !postUniforms.uBrightness || !postUniforms.uContrast || !postUniforms.uEffectIntensity || !postUniforms.uSegmentationMask || !postUniforms.uHasMask) { return; }
 
             // 1. Select Source Texture
-            const baseMaterial = basePlaneMeshRef.current.material;
-            let sourceWidth = 0, sourceHeight = 0; let textureToAssign = null; let isVideo = false;
+            const baseMaterial = basePlaneMeshRef.current.material; let sourceWidth = 0, sourceHeight = 0; let textureToAssign = null; let isVideo = false;
             if (!isStatic && videoTextureRef.current) { textureToAssign = videoTextureRef.current; if (textureToAssign.image) { sourceWidth = textureToAssign.image.videoWidth; sourceHeight = textureToAssign.image.videoHeight; isVideo = true;} } else if (isStatic && imageTextureRef.current) { textureToAssign = imageTextureRef.current; if (textureToAssign.image) { sourceWidth = textureToAssign.image.naturalWidth; sourceHeight = textureToAssign.image.naturalHeight; } if (textureToAssign.needsUpdate) { textureToAssign.needsUpdate = true; } }
             if (baseMaterial.map !== textureToAssign) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; } else if (textureToAssign && textureToAssign.needsUpdate) { baseMaterial.needsUpdate = true; }
 
@@ -193,8 +224,7 @@ const TryOnRenderer = forwardRef(({
             if (planeVisible) { fitPlaneToCamera(sourceWidth, sourceHeight); const scaleX = Math.abs(basePlaneMeshRef.current.scale.x); const newScaleX = isVideo ? -scaleX : scaleX; if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; } } else { if (basePlaneMeshRef.current.scale.x !== 0 || basePlaneMeshRef.current.scale.y !== 0) { basePlaneMeshRef.current.scale.set(0, 0, 0); } }
 
             // 3. Render Base Scene to Target
-             rendererInstanceRef.current.setRenderTarget(renderTargetRef.current);
-             rendererInstanceRef.current.setClearColor(0x000000, 0); rendererInstanceRef.current.clear();
+             rendererInstanceRef.current.setRenderTarget(renderTargetRef.current); rendererInstanceRef.current.setClearColor(0x000000, 0); rendererInstanceRef.current.clear();
              if (planeVisible) { rendererInstanceRef.current.render(baseSceneRef.current, baseCameraRef.current); if (textureToAssign?.needsUpdate) { textureToAssign.needsUpdate = false; } }
              rendererInstanceRef.current.setRenderTarget(null);
 
@@ -203,14 +233,11 @@ const TryOnRenderer = forwardRef(({
              postUniforms.uBrightness.value = currentBrightness.current;
              postUniforms.uContrast.value = currentContrast.current;
              postUniforms.uEffectIntensity.value = currentIntensity.current;
-             postUniforms.uSegmentationMask.value = segmentationTextureRef.current;
-             const hasMask = !!segmentationTextureRef.current; // Determine boolean
-             postUniforms.uHasMask.value = hasMask; // Set boolean flag
+             postUniforms.uSegmentationMask.value = segmentationTextureRef.current; // Assign ref value
+             const hasMask = !!segmentationTextureRef.current; // Boolean check on ref value
+             postUniforms.uHasMask.value = hasMask;
 
-             // *** ADDED Logging: Log the status of uHasMask periodically ***
-             if (logThisFrame) {
-                console.log(`RenderLoop Uniforms: uIntensity=${currentIntensity.current.toFixed(2)}, uHasMask=${hasMask}`);
-             }
+             if (logThisFrame) { console.log(`RenderLoop Uniforms: uIntensity=${currentIntensity.current.toFixed(2)}, uHasMask=${hasMask}`); }
 
             // 5. Render Post-Processing Scene to Screen
              rendererInstanceRef.current.render(postSceneRef.current, postCameraRef.current);
@@ -222,29 +249,29 @@ const TryOnRenderer = forwardRef(({
     // --- Initialize Scene --- (No changes needed here)
     const initThreeScene = useCallback(() => {
         if (!canvasRef.current || isInitialized.current) return;
-        console.log("DEBUG: initThreeScene START (With EXAGGERATED Effect Shader)");
+        console.log("DEBUG: initThreeScene START (Robust Mask Check + Exaggerated Effect)");
         try {
             const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480;
             rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); rendererInstanceRef.current.setSize(initialWidth, initialHeight); rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio); rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
-            renderTargetRef.current = new THREE.WebGLRenderTarget(initialWidth, initialHeight, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, colorSpace: THREE.SRGBColorSpace }); /*console.log("DEBUG: RenderTarget created.");*/
-            baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1; const planeGeometry = new THREE.PlaneGeometry(1, 1); const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: true }); basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); baseSceneRef.current.add(basePlaneMeshRef.current); /*console.log("DEBUG: Base scene created.");*/
+            renderTargetRef.current = new THREE.WebGLRenderTarget(initialWidth, initialHeight, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, colorSpace: THREE.SRGBColorSpace });
+            baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1; const planeGeometry = new THREE.PlaneGeometry(1, 1); const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: true }); basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); baseSceneRef.current.add(basePlaneMeshRef.current);
             postSceneRef.current = new THREE.Scene(); postCameraRef.current = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1); const postPlaneGeometry = new THREE.PlaneGeometry(2, 2);
             postMaterialRef.current = new THREE.ShaderMaterial({ vertexShader: postVertexShader, fragmentShader: postFragmentShader, uniforms: { uSceneTexture: { value: renderTargetRef.current.texture }, uBrightness: { value: 1.0 }, uContrast: { value: 1.0 }, uSegmentationMask: { value: null }, uEffectIntensity: { value: currentIntensity.current }, uHasMask: { value: false }, }, transparent: true, depthWrite: false, depthTest: false, });
-            const postPlaneMesh = new THREE.Mesh(postPlaneGeometry, postMaterialRef.current); postSceneRef.current.add(postPlaneMesh); /*console.log("DEBUG: Post-processing scene created (With Effect Shader).");*/
-            isInitialized.current = true; /*console.log("DEBUG: Scene initialization complete.");*/ handleResize(); /*console.log("DEBUG: Requesting first render loop frame from Init.");*/ cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop);
+            const postPlaneMesh = new THREE.Mesh(postPlaneGeometry, postMaterialRef.current); postSceneRef.current.add(postPlaneMesh);
+            isInitialized.current = true; handleResize(); cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop);
         } catch (error) { console.error("DEBUG: initThreeScene ERROR:", error); isInitialized.current = false; }
     }, [handleResize, postVertexShader, postFragmentShader, renderLoop]);
 
 
     // --- Effect for Initial Setup / Resize Observer / Cleanup --- (No changes needed)
     useEffect(() => {
-         /*console.log("DEBUG: TryOnRenderer Mount/Init effect running.");*/ initThreeScene();
-         let resizeObserver; const currentCanvas = canvasRef.current; if (currentCanvas) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(currentCanvas); /*console.log("DEBUG: Resize observer attached.");*/ }
-         return () => { /*console.log("DEBUG: Cleanup running (TryOnRenderer Unmount)...");*/ resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false; /*console.log("DEBUG: Disposing Three.js resources...");*/ videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); segmentationTextureRef.current?.dispose(); renderTargetRef.current?.dispose(); basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose(); postMaterialRef.current?.uniforms?.uSceneTexture?.value?.dispose(); postMaterialRef.current?.uniforms?.uSegmentationMask?.value?.dispose(); postMaterialRef.current?.dispose(); rendererInstanceRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current = null; segmentationTextureRef.current = null; renderTargetRef.current = null; basePlaneMeshRef.current = null; postMaterialRef.current = null; rendererInstanceRef.current = null; baseSceneRef.current = null; postSceneRef.current = null; baseCameraRef.current = null; postCameraRef.current = null; /*console.log("DEBUG: Three.js resources disposed.");*/ };
+         initThreeScene();
+         let resizeObserver; const currentCanvas = canvasRef.current; if (currentCanvas) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(currentCanvas); }
+         return () => { resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false; videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); segmentationTextureRef.current?.dispose(); renderTargetRef.current?.dispose(); basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose(); postMaterialRef.current?.uniforms?.uSceneTexture?.value?.dispose(); postMaterialRef.current?.uniforms?.uSegmentationMask?.value?.dispose(); postMaterialRef.current?.dispose(); rendererInstanceRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current = null; segmentationTextureRef.current = null; renderTargetRef.current = null; basePlaneMeshRef.current = null; postMaterialRef.current = null; rendererInstanceRef.current = null; baseSceneRef.current = null; postSceneRef.current = null; baseCameraRef.current = null; postCameraRef.current = null; };
      }, [initThreeScene, handleResize]);
 
 
-    // --- JSX --- (No changes needed)
+    // --- JSX --- (No changes)
     return ( <canvas ref={canvasRef} className={`renderer-canvas ${className || ''}`} style={{ display: 'block', width: '100%', height: '100%', ...(style || {}) }} /> );
 });
 
