@@ -1,4 +1,4 @@
-// src/hooks/useFaceLandmarker.js - VIDEO mode, CPU Delegate, Simplified Options
+// src/hooks/useFaceLandmarker.js - LANDMARKS ONLY Configuration
 
 import { useState, useEffect } from 'react';
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
@@ -13,51 +13,44 @@ const useFaceLandmarker = () => {
 
     const createFaceLandmarker = async () => {
       try {
-        console.log("Loading Vision Task Fileset...");
-        const vision = await FilesetResolver.forVisionTasks(
-          "/wasm" // Path relative to the public directory
-        );
-        console.log("Fileset loaded. Creating FaceLandmarker with VIDEO mode, CPU delegate...");
+        console.log("useFaceLandmarker: Loading Vision Task Fileset...");
+        const vision = await FilesetResolver.forVisionTasks("/wasm");
+        console.log("useFaceLandmarker: Fileset loaded. Creating FaceLandmarker (Landmarks Only)...");
 
         const landmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            delegate: "CPU" // Keep CPU for stability check
+            delegate: "CPU" // Keep CPU for now
           },
-          // ***** Back to VIDEO mode *****
           runningMode: 'VIDEO',
-          // ******************************
-          outputSegmentationMasks: true, // Essential
+          // *** ONLY Request Landmarks (or blendshapes if needed later) ***
+          outputFaceBlendshapes: false, // Disable if not needed for basic effect
+          outputFacialTransformationMatrixes: false, // Disable if not needed
+          outputSegmentationMasks: false, // <<< Set explicitly to FALSE
           numFaces: 1
-          // Keep blendshapes/matrices removed
         });
 
-        console.log("FaceLandmarker created successfully (Using CPU Delegate, VIDEO Mode).");
+        console.log("useFaceLandmarker: FaceLandmarker created successfully (CPU, Landmarks Only).");
         if (isMounted) {
           setFaceLandmarker(landmarker);
           setIsLoading(false);
         }
 
       } catch (err) {
-        console.error("Error initializing FaceLandmarker:", err);
-        if (isMounted) {
-          setError(err);
-          setIsLoading(false);
-        }
+        console.error("useFaceLandmarker: Error initializing FaceLandmarker:", err);
+        if (isMounted) { setError(err); setIsLoading(false); }
       }
     };
 
     createFaceLandmarker();
 
-    // Cleanup function
     return () => {
       isMounted = false;
-      console.log("Cleaning up FaceLandmarker hook...");
-      faceLandmarker?.close(); // Close needed for VIDEO mode
+      console.log("useFaceLandmarker: Cleaning up FaceLandmarker...");
+      faceLandmarker?.close();
       setFaceLandmarker(null);
-      console.log("FaceLandmarker instance closed and nullified.");
     };
-  }, []); // Empty dependency array
+  }, []); // Run once
 
   return { faceLandmarker, isLoading, error };
 };
