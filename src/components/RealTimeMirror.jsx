@@ -1,60 +1,93 @@
-// src/components/RealTimeMirror.jsx - COMPLETE - Prop-Driven, Passes videoRefProp
+// src/components/RealTimeMirror.jsx - ADDED results logging
 
-import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
-import TryOnRenderer from './TryOnRenderer'; // Expects prop-driven version
+import React, { useRef, useEffect, useState, useCallback, forwardRef } from 'react';
+import TryOnRenderer from './TryOnRenderer'; // Expects the version with detailed mask logging
 
 const RealTimeMirror = forwardRef(({
   faceLandmarker,
   effectIntensity
 }, ref) => {
-  console.log("RealTimeMirror rendering...");
-  const videoRef = useRef(null); // Keep ref for the hidden video element
-  const animationFrameRef = useRef(null);
+  // console.log("RealTimeMirror rendering..."); // Reduce noise
+  const videoRef = useRef(null);
+  const animationFrameRef = useRef({ count: 0 }); // Initialize ref object immediately
   const [videoStream, setVideoStream] = useState(null);
-  // const videoStreamRef = useRef(null); // No longer strictly needed by loop check
   const [isCameraLoading, setIsCameraLoading] = useState(true);
   const [cameraError, setCameraError] = useState(null);
   const [videoDimensions, setVideoDimensions] = useState({ width: 640, height: 480 });
   const [latestResults, setLatestResults] = useState(null);
 
-  // No imperative handle needed by default now
-  // useImperativeHandle(ref, () => ({ /* ... */ }));
-
-  // Effect for camera access
-   useEffect(() => {
+  // Camera Access Effect
+  useEffect(() => {
     let isMounted = true; let stream = null;
-    const enableStream = async () => { if (!faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) { setCameraError("getUserMedia not supported or FaceLandmarker not ready."); setIsCameraLoading(false); } return; } setIsCameraLoading(true); setCameraError(null); setVideoStream(null); console.log("Mirror Mode: enableStream - Requesting stream..."); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); console.log("Mirror Mode: enableStream - Stream acquired."); if (isMounted && videoRef.current) { videoRef.current.srcObject = stream; setVideoStream(stream); /* << SET STATE */ videoRef.current.onloadedmetadata = () => { console.log("Mirror Mode: enableStream - Metadata loaded."); if (isMounted && videoRef.current) { console.log(`Mirror video dims: ${videoRef.current.videoWidth}x${videoRef.current.videoHeight}`); setVideoDimensions({ width: videoRef.current.videoWidth, height: videoRef.current.videoHeight }); setIsCameraLoading(false); console.log("RealTimeMirror: Starting initial prediction loop from onloadedmetadata."); cancelAnimationFrame(animationFrameRef.current); animationFrameRef.current = requestAnimationFrame(predictWebcam); } }; videoRef.current.onerror = (e) => { console.error("Mirror Mode: Video Element Error:", e); if(isMounted) setCameraError("Video element encountered an error."); setIsCameraLoading(false); } } else { console.log("Mirror Mode: enableStream - Component unmounted or videoRef missing after stream aquisition. Stopping tracks."); stream?.getTracks().forEach(track => track.stop()); } } catch (err) { console.error("Mirror Mode: enableStream - Camera Error:", err); if (isMounted) { let message = "Failed to access camera."; /* ... error messages ... */ setCameraError(message); setIsCameraLoading(false); } } }; enableStream();
+    const enableStream = async () => { if (!faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) { setCameraError("getUserMedia not supported or FaceLandmarker not ready."); setIsCameraLoading(false); } return; } setIsCameraLoading(true); setCameraError(null); setVideoStream(null); /*console.log("Mirror Mode: enableStream - Requesting stream...");*/ try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); /*console.log("Mirror Mode: enableStream - Stream acquired.");*/ if (isMounted && videoRef.current) { videoRef.current.srcObject = stream; setVideoStream(stream); videoRef.current.onloadedmetadata = () => { /*console.log("Mirror Mode: enableStream - Metadata loaded.");*/ if (isMounted && videoRef.current) { console.log(`Mirror video dims: ${videoRef.current.videoWidth}x${videoRef.current.videoHeight}`); setVideoDimensions({ width: videoRef.current.videoWidth, height: videoRef.current.videoHeight }); setIsCameraLoading(false); console.log("RealTimeMirror: Starting prediction loop from onloadedmetadata."); cancelAnimationFrame(animationFrameRef.current?.rafId); animationFrameRef.current.rafId = requestAnimationFrame(predictWebcam); } }; videoRef.current.onerror = (e) => { console.error("Mirror Mode: Video Element Error:", e); if(isMounted) setCameraError("Video element encountered an error."); setIsCameraLoading(false); } } else { /*console.log("Mirror Mode: enableStream - Component unmounted...");*/ stream?.getTracks().forEach(track => track.stop()); } } catch (err) { console.error("Mirror Mode: enableStream - Camera Error:", err); if (isMounted) { let message = "Failed to access camera."; /* ... error messages ... */ setCameraError(message); setIsCameraLoading(false); } } };
+    enableStream();
     // Cleanup function
-    return () => { isMounted = false; console.log("Cleaning up RealTimeMirror (useEffect cleanup)..."); cancelAnimationFrame(animationFrameRef.current); /* USE REF */ const currentStream = videoStream; /* Use state here for cleanup intent? */ console.log("Stopping tracks for stream:", currentStream ? 'Exists' : 'None'); currentStream?.getTracks().forEach(track => { console.log(`Stopping track: ${track.label} (${track.readyState})`); track.stop(); }); if (videoRef.current) { console.log("Resetting video srcObject."); videoRef.current.srcObject = null; videoRef.current.onloadedmetadata = null; videoRef.current.onerror = null; } setVideoStream(null); setLatestResults(null); /* Clear results */ console.log("RealTimeMirror cleanup complete."); };
-  }, [faceLandmarker]); // Only depends on faceLandmarker
+    return () => { isMounted = false; /*console.log("Cleaning up RealTimeMirror...");*/ cancelAnimationFrame(animationFrameRef.current?.rafId); const currentStream = videoStream || stream; /*console.log("Stopping tracks for stream:", currentStream ? 'Exists' : 'None');*/ currentStream?.getTracks().forEach(track => { /*console.log(`Stopping track: ${track.label}`);*/ track.stop(); }); if (videoRef.current) { /*console.log("Resetting video srcObject.");*/ videoRef.current.srcObject = null; videoRef.current.onloadedmetadata = null; videoRef.current.onerror = null; } setVideoStream(null); setLatestResults(null); /*console.log("RealTimeMirror cleanup complete.");*/ };
+  }, [faceLandmarker]); // Dependency only on faceLandmarker instance itself
 
 
-  // Prediction Loop Callback
+  // Prediction Loop Callback - ADDED LOGGING
   const predictWebcam = useCallback(() => {
-    animationFrameRef.current = requestAnimationFrame(predictWebcam);
-    // Check videoRef directly now
+    // Update frame count stored in ref
+    animationFrameRef.current.count = (animationFrameRef.current.count || 0) + 1;
+    const frameCount = animationFrameRef.current.count;
+    // Request next frame
+    animationFrameRef.current.rafId = requestAnimationFrame(predictWebcam);
+
     if (!faceLandmarker || !videoRef.current || videoRef.current.readyState < 2 ) { return; }
     const video = videoRef.current;
-    try { const results = faceLandmarker.detectForVideo(video, performance.now()); setLatestResults(results); }
-    catch (error) { console.error(`PredictWebcam: Error during faceLandmarker.detectForVideo:`, error); setLatestResults(null); }
-  }, [faceLandmarker]);
+    let results = null;
+
+    try {
+      const startTime = performance.now();
+      results = faceLandmarker.detectForVideo(video, startTime);
+
+      // *** ADDED LOGGING HERE (Log periodically) ***
+      if (results && frameCount % 100 === 1) { // Log approx every ~1.5 seconds (use modulo 1 for first frame)
+          console.log("--- RealTimeMirror: detectForVideo results ---", results);
+          // Specifically log the segmentationMasks part if it exists
+          if (results.segmentationMasks) {
+              console.log(" -> segmentationMasks:", results.segmentationMasks);
+              if (results.segmentationMasks.length > 0 && results.segmentationMasks[0]) { // Check index 0 exists
+                   const maskData = results.segmentationMasks[0]?.maskData;
+                   console.log(" -> segmentationMasks[0].maskData type:", maskData?.constructor?.name);
+                   // Check specifically for WebGLTexture using instanceof
+                   console.log(" -> segmentationMasks[0].maskData instanceof WebGLTexture:", maskData instanceof WebGLTexture);
+              } else {
+                   console.log(" -> segmentationMasks: Array is empty.");
+              }
+          } else {
+               console.log(" -> segmentationMasks: Not found in results.");
+          }
+      }
+      // ***********************************
+
+      setLatestResults(results); // Update state AFTER logging
+    }
+    catch (error) {
+       console.error(`PredictWebcam: Error during faceLandmarker.detectForVideo:`, error);
+       setLatestResults(null);
+    }
+  }, [faceLandmarker]); // Only depends on faceLandmarker instance
 
 
-  // Effect to manage loop start/stop
+  // Effect to manage loop start/stop (using videoStream state)
   useEffect(() => {
        if (videoStream && faceLandmarker) {
-            console.log("RealTimeMirror: Starting prediction loop (stream/landmarker ready).");
-           cancelAnimationFrame(animationFrameRef.current);
-           animationFrameRef.current = requestAnimationFrame(predictWebcam);
+           console.log("RealTimeMirror: Starting prediction loop (stream/landmarker ready).");
+           cancelAnimationFrame(animationFrameRef.current?.rafId);
+           animationFrameRef.current.count = 0; // Reset count
+           animationFrameRef.current.rafId = requestAnimationFrame(predictWebcam);
        } else {
-           console.log("RealTimeMirror: Stopping prediction loop (stream/landmarker not ready).");
-           cancelAnimationFrame(animationFrameRef.current);
+           // console.log("RealTimeMirror: Stopping prediction loop (stream/landmarker not ready).");
+           cancelAnimationFrame(animationFrameRef.current?.rafId);
        }
+       // Cleanup for this effect
        return () => {
-           console.log("RealTimeMirror: Cleaning up loop start/stop effect.");
-           cancelAnimationFrame(animationFrameRef.current);
+           // console.log("RealTimeMirror: Cleaning up loop start/stop effect.");
+           cancelAnimationFrame(animationFrameRef.current?.rafId);
        };
-   }, [videoStream, faceLandmarker, predictWebcam]);
+   }, [videoStream, faceLandmarker, predictWebcam]); // Include predictWebcam
 
 
   // Determine if TryOnRenderer should render
@@ -66,21 +99,21 @@ const RealTimeMirror = forwardRef(({
        <h2 className="text-xl font-semibold mb-2">Real-Time Mirror Mode</h2>
        {isCameraLoading && <p className="text-center py-4">Starting camera...</p>}
        {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
+      {/* Container for aspect ratio */}
       <div className="relative w-full max-w-md mx-auto" style={{ paddingTop: `${videoDimensions.width > 0 ? (videoDimensions.height / videoDimensions.width) * 100 : 75}%` }}>
-        {/* Hidden video element IS needed */}
+        {/* Hidden video element */}
         <video ref={videoRef} autoPlay playsInline muted className="absolute top-0 left-0 w-0 h-0 -z-10" />
 
-        {/* Use the simplified condition */}
+        {/* Conditional rendering of TryOnRenderer or fallback */}
         {shouldRenderTryOn ? (
           <TryOnRenderer
-            // *** Pass videoRef itself as a prop ***
             videoRefProp={videoRef} // Pass the ref object
             imageElement={null}
-            mediaPipeResults={latestResults}
+            mediaPipeResults={latestResults} // Pass the results state
             isStatic={false}
-            brightness={1.0}
+            brightness={1.0} // Default B/C for mirror
             contrast={1.0}
-            effectIntensity={effectIntensity}
+            effectIntensity={effectIntensity} // Pass slider value
             className="absolute top-0 left-0 w-full h-full rounded shadow overflow-hidden"
           />
         ) : (
