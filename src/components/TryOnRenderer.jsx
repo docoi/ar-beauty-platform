@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - SUPER Simplified: Direct Rendering, No Post-Processing
+// src/components/TryOnRenderer.jsx - SUPER Simplified (Corrected Cleanup): Direct Rendering, No Post-Processing
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -66,12 +66,7 @@ const TryOnRenderer = forwardRef(({
     // --- ***** SIMPLIFIED Render Loop (Direct Rendering) ***** ---
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
-        // Check only needed refs for direct rendering
-        if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !basePlaneMeshRef.current) {
-             // If still initializing, skip frame
-             // console.warn("RenderLoop: Waiting for initialization...");
-             return;
-        }
+        if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !basePlaneMeshRef.current) { return; }
 
         const currentCount = renderLoopCounter.current++;
         const logThisFrame = (currentCount % 150 === 0);
@@ -83,52 +78,32 @@ const TryOnRenderer = forwardRef(({
             let textureToAssign = null;
             let isVideo = false;
 
-            if (!isStatic && videoTextureRef.current) {
-                 textureToAssign = videoTextureRef.current;
-                 if (textureToAssign.image) { sourceWidth = textureToAssign.image.videoWidth; sourceHeight = textureToAssign.image.videoHeight; isVideo = true;}
-            } else if (isStatic && imageTextureRef.current) {
-                 textureToAssign = imageTextureRef.current;
-                  if (textureToAssign.image) { sourceWidth = textureToAssign.image.naturalWidth; sourceHeight = textureToAssign.image.naturalHeight; }
-                  if (textureToAssign.needsUpdate) { textureToAssign.needsUpdate = true; } // Ensure flag is set
-            }
+            if (!isStatic && videoTextureRef.current) { textureToAssign = videoTextureRef.current; if (textureToAssign.image) { sourceWidth = textureToAssign.image.videoWidth; sourceHeight = textureToAssign.image.videoHeight; isVideo = true;} } else if (isStatic && imageTextureRef.current) { textureToAssign = imageTextureRef.current; if (textureToAssign.image) { sourceWidth = textureToAssign.image.naturalWidth; sourceHeight = textureToAssign.image.naturalHeight; } if (textureToAssign.needsUpdate) { textureToAssign.needsUpdate = true; } }
 
-            // Assign texture map if changed or needs update
+            // Assign texture map
              if (baseMaterial.map !== textureToAssign) {
                  console.log("DEBUG RenderLoop: Assigning base texture:", textureToAssign?.constructor?.name ?? 'null');
                  baseMaterial.map = textureToAssign;
                  baseMaterial.needsUpdate = true;
              } else if (textureToAssign && textureToAssign.needsUpdate) {
-                 if (logThisFrame) console.log("DEBUG RenderLoop: Triggering baseMaterial.needsUpdate because texture needed update.");
-                 baseMaterial.needsUpdate = true; // Ensure material updates if texture content changed
+                 baseMaterial.needsUpdate = true;
              }
 
             // 2. Update Plane Scale & Mirroring
             const planeVisible = !!baseMaterial.map && sourceWidth > 0 && sourceHeight > 0;
-            if (planeVisible) {
-                fitPlaneToCamera(sourceWidth, sourceHeight);
-                const scaleX = Math.abs(basePlaneMeshRef.current.scale.x);
-                const newScaleX = isVideo ? -scaleX : scaleX; // Mirror video
-                if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; }
-            } else {
-                 if (basePlaneMeshRef.current.scale.x !== 0 || basePlaneMeshRef.current.scale.y !== 0) { basePlaneMeshRef.current.scale.set(0, 0, 0); }
-             }
+            if (planeVisible) { fitPlaneToCamera(sourceWidth, sourceHeight); const scaleX = Math.abs(basePlaneMeshRef.current.scale.x); const newScaleX = isVideo ? -scaleX : scaleX; if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; } } else { if (basePlaneMeshRef.current.scale.x !== 0 || basePlaneMeshRef.current.scale.y !== 0) { basePlaneMeshRef.current.scale.set(0, 0, 0); } }
 
-            // 3. *** Render Base Scene DIRECTLY to Screen ***
-            rendererInstanceRef.current.setRenderTarget(null); // Ensure rendering to canvas
-            rendererInstanceRef.current.setClearColor(0x000000, 1); // Clear with black (or choose another color)
+            // 3. Render Base Scene DIRECTLY to Screen
+            rendererInstanceRef.current.setRenderTarget(null);
+            rendererInstanceRef.current.setClearColor(0x000000, 1); // Clear black
             rendererInstanceRef.current.clear();
              if (planeVisible) {
                  rendererInstanceRef.current.render(baseSceneRef.current, baseCameraRef.current);
-                 // Mark texture as updated *after* rendering it
-                 if (textureToAssign?.needsUpdate) {
-                    textureToAssign.needsUpdate = false;
-                    // if(logThisFrame) console.log("DEBUG RenderLoop: Set texture.needsUpdate = false");
-                 }
+                 if (textureToAssign?.needsUpdate) { textureToAssign.needsUpdate = false; }
              }
-             // else: If plane not visible, scene is just cleared
 
         } catch (error) { console.error("Error in renderLoop:", error); }
-    }, [fitPlaneToCamera, isStatic]); // Keep dependencies
+    }, [fitPlaneToCamera, isStatic]);
 
 
     // --- ***** SIMPLIFIED Initialize Scene ***** ---
@@ -137,38 +112,23 @@ const TryOnRenderer = forwardRef(({
         console.log("DEBUG: initThreeScene START (SUPER Simplified - Direct Rendering)");
         try {
             const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480;
-
-            // Renderer setup (same)
-            rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-            rendererInstanceRef.current.setSize(initialWidth, initialHeight);
-            rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio);
-            rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
-
-            // Base Scene setup (same)
-            baseSceneRef.current = new THREE.Scene();
-            baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10);
-            baseCameraRef.current.position.z = 1;
+            rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); rendererInstanceRef.current.setSize(initialWidth, initialHeight); rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio); rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
+            baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1;
             const planeGeometry = new THREE.PlaneGeometry(1, 1);
-            // Basic material - texture will be assigned in render loop
             const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: true });
-            basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial);
-            baseSceneRef.current.add(basePlaneMeshRef.current);
+            basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); baseSceneRef.current.add(basePlaneMeshRef.current);
             console.log("DEBUG: Base scene created.");
-
-            // NO Post-processing scene, NO Render Target needed
-
             isInitialized.current = true;
             console.log("DEBUG: Scene initialization complete (Direct Rendering).");
-            handleResize(); // Set initial size
+            handleResize();
             console.log("DEBUG: Requesting first render loop frame from Init.");
             cancelAnimationFrame(animationFrameHandle.current);
             animationFrameHandle.current = requestAnimationFrame(renderLoop);
         } catch (error) { console.error("DEBUG: initThreeScene ERROR:", error); isInitialized.current = false; }
-    // Add renderLoop dependency
     }, [handleResize, renderLoop]);
 
 
-    // --- Setup / Cleanup Effect --- (Simplified disposal)
+    // --- Setup / Cleanup Effect --- (Corrected Simplified disposal)
     useEffect(() => {
         initThreeScene();
         let resizeObserver; const currentCanvas = canvasRef.current;
@@ -179,15 +139,30 @@ const TryOnRenderer = forwardRef(({
              cancelAnimationFrame(animationFrameHandle.current);
              isInitialized.current = false;
              console.log("DEBUG: Disposing Three.js resources (Simplified)...");
-             videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose();
-             // REMOVED: segmentationTextureRef.current?.dispose(); renderTargetRef.current?.dispose();
-             basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose();
-             // REMOVED: postMaterialRef.current?.dispose();
+             // Dispose textures managed by effects
+             videoTextureRef.current?.dispose();
+             imageTextureRef.current?.dispose();
+             // No segmentationTextureRef or renderTargetRef to dispose here
+
+             // Dispose base scene elements
+             basePlaneMeshRef.current?.geometry?.dispose();
+             basePlaneMeshRef.current?.material?.map?.dispose();
+             basePlaneMeshRef.current?.material?.dispose();
+             // No postMaterialRef to dispose
+
+             // Dispose renderer
              rendererInstanceRef.current?.dispose();
-             /* ... nullify refs ... */
-             videoTextureRef.current = null; imageTextureRef.current = null; segmentationTextureRef.current = null; renderTargetRef.current = null;
-             basePlaneMeshRef.current = null; postMaterialRef.current = null; rendererInstanceRef.current = null; baseSceneRef.current = null;
-             postSceneRef.current = null; baseCameraRef.current = null; postCameraRef.current = null;
+
+             // Nullify refs
+             videoTextureRef.current = null; imageTextureRef.current = null;
+             // segmentationTextureRef = null; // Ref doesn't exist in this scope
+             // renderTargetRef = null; // Ref doesn't exist
+             basePlaneMeshRef.current = null;
+             // postMaterialRef = null; // Ref doesn't exist
+             rendererInstanceRef.current = null; baseSceneRef.current = null;
+             // postSceneRef = null; // Ref doesn't exist
+             baseCameraRef.current = null;
+             // postCameraRef = null; // Ref doesn't exist
              console.log("DEBUG: Three.js resources disposed.");
         };
      }, [initThreeScene, handleResize]); // Keep dependencies
