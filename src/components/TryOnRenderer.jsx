@@ -1,88 +1,4 @@
-// src/components/TryOnRenderer.jsx - FLIP Mask UVs + Subtle Hydration Effect
-
-import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
-import * as THREE from 'three';
-
-const TryOnRenderer = forwardRef(({
-    videoRefProp, imageElement, mediaPipeResults, segmentationResults,
-    isStatic, brightness, contrast, effectIntensity,
-    className, style
- }, ref) => {
-
-    // --- Core Refs / Internal State Refs --- (No changes)
-    const canvasRef = useRef(null); /* ... */ const segmentationTextureRef = useRef(null);
-    const currentIntensity = useRef(0.5);
-    // ... rest of refs ...
-
-    // --- ***** Shaders (FLIP MASK UV + Subtle Effect) ***** ---
-    const postVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`;
-    const postFragmentShader = `
-        uniform sampler2D uSceneTexture;
-        uniform sampler2D uSegmentationMask;
-        uniform float uEffectIntensity;
-        uniform bool uHasMask;
-
-        varying vec2 vUv;
-
-        // Subtle "Hydration" effect function (slightly brighter/smoother)
-        vec3 applyHydrationEffect(vec3 color) {
-             // Slightly brighten the color
-             vec3 hydratedLook = color * (1.0 + 0.1); // 10% brighter base for effect
-             // Optional: Slightly desaturate/shift towards white by mixing
-             // hydratedLook = mix(hydratedLook, vec3(1.0), 0.05);
-             return hydratedLook;
-        }
-
-        void main() {
-            vec4 baseColor = texture2D(uSceneTexture, vUv);
-            vec3 finalColor = baseColor.rgb; // Start with base color (no B/C adjustment)
-
-            if (uHasMask && uEffectIntensity > 0.0) {
-                // ***** FLIP the Y coordinate for mask sampling *****
-                float maskValue = texture2D(uSegmentationMask, vec2(vUv.x, 1.0 - vUv.y)).r;
-                // **************************************************
-
-                // Get the subtle hydrated color
-                vec3 hydratedColor = applyHydrationEffect(finalColor);
-
-                // Blend based on mask value and intensity slider
-                float blendAmount = smoothstep(0.3, 0.8, maskValue) * uEffectIntensity;
-                finalColor = mix(finalColor, hydratedColor, blendAmount);
-            }
-
-            finalColor = clamp(finalColor, 0.0, 1.0);
-            gl_FragColor = vec4(finalColor, baseColor.a);
-        }
-    `;
-    // --- ************************************************** ---
-
-    // --- Prop Effects / Texture Effects / Mask Effect --- (No changes needed)
-    useEffect(() => { currentIntensity.current = effectIntensity; }, [effectIntensity]);
-    useEffect(() => { /* Video Texture */ }, [isStatic, videoRefProp]);
-    useEffect(() => { /* Image Texture */ }, [isStatic, imageElement]);
-    useEffect(() => { /* Mask Texture Creation */ }, [segmentationResults, isStatic]);
-
-    // --- Handle Resizing / Scale Plane --- (No changes needed)
-    const handleResize = useCallback(() => { /* ... */ }, []);
-    const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
-
-    // --- Render Loop --- (No changes needed)
-     const renderLoop = useCallback(() => { /* ... (same as previous step) ... */ }, [fitPlaneToCamera, isStatic]);
-
-    // --- Initialize Scene --- (No changes needed)
-    const initThreeScene = useCallback(() => { /* ... (same as previous step) ... */ }, [handleResize, postVertexShader, postFragmentShader, renderLoop]);
-
-    // --- Setup / Cleanup Effect --- (No changes needed)
-    useEffect(() => { /* ... */ }, [initThreeScene, handleResize]);
-
-    // --- JSX --- (No change)
-    return ( <canvas ref={canvasRef} className={`renderer-canvas ${className || ''}`} style={{ display: 'block', width: '100%', height: '100%', ...(style || {}) }} /> );
-
-});
-TryOnRenderer.displayName = 'TryOnRenderer';
-export default TryOnRenderer;
-
-// --- Full code for copy-pasting ---
+// src/components/TryOnRenderer.jsx - CORRECTED Subtle Effect + UV Flip
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -114,7 +30,7 @@ const TryOnRenderer = forwardRef(({
     const renderLoopCounter = useRef(0);
     const lastMaskUpdateTime = useRef(0);
 
-    // --- Shaders (FLIP MASK UV + Subtle Effect) ---
+    // --- ***** Shaders (Subtle Effect + CORRECT UV Flip) ***** ---
     const postVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`;
     const postFragmentShader = `
         uniform sampler2D uSceneTexture;
@@ -124,48 +40,45 @@ const TryOnRenderer = forwardRef(({
 
         varying vec2 vUv;
 
-        // Subtle "Hydration" effect function (slightly brighter/smoother)
+        // ***** RESTORED Subtle "Hydration" effect function *****
         vec3 applyHydrationEffect(vec3 color) {
+             // Slightly brighten the color
              vec3 hydratedLook = color * (1.0 + 0.1); // 10% brighter base for effect
-             // hydratedLook = mix(hydratedLook, vec3(1.0), 0.05); // Optional slight desaturation
+             // Optional: Slightly desaturate/shift towards white by mixing
+             // hydratedLook = mix(hydratedLook, vec3(1.0), 0.05);
              return hydratedLook;
         }
+        // ******************************************************
 
         void main() {
             vec4 baseColor = texture2D(uSceneTexture, vUv);
-            vec3 finalColor = baseColor.rgb;
+            vec3 finalColor = baseColor.rgb; // Start with base color (no B/C adjustment)
 
             if (uHasMask && uEffectIntensity > 0.0) {
                 // ***** FLIP the Y coordinate for mask sampling *****
                 float maskValue = texture2D(uSegmentationMask, vec2(vUv.x, 1.0 - vUv.y)).r;
                 // **************************************************
 
+                // Get the subtle hydrated color
                 vec3 hydratedColor = applyHydrationEffect(finalColor);
 
+                // Blend based on mask value and intensity slider
+                // Use smoothstep for potentially smoother edges, adjust thresholds if needed
                 float blendAmount = smoothstep(0.3, 0.8, maskValue) * uEffectIntensity;
                 finalColor = mix(finalColor, hydratedColor, blendAmount);
             }
 
             finalColor = clamp(finalColor, 0.0, 1.0);
             gl_FragColor = vec4(finalColor, baseColor.a);
-        }`;
+        }
+    `;
+    // --- ******************************************************* ---
 
-
-    // --- Prop Effects / Texture Effects / Mask Effect ---
+    // --- Prop Effects / Texture Effects / Mask Effect --- (No changes needed)
     useEffect(() => { currentIntensity.current = effectIntensity; }, [effectIntensity]);
-    useEffect(() => { // Video Texture
-        const videoElement = videoRefProp?.current; if (!isStatic && videoElement) { if (!videoTextureRef.current || videoTextureRef.current.image !== videoElement) { videoTextureRef.current?.dispose(); videoTextureRef.current = new THREE.VideoTexture(videoElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; } } else { if (videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null; } }
-    }, [isStatic, videoRefProp]);
-    useEffect(() => { // Image Texture
-        if (isStatic && imageElement) { if (!imageTextureRef.current || imageTextureRef.current.image !== imageElement) { imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(imageElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; } else if (imageTextureRef.current && imageTextureRef.current.image === imageElement) { imageTextureRef.current.needsUpdate = true; } } else { if (imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null; } }
-    }, [isStatic, imageElement]);
-    useEffect(() => { // Mask Texture Creation
-        const results = segmentationResults; const hasMaskDataArray = Array.isArray(results?.confidenceMasks) && results.confidenceMasks.length > 0;
-        if (hasMaskDataArray) { const confidenceMaskObject = results.confidenceMasks[0]; const maskWidth = confidenceMaskObject?.width; const maskHeight = confidenceMaskObject?.height; let maskData = null;
-            if (typeof confidenceMaskObject?.getAsFloat32Array === 'function') { try { maskData = confidenceMaskObject.getAsFloat32Array(); } catch (error) { maskData = null; } } else if(confidenceMaskObject?.data) { maskData = confidenceMaskObject.data;}
-             if (maskData instanceof Float32Array && maskWidth > 0 && maskHeight > 0) { const now = performance.now(); const timeSinceLastUpdate = now - lastMaskUpdateTime.current; const throttleThreshold = isStatic ? 0 : 66;
-                 if (timeSinceLastUpdate > throttleThreshold) { lastMaskUpdateTime.current = now; try { if (!segmentationTextureRef.current || segmentationTextureRef.current.image.width !== maskWidth || segmentationTextureRef.current.image.height !== maskHeight) { segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = new THREE.DataTexture(maskData, maskWidth, maskHeight, THREE.RedFormat, THREE.FloatType); segmentationTextureRef.current.minFilter = THREE.LinearFilter; segmentationTextureRef.current.magFilter = THREE.LinearFilter; segmentationTextureRef.current.needsUpdate = true; } else { segmentationTextureRef.current.image.data = maskData; segmentationTextureRef.current.needsUpdate = true; } } catch (error) { console.error("Mask Texture Error:", error); segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = null; } } } else { if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; } } } else { if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; } }
-    }, [segmentationResults, isStatic]);
+    useEffect(() => { /* Video Texture */ const videoElement = videoRefProp?.current; if (!isStatic && videoElement) { if (!videoTextureRef.current || videoTextureRef.current.image !== videoElement) { videoTextureRef.current?.dispose(); videoTextureRef.current = new THREE.VideoTexture(videoElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; } } else { if (videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null; } } }, [isStatic, videoRefProp]);
+    useEffect(() => { /* Image Texture */ if (isStatic && imageElement) { if (!imageTextureRef.current || imageTextureRef.current.image !== imageElement) { imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(imageElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; } else if (imageTextureRef.current && imageTextureRef.current.image === imageElement) { imageTextureRef.current.needsUpdate = true; } } else { if (imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null; } } }, [isStatic, imageElement]);
+    useEffect(() => { /* Mask Texture Creation */ const results = segmentationResults; const hasMaskDataArray = Array.isArray(results?.confidenceMasks) && results.confidenceMasks.length > 0; if (hasMaskDataArray) { const confidenceMaskObject = results.confidenceMasks[0]; const maskWidth = confidenceMaskObject?.width; const maskHeight = confidenceMaskObject?.height; let maskData = null; if (typeof confidenceMaskObject?.getAsFloat32Array === 'function') { try { maskData = confidenceMaskObject.getAsFloat32Array(); } catch (error) { maskData = null; } } else if(confidenceMaskObject?.data) { maskData = confidenceMaskObject.data;} if (maskData instanceof Float32Array && maskWidth > 0 && maskHeight > 0) { const now = performance.now(); const timeSinceLastUpdate = now - lastMaskUpdateTime.current; const throttleThreshold = isStatic ? 0 : 66; if (timeSinceLastUpdate > throttleThreshold) { lastMaskUpdateTime.current = now; try { if (!segmentationTextureRef.current || segmentationTextureRef.current.image.width !== maskWidth || segmentationTextureRef.current.image.height !== maskHeight) { segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = new THREE.DataTexture(maskData, maskWidth, maskHeight, THREE.RedFormat, THREE.FloatType); segmentationTextureRef.current.minFilter = THREE.LinearFilter; segmentationTextureRef.current.magFilter = THREE.LinearFilter; segmentationTextureRef.current.needsUpdate = true; } else { segmentationTextureRef.current.image.data = maskData; segmentationTextureRef.current.needsUpdate = true; } } catch (error) { console.error("Mask Texture Error:", error); segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = null; } } } else { if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; } } } else { if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; } } }, [segmentationResults, isStatic]);
 
 
     // --- Handle Resizing ---
@@ -216,7 +129,7 @@ const TryOnRenderer = forwardRef(({
     // --- Initialize Scene --- (Keep Mipmap Fix Attempt)
     const initThreeScene = useCallback(() => {
         if (!canvasRef.current || isInitialized.current) return;
-        console.log("DEBUG: initThreeScene START (Subtle Effect Shader + Mask Flip)");
+        console.log("DEBUG: initThreeScene START (Subtle Effect + UV Flip)");
         try {
             const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480;
             rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); rendererInstanceRef.current.setSize(initialWidth, initialHeight); rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio); rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
