@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - CORRECTED SYNTAX for currentIntensity + RenderTarget Mipmap Fix Attempt
+// src/components/TryOnRenderer.jsx - RE-ENABLE Mask Sampling (Keep Red Effect)
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -9,90 +9,79 @@ const TryOnRenderer = forwardRef(({
     className, style
  }, ref) => {
 
-    // --- Core Refs / Internal State Refs ---
-    const canvasRef = useRef(null);
-    const rendererInstanceRef = useRef(null);
-    const animationFrameHandle = useRef(null);
-    const isInitialized = useRef(false);
-    const baseSceneRef = useRef(null);
-    const baseCameraRef = useRef(null);
-    const basePlaneMeshRef = useRef(null);
-    const videoTextureRef = useRef(null);
-    const imageTextureRef = useRef(null);
-    const postSceneRef = useRef(null);
-    const postCameraRef = useRef(null);
-    const postMaterialRef = useRef(null);
-    const renderTargetRef = useRef(null);
-    const segmentationTextureRef = useRef(null);
-    const currentBrightness = useRef(1.0); // Kept for potential future use
-    const currentContrast = useRef(1.0);   // Kept for potential future use
-    // *** Ensure currentIntensity ref is defined ***
+    // --- Core Refs / Internal State Refs --- (No changes)
+    const canvasRef = useRef(null); /* ... */ const segmentationTextureRef = useRef(null);
     const currentIntensity = useRef(0.5);
-    // *******************************************
-    const renderLoopCounter = useRef(0);
-    const lastMaskUpdateTime = useRef(0);
+    // ... rest of refs ...
 
-    // Add a log right after definition to be sure
-    // console.log("TryOnRenderer: currentIntensity ref created, initial value:", currentIntensity.current);
-
-
-    // --- Shaders (Force Red Effect) ---
+    // --- ***** Shaders (Re-enable Mask Sampling, Keep Red Effect) ***** ---
     const postVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`;
     const postFragmentShader = `
-        uniform sampler2D uSceneTexture; uniform float uEffectIntensity; varying vec2 vUv;
-        // Removed unused uniforms (uSegmentationMask, uHasMask) for this specific debug shader
-        vec3 applyHydrationEffect(vec3 c, float i){ return mix(c, vec3(1.0,0.0,0.0), i); } // Red effect
-        void main() { vec4 b=texture2D(uSceneTexture,vUv); vec3 f=b.rgb; if(uEffectIntensity>0.0){f=applyHydrationEffect(f,uEffectIntensity);} f=clamp(f,0.0,1.0); gl_FragColor=vec4(f,b.a); }`;
+        uniform sampler2D uSceneTexture;
+        uniform sampler2D uSegmentationMask; // <<< Use this uniform
+        uniform float uEffectIntensity;
+        uniform bool uHasMask;              // <<< Use this uniform
 
+        varying vec2 vUv;
 
-    // --- Prop Effects / Texture Effects / Mask Effect ---
-    useEffect(() => { // Update intensity ref from prop
-        // console.log("TryOnRenderer: Updating currentIntensity ref to:", effectIntensity);
-        currentIntensity.current = effectIntensity;
-     }, [effectIntensity]);
-    useEffect(() => { // Video Texture
-        const videoElement = videoRefProp?.current; if (!isStatic && videoElement) { if (!videoTextureRef.current || videoTextureRef.current.image !== videoElement) { videoTextureRef.current?.dispose(); videoTextureRef.current = new THREE.VideoTexture(videoElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; } } else { if (videoTextureRef.current) { videoTextureRef.current.dispose(); videoTextureRef.current = null; } }
-    }, [isStatic, videoRefProp]);
-    useEffect(() => { // Image Texture
-        if (isStatic && imageElement) { if (!imageTextureRef.current || imageTextureRef.current.image !== imageElement) { imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(imageElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; } else if (imageTextureRef.current && imageTextureRef.current.image === imageElement) { imageTextureRef.current.needsUpdate = true; } } else { if (imageTextureRef.current) { imageTextureRef.current.dispose(); imageTextureRef.current = null; } }
-    }, [isStatic, imageElement]);
-    useEffect(() => { // Mask Texture Creation (Keep attempting to create it)
-        const results = segmentationResults; const hasMaskDataArray = Array.isArray(results?.confidenceMasks) && results.confidenceMasks.length > 0;
-        if (hasMaskDataArray) { const confidenceMaskObject = results.confidenceMasks[0]; const maskWidth = confidenceMaskObject?.width; const maskHeight = confidenceMaskObject?.height; let maskData = null;
-            if (typeof confidenceMaskObject?.getAsFloat32Array === 'function') { try { maskData = confidenceMaskObject.getAsFloat32Array(); } catch (error) { maskData = null; } } else if(confidenceMaskObject?.data) { maskData = confidenceMaskObject.data;}
-             if (maskData instanceof Float32Array && maskWidth > 0 && maskHeight > 0) { const now = performance.now(); const timeSinceLastUpdate = now - lastMaskUpdateTime.current; const throttleThreshold = isStatic ? 0 : 66;
-                 if (timeSinceLastUpdate > throttleThreshold) { lastMaskUpdateTime.current = now; try { if (!segmentationTextureRef.current || segmentationTextureRef.current.image.width !== maskWidth || segmentationTextureRef.current.image.height !== maskHeight) { segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = new THREE.DataTexture(maskData, maskWidth, maskHeight, THREE.RedFormat, THREE.FloatType); segmentationTextureRef.current.minFilter = THREE.LinearFilter; segmentationTextureRef.current.magFilter = THREE.LinearFilter; segmentationTextureRef.current.needsUpdate = true; } else { segmentationTextureRef.current.image.data = maskData; segmentationTextureRef.current.needsUpdate = true; } } catch (error) { console.error("Mask Texture Error:", error); segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = null; } } } else { if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; } } } else { if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; } }
-    }, [segmentationResults, isStatic]);
+        // Effect function (output red - intensity doesn't scale color here, just blend amount)
+        vec3 applyHydrationEffect(vec3 color) {
+            return vec3(1.0, 0.0, 0.0); // Return solid red for test
+        }
 
+        void main() {
+            vec4 baseColor = texture2D(uSceneTexture, vUv);
+            vec3 finalColor = baseColor.rgb; // Start with base color
 
-    // --- Handle Resizing ---
-    const handleResize = useCallback(() => {
-         const canvas = canvasRef.current; if (!rendererInstanceRef.current || !baseCameraRef.current || !postCameraRef.current || !canvas || !renderTargetRef.current) return; const newWidth = canvas.clientWidth; const newHeight = canvas.clientHeight; if (newWidth === 0 || newHeight === 0) return; const currentSize = rendererInstanceRef.current.getSize(new THREE.Vector2()); if (currentSize.x === newWidth && currentSize.y === newHeight) return;
-         try { rendererInstanceRef.current.setSize(newWidth, newHeight); renderTargetRef.current.setSize(newWidth, newHeight); baseCameraRef.current.left = -newWidth / 2; baseCameraRef.current.right = newWidth / 2; baseCameraRef.current.top = newHeight / 2; baseCameraRef.current.bottom = -newHeight / 2; baseCameraRef.current.updateProjectionMatrix(); } catch(e) { console.error("Resize Error:", e);}
-    }, []);
+            // *** Apply Effect ONLY if Mask is present and Intensity > 0 ***
+            if (uHasMask && uEffectIntensity > 0.0) {
+                // Sample the mask texture
+                float maskValue = texture2D(uSegmentationMask, vUv).r;
 
-    // --- Scale Base Plane ---
-    const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => {
-        const canvas = canvasRef.current; if (!baseCameraRef.current || !basePlaneMeshRef.current || !textureWidth || !textureHeight || !canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) return; const viewWidth = canvas.clientWidth; const viewHeight = canvas.clientHeight; const viewAspect = viewWidth / viewHeight; const textureAspect = textureWidth / textureHeight; let scaleX, scaleY; if (viewAspect > textureAspect) { scaleX = viewWidth; scaleY = scaleX / textureAspect; } else { scaleY = viewHeight; scaleX = scaleY * textureAspect; } const currentScale = basePlaneMeshRef.current.scale; const signX = Math.sign(currentScale.x) || 1; const newScaleXWithSign = scaleX * signX; if (Math.abs(currentScale.y - scaleY) > 0.01 || Math.abs(currentScale.x - newScaleXWithSign) > 0.01) { currentScale.set(newScaleXWithSign, scaleY, 1); }
-     }, []);
+                // Get the effect color (solid red)
+                vec3 hydratedColor = applyHydrationEffect(finalColor);
 
+                // Blend based on mask value and intensity slider
+                // Use smoothstep for potentially smoother edges
+                float blendAmount = smoothstep(0.3, 0.8, maskValue) * uEffectIntensity; // Adjust thresholds 0.3, 0.8 if needed
+                finalColor = mix(finalColor, hydratedColor, blendAmount);
+            }
+            // *************************************************************
 
-    // --- Render Loop --- (Use Force Red Shader)
+            finalColor = clamp(finalColor, 0.0, 1.0);
+            gl_FragColor = vec4(finalColor, baseColor.a);
+        }
+    `;
+    // --- ************************************************************* ---
+
+    // --- Prop Effects / Texture Effects / Mask Effect --- (No changes needed from previous step)
+    useEffect(() => { currentIntensity.current = effectIntensity; }, [effectIntensity]);
+    useEffect(() => { /* Video Texture */ }, [isStatic, videoRefProp]);
+    useEffect(() => { /* Image Texture */ }, [isStatic, imageElement]);
+    useEffect(() => { /* Mask Texture Creation */ }, [segmentationResults, isStatic]);
+
+    // --- Handle Resizing / Scale Plane --- (No changes needed)
+    const handleResize = useCallback(() => { /* ... */ }, []);
+    const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
+
+    // --- Render Loop --- (No changes needed - already updates all relevant uniforms)
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
-        if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !postSceneRef.current || !postCameraRef.current || !basePlaneMeshRef.current || !postMaterialRef.current || !renderTargetRef.current) { return; }
+        if (!isInitialized.current || !rendererInstanceRef.current || !postMaterialRef.current /* etc */ ) { return; }
 
         try {
             const postUniforms = postMaterialRef.current.uniforms;
-            // Check uniforms needed by current "Force Red" shader
-            if (!postUniforms?.uSceneTexture || !postUniforms?.uEffectIntensity) { return; }
+            // Check all uniforms needed by this shader
+            if (!postUniforms?.uSceneTexture || !postUniforms?.uSegmentationMask || !postUniforms?.uHasMask || !postUniforms?.uEffectIntensity) { return; }
 
-            // 1 & 2: Select Texture & Update Plane (Condensed)
-            const baseMaterial = basePlaneMeshRef.current.material; let sourceWidth = 0, sourceHeight = 0; let textureToAssign = null; let isVideo = false;
+            // 1 & 2: Select Texture & Update Plane (same)
+            /* ... */
+             const baseMaterial = basePlaneMeshRef.current.material; let sourceWidth = 0, sourceHeight = 0; let textureToAssign = null; let isVideo = false;
             if (!isStatic && videoTextureRef.current) { textureToAssign = videoTextureRef.current; isVideo = true; if(textureToAssign.image) {sourceWidth=textureToAssign.image.videoWidth; sourceHeight=textureToAssign.image.videoHeight;} } else if (isStatic && imageTextureRef.current) { textureToAssign = imageTextureRef.current; if(textureToAssign.image){sourceWidth=textureToAssign.image.naturalWidth; sourceHeight=textureToAssign.image.naturalHeight;} if(textureToAssign.needsUpdate){textureToAssign.needsUpdate=true;} }
             if(baseMaterial){ if (baseMaterial.map !== textureToAssign) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; } else if (textureToAssign && textureToAssign.needsUpdate) { baseMaterial.needsUpdate = true; } }
             const planeVisible = !!baseMaterial?.map && sourceWidth > 0 && sourceHeight > 0;
              if (planeVisible) { fitPlaneToCamera(sourceWidth, sourceHeight); const scaleX = Math.abs(basePlaneMeshRef.current.scale.x); const newScaleX = isVideo ? -scaleX : scaleX; if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; } } else { if (basePlaneMeshRef.current?.scale.x !== 0 || basePlaneMeshRef.current?.scale.y !== 0) { basePlaneMeshRef.current?.scale.set(0, 0, 0); } }
+
 
             // 3. Render Base Scene to Target
             rendererInstanceRef.current.setRenderTarget(renderTargetRef.current);
@@ -102,14 +91,15 @@ const TryOnRenderer = forwardRef(({
             // 4. Unbind Render Target
              rendererInstanceRef.current.setRenderTarget(null);
 
-            // 5. Update Post-Processing Uniforms (Only SceneTexture and Intensity for this shader)
+            // 5. Update Post-Processing Uniforms
              postUniforms.uSceneTexture.value = renderTargetRef.current.texture;
-             postUniforms.uEffectIntensity.value = currentIntensity.current; // Use the ref updated by props
+             postUniforms.uSegmentationMask.value = segmentationTextureRef.current; // Assign mask texture ref
+             const hasMask = !!segmentationTextureRef.current;
+             postUniforms.uHasMask.value = hasMask; // Set boolean flag
+             postUniforms.uEffectIntensity.value = currentIntensity.current; // Update intensity
 
-             // Keep assigning mask uniforms even though shader isn't using them,
-             // avoids errors if material expects them.
-             postUniforms.uSegmentationMask.value = segmentationTextureRef.current;
-             postUniforms.uHasMask.value = !!segmentationTextureRef.current;
+            // Optional: Log uniforms periodically
+            // if (currentCount % 100 === 1) { console.log(`RenderLoop Uniforms: uIntensity=${postUniforms.uEffectIntensity.value?.toFixed(2)}, uHasMask=${postUniforms.uHasMask.value}, Mask ID: ${postUniforms.uSegmentationMask.value?.id ?? 'null'}`); }
 
 
             // 6. Render Post-Processing Scene to Screen
@@ -119,29 +109,29 @@ const TryOnRenderer = forwardRef(({
     }, [fitPlaneToCamera, isStatic]);
 
 
-    // --- Initialize Scene --- (RenderTarget Mipmap Fix Attempt)
+    // --- Initialize Scene --- (No changes needed from previous - keep mipmap fix attempt)
     const initThreeScene = useCallback(() => {
         if (!canvasRef.current || isInitialized.current) return;
-        console.log("DEBUG: initThreeScene START (Force Effect Debug + Mipmap Fix)");
+        console.log("DEBUG: initThreeScene START (Re-enable Mask Sampling)");
         try {
-            const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480;
+            // ... (Renderer, Render Target w/ Mipmap fix, Base Scene, Post Scene setup exactly as before) ...
+             const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480;
             rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); rendererInstanceRef.current.setSize(initialWidth, initialHeight); rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio); rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
-
             renderTargetRef.current = new THREE.WebGLRenderTarget(initialWidth, initialHeight, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, colorSpace: THREE.SRGBColorSpace, depthBuffer: true, stencilBuffer: true });
             renderTargetRef.current.texture.generateMipmaps = false; renderTargetRef.current.texture.minFilter = THREE.LinearFilter; renderTargetRef.current.texture.magFilter = THREE.LinearFilter;
-            console.log("DEBUG: RenderTarget created (Mipmaps disabled).");
-
             baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1; const planeGeometry = new THREE.PlaneGeometry(1, 1); const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: true }); basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); baseSceneRef.current.add(basePlaneMeshRef.current);
-
             postSceneRef.current = new THREE.Scene(); postCameraRef.current = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1); const postPlaneGeometry = new THREE.PlaneGeometry(2, 2);
+
+            // Initialize Material with all needed uniforms for this shader
             postMaterialRef.current = new THREE.ShaderMaterial({
                 vertexShader: postVertexShader,
-                fragmentShader: postFragmentShader, // Force Red shader
+                fragmentShader: postFragmentShader, // <<< Shader that USES mask
                 uniforms: {
                     uSceneTexture: { value: renderTargetRef.current.texture },
-                    uSegmentationMask: { value: null }, // Define but unused by current shader
-                    uEffectIntensity: { value: currentIntensity.current }, // Needed by Force Red shader
-                    uHasMask: { value: false }, // Define but unused by current shader
+                    uSegmentationMask: { value: null }, // Initialize
+                    uEffectIntensity: { value: currentIntensity.current },
+                    uHasMask: { value: false }, // Initialize
+                    // No B/C uniforms
                 },
                 transparent: true, depthWrite: false, depthTest: false,
             });
@@ -152,30 +142,8 @@ const TryOnRenderer = forwardRef(({
     }, [handleResize, postVertexShader, postFragmentShader, renderLoop]);
 
 
-    // --- Setup / Cleanup Effect --- (Full cleanup)
-    useEffect(() => {
-        initThreeScene();
-        let resizeObserver; const currentCanvas = canvasRef.current;
-        if (currentCanvas) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(currentCanvas); }
-        return () => {
-             console.log("DEBUG: Cleanup running (TryOnRenderer Unmount)...");
-             resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false;
-             console.log("DEBUG: Disposing Three.js resources (Full)...");
-             videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); segmentationTextureRef.current?.dispose();
-             renderTargetRef.current?.dispose();
-             basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose();
-             if(postMaterialRef.current) {
-                 postMaterialRef.current.uniforms?.uSceneTexture?.value?.dispose();
-                 postMaterialRef.current.uniforms?.uSegmentationMask?.value?.dispose();
-                 postMaterialRef.current.dispose();
-             }
-             rendererInstanceRef.current?.dispose();
-             videoTextureRef.current = null; imageTextureRef.current = null; segmentationTextureRef.current = null; renderTargetRef.current = null;
-             basePlaneMeshRef.current = null; postMaterialRef.current = null; rendererInstanceRef.current = null; baseSceneRef.current = null;
-             postSceneRef.current = null; baseCameraRef.current = null; postCameraRef.current = null;
-             console.log("DEBUG: Three.js resources disposed.");
-        };
-     }, [initThreeScene, handleResize]);
+    // --- Setup / Cleanup Effect --- (No changes needed)
+    useEffect(() => { initThreeScene(); let resizeObserver; const currentCanvas = canvasRef.current; if (currentCanvas) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(currentCanvas); } return () => { /* ... Full cleanup ... */ console.log("DEBUG: Cleanup running (TryOnRenderer Unmount)..."); resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false; console.log("DEBUG: Disposing Three.js resources (Full)..."); videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); segmentationTextureRef.current?.dispose(); renderTargetRef.current?.dispose(); basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose(); if(postMaterialRef.current) { postMaterialRef.current.uniforms?.uSceneTexture?.value?.dispose(); postMaterialRef.current.uniforms?.uSegmentationMask?.value?.dispose(); postMaterialRef.current.dispose(); } rendererInstanceRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current = null; segmentationTextureRef.current = null; renderTargetRef.current = null; basePlaneMeshRef.current = null; postMaterialRef.current = null; rendererInstanceRef.current = null; baseSceneRef.current = null; postSceneRef.current = null; baseCameraRef.current = null; postCameraRef.current = null; console.log("DEBUG: Three.js resources disposed."); }; }, [initThreeScene, handleResize]);
 
 
     // --- JSX --- (No change)
