@@ -1,36 +1,27 @@
-// src/components/TryOnRenderer.jsx - Use segmentationResults Prop + Re-enabled Logging + Refined Shader
+// src/components/TryOnRenderer.jsx - CORRECT Mask Data Access + Logging
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
 
 const TryOnRenderer = forwardRef(({
-    videoRefProp,
-    imageElement,
-    mediaPipeResults, // Landmark results (or null)
-    segmentationResults, // <<< NEW PROP for segmentation data
-    isStatic,
-    brightness, contrast, effectIntensity,
+    videoRefProp, imageElement, mediaPipeResults, // Still here but not used for mask
+    segmentationResults, // <<< USE THIS PROP
+    isStatic, brightness, contrast, effectIntensity,
     className, style
  }, ref) => {
 
-    // Log received props
+    // --- Log received props ---
     // console.log(`TryOnRenderer RENDERING. isStatic=${isStatic}, Has segmentationResults? ${!!segmentationResults}`);
-    // if (segmentationResults) {
-    //     console.log(` -> segmentationResults contains confidenceMasks? ${!!segmentationResults.confidenceMasks}`);
-    // }
 
-    // Core Refs (no change)
-    const canvasRef = useRef(null); /* ... */ const segmentationTextureRef = useRef(null);
-    const rendererInstanceRef = useRef(null); const animationFrameHandle = useRef(null); const isInitialized = useRef(false);
-    const baseSceneRef = useRef(null); const baseCameraRef = useRef(null); const basePlaneMeshRef = useRef(null);
-    const videoTextureRef = useRef(null); const imageTextureRef = useRef(null); const postSceneRef = useRef(null);
-    const postCameraRef = useRef(null); const postMaterialRef = useRef(null); const renderTargetRef = useRef(null);
-
-    // Internal State Refs (no change)
+    // --- Core Refs / Internal State Refs --- (No changes)
+    const canvasRef = useRef(null); const rendererInstanceRef = useRef(null); const animationFrameHandle = useRef(null); const isInitialized = useRef(false);
+    const baseSceneRef = useRef(null); const baseCameraRef = useRef(null); const basePlaneMeshRef = useRef(null); const videoTextureRef = useRef(null);
+    const imageTextureRef = useRef(null); const postSceneRef = useRef(null); const postCameraRef = useRef(null); const postMaterialRef = useRef(null);
+    const renderTargetRef = useRef(null); const segmentationTextureRef = useRef(null);
     const currentBrightness = useRef(1.0); const currentContrast = useRef(1.0); const currentIntensity = useRef(0.5);
     const renderLoopCounter = useRef(0); const lastMaskUpdateTime = useRef(0);
 
-    // Shaders (No change needed - keep exaggerated effect for now)
+    // --- Shaders --- (Keep exaggerated Red effect)
     const postVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`;
     const postFragmentShader = `
         uniform sampler2D uSceneTexture; uniform sampler2D uSegmentationMask;
@@ -47,88 +38,91 @@ const TryOnRenderer = forwardRef(({
             f = clamp(f, 0.0, 1.0); gl_FragColor = vec4(f, b.a);
         }`;
 
-    // Update internal refs based on props (No change needed)
+    // --- Prop Effects (Intensity, Brightness/Contrast) --- (No changes)
     useEffect(() => { currentBrightness.current = isStatic ? Math.max(0.01, brightness || 1.0) : 1.0; currentContrast.current = isStatic ? Math.max(0.01, contrast || 1.0) : 1.0; }, [isStatic, brightness, contrast]);
     useEffect(() => { currentIntensity.current = effectIntensity; }, [effectIntensity]);
 
-    // Effects for Video/Image Textures (No change needed)
+    // --- Video/Image Texture Effects --- (No changes)
     useEffect(() => { /* ... Video Texture Logic ... */ }, [isStatic, videoRefProp]);
     useEffect(() => { /* ... Image Texture Logic ... */ }, [isStatic, imageElement]);
 
 
-    // --- ***** MODIFIED Effect to manage Segmentation Mask Texture ***** ---
+    // --- ***** CORRECTED Segmentation Mask Texture Effect ***** ---
     useEffect(() => {
-        // *** Use the NEW segmentationResults prop ***
-        const results = segmentationResults;
-        // *** Check confidenceMasks from ImageSegmenter output ***
+        const results = segmentationResults; // Use the correct prop
         const hasMaskDataArray = Array.isArray(results?.confidenceMasks) && results.confidenceMasks.length > 0;
 
         // console.log(`TryOnRenderer Mask EFFECT Check: Received segmentationResults prop. Has valid confidenceMasks? ${hasMaskDataArray}`);
 
         if (hasMaskDataArray) {
-            const confidenceMask = results.confidenceMasks[0]; // Get the first confidence mask
-            // *** Access the mask data via the .mask property (MediaPipe v0.10+) ***
-            const maskData = confidenceMask?.mask;
-            const maskWidth = confidenceMask?.width;
-            const maskHeight = confidenceMask?.height;
+            const confidenceMaskObject = results.confidenceMasks[0]; // This is the MPImage object
 
-            // console.log(`TryOnRenderer Mask EFFECT Details: Mask Obj Type=${typeof confidenceMask}, maskData Type=${typeof maskData}, Width=${maskWidth}, Height=${maskHeight}, Constructor=${maskData?.constructor?.name}`);
+            // *** Attempt to get data from the MPImage object ***
+            // Common properties are .data or sometimes .getAsFloat32Array() might be needed
+            // Let's prioritize .data for CPU delegate output
+            const maskData = confidenceMaskObject?.data; // <<< TRY ACCESSING .data PROPERTY
+            const maskWidth = confidenceMaskObject?.width;
+            const maskHeight = confidenceMaskObject?.height;
 
+            console.log(`TryOnRenderer Mask EFFECT Details: Mask Obj Type=${confidenceMaskObject?.constructor?.name}, Width=${maskWidth}, Height=${maskHeight}`);
+            // Log the type of maskData we found
+            console.log(` -> Trying .data property: Type=${maskData?.constructor?.name}, Length=${maskData?.length}`);
+
+            // Check if maskData is the Float32Array we expect
              if (maskData instanceof Float32Array && maskWidth > 0 && maskHeight > 0) {
-                // console.log(`TryOnRenderer Mask EFFECT: Processing Float32Array mask data. Length: ${maskData.length}`);
-                 const now = performance.now(); const timeSinceLastUpdate = now - lastMaskUpdateTime.current; const throttleThreshold = isStatic ? 0 : 66; // ~15fps
+                // console.log(`TryOnRenderer Mask EFFECT: Processing Float32Array mask data.`);
+                 const now = performance.now(); const timeSinceLastUpdate = now - lastMaskUpdateTime.current; const throttleThreshold = isStatic ? 0 : 66;
                  if (timeSinceLastUpdate > throttleThreshold) {
                     lastMaskUpdateTime.current = now;
                     try {
                         // console.log(`TryOnRenderer Mask EFFECT Texture: Attempting to create/update DataTexture...`);
                         if (!segmentationTextureRef.current || segmentationTextureRef.current.image.width !== maskWidth || segmentationTextureRef.current.image.height !== maskHeight) {
-                            console.log(` -> Creating NEW DataTexture (${maskWidth}x${maskHeight}) from confidenceMask`);
+                            console.log(` -> Creating NEW DataTexture (${maskWidth}x${maskHeight}) from confidenceMask.data`);
                             segmentationTextureRef.current?.dispose();
                             segmentationTextureRef.current = new THREE.DataTexture(maskData, maskWidth, maskHeight, THREE.RedFormat, THREE.FloatType);
                             segmentationTextureRef.current.minFilter = THREE.LinearFilter; segmentationTextureRef.current.magFilter = THREE.LinearFilter;
                             segmentationTextureRef.current.needsUpdate = true;
                             console.log(`TryOnRenderer Mask EFFECT Texture: New DataTexture CREATED.`);
                         } else {
-                            // console.log(` -> Updating EXISTING DataTexture data from confidenceMask.`);
+                            // console.log(` -> Updating EXISTING DataTexture data from confidenceMask.data.`);
                             segmentationTextureRef.current.image.data = maskData;
                             segmentationTextureRef.current.needsUpdate = true;
                             // console.log(`TryOnRenderer Mask EFFECT Texture: Existing DataTexture UPDATED.`);
                         }
-                    } catch (error) { /* ... error handling ... */ }
+                    } catch (error) { /* ... error handling ... */ console.error("TryOnRenderer Mask Texture: Error creating/updating DataTexture:", error); segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = null; }
                  }
-            } else if (maskData instanceof WebGLTexture) { // Keep check for future GPU delegate use
-                 console.warn("TryOnRenderer Mask EFFECT Handling: Received WebGLTexture directly (GPU).");
+             }
+             // Add a check for WebGLTexture just in case delegate changes later
+             else if (maskData instanceof WebGLTexture) {
+                 console.warn("TryOnRenderer Mask EFFECT Handling: Received WebGLTexture (GPU). Ensure delegate is CPU if expecting Float32Array.");
                  if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; }
-            } else {
-                 console.warn(`TryOnRenderer Mask EFFECT: Found confidenceMask[0] but mask data is not valid. Type: ${maskData?.constructor?.name}, Dims: ${maskWidth}x${maskHeight}`);
+             }
+             // Log failure if maskData wasn't the expected Float32Array
+             else {
+                 console.warn(`TryOnRenderer Mask EFFECT: confidenceMask.data was not a valid Float32Array. Type: ${maskData?.constructor?.name}`);
                  if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; }
-            }
+             }
         } else {
-            // No valid mask array found in the segmentationResults prop
+            // No valid confidenceMasks array found in prop
             if (segmentationTextureRef.current) {
-                console.log("TryOnRenderer Mask EFFECT: No valid confidence mask array found in prop, disposing texture.");
+                // console.log("TryOnRenderer Mask EFFECT: No valid confidence mask array in prop, disposing texture.");
                 segmentationTextureRef.current.dispose();
                 segmentationTextureRef.current = null;
-            } else { /* console.log("TryOnRenderer Mask EFFECT: No confidence mask array found in prop."); */ }
+            }
         }
-    // *** Depend on the NEW segmentationResults prop ***
+    // Depend on segmentationResults prop and isStatic (for throttling)
     }, [segmentationResults, isStatic]);
 
 
-    // Handle Resizing / Scale Base Plane (No changes needed)
+    // --- Handle Resizing / Scale Plane / Render Loop / Init / Cleanup --- (No changes needed from previous version)
     const handleResize = useCallback(() => { /* ... */ }, []);
     const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
+    const renderLoop = useCallback(() => { /* ... */ }, [fitPlaneToCamera, isStatic]);
+    const initThreeScene = useCallback(() => { /* ... */ }, [handleResize, postVertexShader, postFragmentShader, renderLoop]);
+    useEffect(() => { /* ... */ }, [initThreeScene, handleResize]);
 
-    // Render Loop (No changes needed - already uses segmentationTextureRef)
-     const renderLoop = useCallback(() => { /* ... (same as previous) ... */ }, [fitPlaneToCamera, isStatic]);
 
-    // Initialize Scene (No changes needed - already initializes mask uniform to null)
-    const initThreeScene = useCallback(() => { /* ... (same as previous) ... */ }, [handleResize, postVertexShader, postFragmentShader, renderLoop]);
-
-    // Setup / Cleanup Effect (No changes needed)
-    useEffect(() => { /* ... (same as previous) ... */ }, [initThreeScene, handleResize]);
-
-    // JSX (No changes needed)
+    // --- JSX --- (No change)
     return ( <canvas ref={canvasRef} className={`renderer-canvas ${className || ''}`} style={{ display: 'block', width: '100%', height: '100%', ...(style || {}) }} /> );
 });
 TryOnRenderer.displayName = 'TryOnRenderer';
