@@ -1,17 +1,14 @@
-// src/components/TryOnRenderer.jsx - CORRECT Mask Data Access + Logging
+// src/components/TryOnRenderer.jsx - Try getAsFloat32Array() for Mask Data
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
 
 const TryOnRenderer = forwardRef(({
-    videoRefProp, imageElement, mediaPipeResults, // Still here but not used for mask
+    videoRefProp, imageElement, mediaPipeResults,
     segmentationResults, // <<< USE THIS PROP
     isStatic, brightness, contrast, effectIntensity,
     className, style
  }, ref) => {
-
-    // --- Log received props ---
-    // console.log(`TryOnRenderer RENDERING. isStatic=${isStatic}, Has segmentationResults? ${!!segmentationResults}`);
 
     // --- Core Refs / Internal State Refs --- (No changes)
     const canvasRef = useRef(null); const rendererInstanceRef = useRef(null); const animationFrameHandle = useRef(null); const isInitialized = useRef(false);
@@ -47,60 +44,70 @@ const TryOnRenderer = forwardRef(({
     useEffect(() => { /* ... Image Texture Logic ... */ }, [isStatic, imageElement]);
 
 
-    // --- ***** CORRECTED Segmentation Mask Texture Effect ***** ---
+    // --- ***** MODIFIED Segmentation Mask Texture Effect (Try getAsFloat32Array) ***** ---
     useEffect(() => {
-        const results = segmentationResults; // Use the correct prop
+        const results = segmentationResults;
         const hasMaskDataArray = Array.isArray(results?.confidenceMasks) && results.confidenceMasks.length > 0;
 
-        // console.log(`TryOnRenderer Mask EFFECT Check: Received segmentationResults prop. Has valid confidenceMasks? ${hasMaskDataArray}`);
-
         if (hasMaskDataArray) {
-            const confidenceMaskObject = results.confidenceMasks[0]; // This is the MPImage object
-
-            // *** Attempt to get data from the MPImage object ***
-            // Common properties are .data or sometimes .getAsFloat32Array() might be needed
-            // Let's prioritize .data for CPU delegate output
-            const maskData = confidenceMaskObject?.data; // <<< TRY ACCESSING .data PROPERTY
+            const confidenceMaskObject = results.confidenceMasks[0]; // MPImage
             const maskWidth = confidenceMaskObject?.width;
             const maskHeight = confidenceMaskObject?.height;
+            let maskData = null; // Initialize maskData
 
             console.log(`TryOnRenderer Mask EFFECT Details: Mask Obj Type=${confidenceMaskObject?.constructor?.name}, Width=${maskWidth}, Height=${maskHeight}`);
-            // Log the type of maskData we found
-            console.log(` -> Trying .data property: Type=${maskData?.constructor?.name}, Length=${maskData?.length}`);
 
-            // Check if maskData is the Float32Array we expect
+            // *** Try calling getAsFloat32Array() method ***
+            if (typeof confidenceMaskObject?.getAsFloat32Array === 'function') {
+                try {
+                    console.log(" -> Attempting to call confidenceMaskObject.getAsFloat32Array()...");
+                    maskData = confidenceMaskObject.getAsFloat32Array(); // <<< CALL THE METHOD
+                    console.log(` -> Called getAsFloat32Array(): Result Type=${maskData?.constructor?.name}, Length=${maskData?.length}`);
+                } catch (error) {
+                    console.error(" -> Error calling getAsFloat32Array():", error);
+                    maskData = null; // Ensure maskData is null on error
+                }
+            } else {
+                console.warn(" -> confidenceMaskObject.getAsFloat32Array is not a function.");
+                // Fallback: Check .data again just in case (less likely now)
+                if(confidenceMaskObject?.data){
+                     console.warn(" -> Falling back to checking .data property.");
+                     maskData = confidenceMaskObject.data;
+                }
+            }
+            // **********************************************
+
+            // Now check if maskData is the Float32Array we expect
              if (maskData instanceof Float32Array && maskWidth > 0 && maskHeight > 0) {
-                // console.log(`TryOnRenderer Mask EFFECT: Processing Float32Array mask data.`);
+                 console.log(`TryOnRenderer Mask EFFECT: Processing Float32Array mask data (from getAsFloat32Array or fallback).`);
                  const now = performance.now(); const timeSinceLastUpdate = now - lastMaskUpdateTime.current; const throttleThreshold = isStatic ? 0 : 66;
                  if (timeSinceLastUpdate > throttleThreshold) {
                     lastMaskUpdateTime.current = now;
                     try {
                         // console.log(`TryOnRenderer Mask EFFECT Texture: Attempting to create/update DataTexture...`);
                         if (!segmentationTextureRef.current || segmentationTextureRef.current.image.width !== maskWidth || segmentationTextureRef.current.image.height !== maskHeight) {
-                            console.log(` -> Creating NEW DataTexture (${maskWidth}x${maskHeight}) from confidenceMask.data`);
+                            console.log(` -> Creating NEW DataTexture (${maskWidth}x${maskHeight})`);
                             segmentationTextureRef.current?.dispose();
                             segmentationTextureRef.current = new THREE.DataTexture(maskData, maskWidth, maskHeight, THREE.RedFormat, THREE.FloatType);
                             segmentationTextureRef.current.minFilter = THREE.LinearFilter; segmentationTextureRef.current.magFilter = THREE.LinearFilter;
                             segmentationTextureRef.current.needsUpdate = true;
                             console.log(`TryOnRenderer Mask EFFECT Texture: New DataTexture CREATED.`);
                         } else {
-                            // console.log(` -> Updating EXISTING DataTexture data from confidenceMask.data.`);
+                            // console.log(` -> Updating EXISTING DataTexture data.`);
                             segmentationTextureRef.current.image.data = maskData;
                             segmentationTextureRef.current.needsUpdate = true;
                             // console.log(`TryOnRenderer Mask EFFECT Texture: Existing DataTexture UPDATED.`);
                         }
-                    } catch (error) { /* ... error handling ... */ console.error("TryOnRenderer Mask Texture: Error creating/updating DataTexture:", error); segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = null; }
-                 }
+                    } catch (error) { console.error("TryOnRenderer Mask Texture: Error creating/updating DataTexture:", error); segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = null; }
+                 } // else { console.log("Throttled mask update"); }
              }
-             // Add a check for WebGLTexture just in case delegate changes later
-             else if (maskData instanceof WebGLTexture) {
-                 console.warn("TryOnRenderer Mask EFFECT Handling: Received WebGLTexture (GPU). Ensure delegate is CPU if expecting Float32Array.");
-                 if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; }
-             }
-             // Log failure if maskData wasn't the expected Float32Array
+             // Handle cases where maskData wasn't obtained or wasn't Float32Array
              else {
-                 console.warn(`TryOnRenderer Mask EFFECT: confidenceMask.data was not a valid Float32Array. Type: ${maskData?.constructor?.name}`);
-                 if (segmentationTextureRef.current) { segmentationTextureRef.current.dispose(); segmentationTextureRef.current = null; }
+                 console.warn(`TryOnRenderer Mask EFFECT: Failed to obtain valid Float32Array mask data. Final maskData type: ${maskData?.constructor?.name}`);
+                 if (segmentationTextureRef.current) {
+                     segmentationTextureRef.current.dispose();
+                     segmentationTextureRef.current = null;
+                 }
              }
         } else {
             // No valid confidenceMasks array found in prop
@@ -110,7 +117,7 @@ const TryOnRenderer = forwardRef(({
                 segmentationTextureRef.current = null;
             }
         }
-    // Depend on segmentationResults prop and isStatic (for throttling)
+    // Depend on segmentationResults prop and isStatic
     }, [segmentationResults, isStatic]);
 
 
