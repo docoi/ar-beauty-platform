@@ -1,4 +1,4 @@
-// src/components/StaticSelfieTryOn.jsx - CORRECTED SYNTAX + Use detect() method
+// src/components/StaticSelfieTryOn.jsx - Back to detectForVideo() - Ensure Correct Syntax
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // Expects the version with detailed mask logging
@@ -25,15 +25,15 @@ const StaticSelfieTryOn = forwardRef(({
   // Refs
   const selfieVideoRef = useRef(null);
 
-  // Camera Access Effect (Restored Original)
+  // Camera Access Effect (Original Correct Version)
   useEffect(() => {
     let isMounted = true; let stream = null;
-    const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { if (isMounted) { let message = "Camera Error."; /* ... error messages ... */ setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } };
+    const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { if (isMounted) { let message = "Camera Error."; /* ... */ setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } };
     if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; } setCameraStream(null); }
     return () => { isMounted = false; const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); };
    }, [isPreviewing, faceLandmarker]);
 
-  // Selfie Capture (Restored Original)
+  // Selfie Capture (Original Correct Version)
   const handleTakeSelfie = useCallback(() => {
     if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; }
     if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; }
@@ -42,14 +42,13 @@ const StaticSelfieTryOn = forwardRef(({
     setIsPreviewing(false);
     setDetectedSelfieResults(null);
     setStaticImageElement(null);
-    // isDetecting will be set true by the effect
     setDebugInfo('Capture complete. Loading image...');
     cameraStream?.getTracks().forEach(track => track.stop());
     setCameraStream(null);
     if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; }
-   }, [cameraStream, selfieDimensions]); // Keep original dependencies
+   }, [cameraStream, selfieDimensions]);
 
-  // Image Loading and Face Detection Effect - USE detect()
+  // Image Loading and Face Detection Effect - USE detectForVideo()
   useEffect(() => {
     if (!capturedSelfieDataUrl || !faceLandmarker) {
         if (staticImageElement !== null) { setStaticImageElement(null); }
@@ -57,27 +56,29 @@ const StaticSelfieTryOn = forwardRef(({
         return;
     }
 
-    console.log("StaticSelfieTryOn Effect: Valid data URL found. Loading image...");
-    setIsDetecting(true); // Set flag here
+    console.log("StaticSelfieTryOn Effect: Loading image for detectForVideo()...");
+    setIsDetecting(true);
     setDebugInfo('Loading captured image...');
     const imageElement = new Image();
 
-    imageElement.onload = () => { // Removed async as detect() is synchronous
-      console.log("StaticSelfieTryOn: Image loaded via imageElement.onload.");
+    imageElement.onload = () => { // Keep non-async
+      console.log("StaticSelfieTryOn: Image loaded.");
       setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight});
       setStaticImageElement(imageElement);
       setDebugInfo('Image loaded, detecting face...');
 
       try {
         if (faceLandmarker) {
-          console.log("StaticSelfieTryOn: Starting face detection using detect()...");
-          const startTime = performance.now();
-          // ***** USE detect() INSTEAD OF detectForVideo() *****
-          const results = faceLandmarker.detect(imageElement);
-          // *****************************************************
+          console.log("StaticSelfieTryOn: Starting face detection using detectForVideo()...");
+          const startTime = performance.now(); // Get timestamp
+
+          // ***** USE detectForVideo() AGAIN *****
+          const results = faceLandmarker.detectForVideo(imageElement, startTime);
+          // **************************************
+
           const endTime = performance.now();
 
-          console.log(`--- StaticSelfieTryOn: detect() results (took ${endTime - startTime}ms) ---`, results);
+          console.log(`--- StaticSelfieTryOn: detectForVideo() results (took ${endTime - startTime}ms) ---`, results);
           if (results?.segmentationMasks) {
               console.log(" -> segmentationMasks:", results.segmentationMasks);
               if (results.segmentationMasks.length > 0 && results.segmentationMasks[0]) {
@@ -90,9 +91,9 @@ const StaticSelfieTryOn = forwardRef(({
           setDetectedSelfieResults(results);
           setDebugInfo(`Analysis complete: ${results?.faceLandmarks?.[0]?.length || 0} landmarks found.`);
         } else {
-          console.warn("StaticSelfieTryOn: FaceLandmarker unavailable during detection.");
-          setDebugInfo('Analysis skipped: FaceLandmarker unavailable.');
-          setDetectedSelfieResults(null);
+           console.warn("StaticSelfieTryOn: FaceLandmarker unavailable during detection.");
+           setDebugInfo('Analysis skipped: FaceLandmarker unavailable.');
+           setDetectedSelfieResults(null);
         }
       } catch(err) {
          console.error("StaticSelfieTryOn: Error during face detection:", err);
@@ -119,10 +120,10 @@ const StaticSelfieTryOn = forwardRef(({
       imageElement.onerror = null;
       imageElement.src = '';
     };
-  }, [capturedSelfieDataUrl, faceLandmarker]); // Keep original dependencies
+  }, [capturedSelfieDataUrl, faceLandmarker]);
 
 
-   // Retake Selfie (Restored Original)
+   // Retake Selfie (Original Correct Version)
    const handleRetakeSelfie = () => {
     setIsPreviewing(true);
     setCapturedSelfieDataUrl(null);
@@ -135,7 +136,7 @@ const StaticSelfieTryOn = forwardRef(({
     setDebugInfo('');
    };
 
-   // JSX (Restored Original Structure)
+   // JSX (Original Correct Version)
    return (
     <div className="border p-4 rounded bg-green-50">
       <h2 className="text-xl font-semibold mb-2 text-center">Try On Selfie Mode</h2>
@@ -184,9 +185,9 @@ const StaticSelfieTryOn = forwardRef(({
       )}
       {!faceLandmarker && <p className="text-red-500 mt-2 text-center">Initializing AI model...</p>}
     </div>
-  ); // End of return statement
+  );
 
-}); // End of forwardRef callback
+}); // End of forwardRef
 
 StaticSelfieTryOn.displayName = 'StaticSelfieTryOn';
 export default StaticSelfieTryOn;

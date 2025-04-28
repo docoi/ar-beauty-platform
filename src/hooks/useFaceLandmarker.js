@@ -1,4 +1,4 @@
-// src/hooks/useFaceLandmarker.js - Set runningMode to IMAGE for testing detect()
+// src/hooks/useFaceLandmarker.js - VIDEO mode, CPU Delegate, Simplified Options
 
 import { useState, useEffect } from 'react';
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
@@ -17,22 +17,22 @@ const useFaceLandmarker = () => {
         const vision = await FilesetResolver.forVisionTasks(
           "/wasm" // Path relative to the public directory
         );
-        console.log("Fileset loaded. Creating FaceLandmarker with IMAGE mode...");
+        console.log("Fileset loaded. Creating FaceLandmarker with VIDEO mode, CPU delegate...");
 
         const landmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            delegate: "CPU"
+            delegate: "CPU" // Keep CPU for stability check
           },
-          // ***** CHANGED runningMode *****
-          runningMode: 'IMAGE', // Use IMAGE mode for detect() method
+          // ***** Back to VIDEO mode *****
+          runningMode: 'VIDEO',
           // ******************************
-          outputSegmentationMasks: true, // Still request masks
+          outputSegmentationMasks: true, // Essential
           numFaces: 1
-          // Keep blendshapes/matrices removed for simplicity
+          // Keep blendshapes/matrices removed
         });
 
-        console.log("FaceLandmarker created successfully (Using CPU Delegate, IMAGE Mode).");
+        console.log("FaceLandmarker created successfully (Using CPU Delegate, VIDEO Mode).");
         if (isMounted) {
           setFaceLandmarker(landmarker);
           setIsLoading(false);
@@ -53,11 +53,11 @@ const useFaceLandmarker = () => {
     return () => {
       isMounted = false;
       console.log("Cleaning up FaceLandmarker hook...");
-      faceLandmarker?.close(); // Close method recommended for IMAGE/VIDEO modes
+      faceLandmarker?.close(); // Close needed for VIDEO mode
       setFaceLandmarker(null);
       console.log("FaceLandmarker instance closed and nullified.");
     };
-  }, []);
+  }, []); // Empty dependency array
 
   return { faceLandmarker, isLoading, error };
 };
