@@ -1,4 +1,4 @@
-// src/hooks/useFaceLandmarker.js - SWITCHED TO CPU DELEGATE FOR DEBUGGING
+// src/hooks/useFaceLandmarker.js - SIMPLIFIED Options + CPU Delegate
 
 import { useState, useEffect } from 'react';
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
@@ -17,23 +17,22 @@ const useFaceLandmarker = () => {
         const vision = await FilesetResolver.forVisionTasks(
           "/wasm" // Path relative to the public directory
         );
-        console.log("Fileset loaded. Creating FaceLandmarker...");
+        console.log("Fileset loaded. Creating FaceLandmarker with SIMPLIFIED options...");
 
         const landmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            // ***** CHANGED DELEGATE TO CPU *****
-            delegate: "CPU"
-            // ***********************************
+            delegate: "CPU" // Keep CPU for now
           },
-          outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: true,
-          outputSegmentationMasks: true, // Still request masks
+          // ***** MINIMAL REQUIRED OPTIONS *****
           runningMode: 'VIDEO',
+          outputSegmentationMasks: true, // Essential
           numFaces: 1
+          // Removed: outputFaceBlendshapes, outputFacialTransformationMatrixes
+          // **********************************
         });
 
-        console.log("FaceLandmarker created successfully (Using CPU Delegate)."); // Updated log
+        console.log("FaceLandmarker created successfully (Using CPU Delegate, Simplified Options).");
         if (isMounted) {
           setFaceLandmarker(landmarker);
           setIsLoading(false);
@@ -54,11 +53,10 @@ const useFaceLandmarker = () => {
     return () => {
       isMounted = false;
       console.log("Cleaning up FaceLandmarker hook...");
-      // Simple cleanup for now
-      setFaceLandmarker(null);
+      setFaceLandmarker(null); // Simple cleanup
       console.log("FaceLandmarker instance nullified.");
     };
-  }, []); // Empty dependency array ensures this runs only once
+  }, []);
 
   return { faceLandmarker, isLoading, error };
 };
