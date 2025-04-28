@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - CORRECTED FULL CODE - Explicit Uniform Update After Unbind
+// src/components/TryOnRenderer.jsx - RESET to Visually Preferred State (Pass-Through Shader, Post-Processing Active)
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -6,8 +6,8 @@ import * as THREE from 'three';
 const TryOnRenderer = forwardRef(({
     videoRefProp, imageElement,
     mediaPipeResults, // Not used by this shader version
-    segmentationResults, // Used by mask effect hook
-    isStatic, brightness, contrast, effectIntensity, // B/C/I Not used by this shader version
+    segmentationResults, // Used by mask effect hook to create texture (unused by shader)
+    isStatic, brightness, contrast, effectIntensity, // Not used by this shader version
     className, style
  }, ref) => {
 
@@ -27,7 +27,7 @@ const TryOnRenderer = forwardRef(({
     const renderTargetRef = useRef(null);
     const segmentationTextureRef = useRef(null); // Mask texture ref
 
-    // --- Internal State Refs ---
+    // --- Internal State Refs --- (Not used by shader, but kept for consistency)
     const currentBrightness = useRef(1.0);
     const currentContrast = useRef(1.0);
     const currentIntensity = useRef(0.5);
@@ -45,7 +45,7 @@ const TryOnRenderer = forwardRef(({
         }
     `;
 
-    // --- Prop Effects --- (Update internal refs even if shader doesn't use them yet)
+    // --- Prop Effects --- (Keep refs updated even if unused by shader)
     useEffect(() => { currentBrightness.current = isStatic ? Math.max(0.01, brightness || 1.0) : 1.0; currentContrast.current = isStatic ? Math.max(0.01, contrast || 1.0) : 1.0; }, [isStatic, brightness, contrast]);
     useEffect(() => { currentIntensity.current = effectIntensity; }, [effectIntensity]);
 
@@ -58,7 +58,7 @@ const TryOnRenderer = forwardRef(({
         if (isStatic && imageElement) { if (!imageTextureRef.current || imageTextureRef.current.image !== imageElement) { /*console.log("TryOnRenderer Effect: Creating/Updating Image Texture");*/ imageTextureRef.current?.dispose(); imageTextureRef.current = new THREE.Texture(imageElement); imageTextureRef.current.colorSpace = THREE.SRGBColorSpace; imageTextureRef.current.needsUpdate = true; } else if (imageTextureRef.current && imageTextureRef.current.image === imageElement) { imageTextureRef.current.needsUpdate = true; } } else { if (imageTextureRef.current) { /*console.log("TryOnRenderer Effect: Disposing Image Texture");*/ imageTextureRef.current.dispose(); imageTextureRef.current = null; } }
     }, [isStatic, imageElement]);
 
-    // --- Segmentation Mask Texture Effect --- (Create texture from segmenter results)
+    // --- Segmentation Mask Texture Effect --- (Keep creating texture in background)
     useEffect(() => {
         const results = segmentationResults;
         const hasMaskDataArray = Array.isArray(results?.confidenceMasks) && results.confidenceMasks.length > 0;
@@ -117,7 +117,7 @@ const TryOnRenderer = forwardRef(({
         const canvas = canvasRef.current; if (!baseCameraRef.current || !basePlaneMeshRef.current || !textureWidth || !textureHeight || !canvas || canvas.clientWidth === 0 || canvas.clientHeight === 0) return; const viewWidth = canvas.clientWidth; const viewHeight = canvas.clientHeight; const viewAspect = viewWidth / viewHeight; const textureAspect = textureWidth / textureHeight; let scaleX, scaleY; if (viewAspect > textureAspect) { scaleX = viewWidth; scaleY = scaleX / textureAspect; } else { scaleY = viewHeight; scaleX = scaleY * textureAspect; } const currentScale = basePlaneMeshRef.current.scale; const currentSignX = Math.sign(currentScale.x) || 1; const newScaleXWithSign = scaleX * currentSignX; if (Math.abs(currentScale.y - scaleY) > 0.01 || Math.abs(currentScale.x - newScaleXWithSign) > 0.01) { currentScale.y = scaleY; currentScale.x = newScaleXWithSign; }
      }, []);
 
-    // --- Render Loop (Explicit Uniform Update Timing) ---
+    // --- Render Loop (Basic Post-Processing, Explicit Uniform Update Timing) ---
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
         if (!isInitialized.current || !rendererInstanceRef.current || !baseSceneRef.current || !baseCameraRef.current || !postSceneRef.current || !postCameraRef.current || !basePlaneMeshRef.current || !postMaterialRef.current || !renderTargetRef.current) { return; }
@@ -129,7 +129,7 @@ const TryOnRenderer = forwardRef(({
             const postUniforms = postMaterialRef.current.uniforms;
             if (!postUniforms?.uSceneTexture) { if(logThisFrame) console.warn("RenderLoop: uSceneTexture uniform not ready."); return; }
 
-            // 1. Select Source Texture & 2. Update Plane
+            // 1 & 2: Select Texture & Update Plane
             const baseMaterial = basePlaneMeshRef.current.material; let sourceWidth = 0, sourceHeight = 0; let textureToAssign = null; let isVideo = false;
             if (!isStatic && videoTextureRef.current) { textureToAssign = videoTextureRef.current; isVideo = true; if(textureToAssign.image) {sourceWidth=textureToAssign.image.videoWidth; sourceHeight=textureToAssign.image.videoHeight;} } else if (isStatic && imageTextureRef.current) { textureToAssign = imageTextureRef.current; if(textureToAssign.image){sourceWidth=textureToAssign.image.naturalWidth; sourceHeight=textureToAssign.image.naturalHeight;} if(textureToAssign.needsUpdate){textureToAssign.needsUpdate=true;} }
             if(baseMaterial){ if (baseMaterial.map !== textureToAssign) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; } else if (textureToAssign && textureToAssign.needsUpdate) { baseMaterial.needsUpdate = true; } }
@@ -145,7 +145,7 @@ const TryOnRenderer = forwardRef(({
              }
 
             // 4. Unbind Render Target FIRST
-             rendererInstanceRef.current.setRenderTarget(null); // Switch back to canvas
+             rendererInstanceRef.current.setRenderTarget(null);
 
             // 5. Update Post-Processing Uniform AFTER unbinding
              postUniforms.uSceneTexture.value = renderTargetRef.current.texture;
@@ -154,13 +154,13 @@ const TryOnRenderer = forwardRef(({
              rendererInstanceRef.current.render(postSceneRef.current, postCameraRef.current);
 
         } catch (error) { console.error("Error in renderLoop:", error); }
-    }, [fitPlaneToCamera, isStatic]); // Keep dependencies
+    }, [fitPlaneToCamera, isStatic]);
 
 
-    // --- Initialize Scene (WITH Depth/Stencil Buffer) ---
+    // --- Initialize Scene (WITH Depth/Stencil Buffer, Minimal Shader) ---
     const initThreeScene = useCallback(() => {
         if (!canvasRef.current || isInitialized.current) return;
-        console.log("DEBUG: initThreeScene START (Pass-Through + Depth/Stencil)"); // Log message reflects current state
+        console.log("DEBUG: initThreeScene START (Pass-Through + Depth/Stencil)");
         try {
             const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480;
             rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); rendererInstanceRef.current.setSize(initialWidth, initialHeight); rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio); rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
@@ -168,28 +168,38 @@ const TryOnRenderer = forwardRef(({
             renderTargetRef.current = new THREE.WebGLRenderTarget(initialWidth, initialHeight, {
                 minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
                 format: THREE.RGBAFormat, colorSpace: THREE.SRGBColorSpace,
-                depthBuffer: true,
+                depthBuffer: true,  // Keep depth/stencil
                 stencilBuffer: true
             });
-            console.log("DEBUG: RenderTarget created with Depth/Stencil buffers.");
+            // console.log("DEBUG: RenderTarget created with Depth/Stencil buffers.");
 
             baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1; const planeGeometry = new THREE.PlaneGeometry(1, 1); const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: true }); basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); baseSceneRef.current.add(basePlaneMeshRef.current);
 
             postSceneRef.current = new THREE.Scene(); postCameraRef.current = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1); const postPlaneGeometry = new THREE.PlaneGeometry(2, 2);
             postMaterialRef.current = new THREE.ShaderMaterial({
                 vertexShader: postVertexShader,
-                fragmentShader: postFragmentShader,
-                uniforms: { uSceneTexture: { value: renderTargetRef.current.texture }, },
+                fragmentShader: postFragmentShader, // Minimal pass-through shader
+                uniforms: {
+                    uSceneTexture: { value: renderTargetRef.current.texture },
+                    // Define other uniforms even if unused by shader, for potential future use? Or remove? Let's keep them defined but unused for now.
+                    uBrightness: { value: currentBrightness.current },
+                    uContrast: { value: currentContrast.current },
+                    uSegmentationMask: { value: null },
+                    uEffectIntensity: { value: currentIntensity.current },
+                    uHasMask: { value: false },
+                },
                 transparent: true, depthWrite: false, depthTest: false,
             });
             const postPlaneMesh = new THREE.Mesh(postPlaneGeometry, postMaterialRef.current); postSceneRef.current.add(postPlaneMesh);
 
             isInitialized.current = true;
+            // console.log("DEBUG: Scene initialization complete.");
             handleResize();
+            // console.log("DEBUG: Requesting first render loop frame from Init.");
             cancelAnimationFrame(animationFrameHandle.current);
             animationFrameHandle.current = requestAnimationFrame(renderLoop);
         } catch (error) { console.error("DEBUG: initThreeScene ERROR:", error); isInitialized.current = false; }
-    }, [handleResize, postVertexShader, postFragmentShader, renderLoop]);
+    }, [handleResize, postVertexShader, postFragmentShader, renderLoop]); // Add renderLoop
 
 
     // --- Setup / Cleanup Effect --- (Full Disposal)
@@ -204,9 +214,9 @@ const TryOnRenderer = forwardRef(({
              videoTextureRef.current?.dispose(); imageTextureRef.current?.dispose(); segmentationTextureRef.current?.dispose();
              renderTargetRef.current?.dispose();
              basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose();
-             if(postMaterialRef.current) { // Check if material exists before accessing uniforms
+             if(postMaterialRef.current) {
                  postMaterialRef.current.uniforms?.uSceneTexture?.value?.dispose();
-                 postMaterialRef.current.uniforms?.uSegmentationMask?.value?.dispose(); // Dispose even if not used by current shader
+                 postMaterialRef.current.uniforms?.uSegmentationMask?.value?.dispose();
                  postMaterialRef.current.dispose();
              }
              rendererInstanceRef.current?.dispose();
