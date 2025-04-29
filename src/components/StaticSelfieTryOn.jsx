@@ -1,14 +1,14 @@
-// src/components/StaticSelfieTryOn.jsx - CORRECTED SYNTAX + Run BOTH Landmarker and Segmenter
+// src/components/StaticSelfieTryOn.jsx - CORRECTED SYNTAX + REMOVED ImageSegmenter Logic
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
-import TryOnRenderer from './TryOnRenderer'; // Expects the version using segmentationResults prop
+import TryOnRenderer from './TryOnRenderer'; // Expecting the "Direct Rendering" version
 
-const FIXED_SELFIE_BRIGHTNESS = 2.15;
-const FIXED_SELFIE_CONTRAST = 0.55;
+const FIXED_SELFIE_BRIGHTNESS = 1.0; // Reset B/C as renderer ignores them now
+const FIXED_SELFIE_CONTRAST = 1.0;
 
 const StaticSelfieTryOn = forwardRef(({
-    faceLandmarker,
-    imageSegmenter, // <<< Accept segmenter prop
+    faceLandmarker, // Keep this
+    // Removed imageSegmenter prop
     effectIntensity
 }, ref) => {
   // State
@@ -17,9 +17,8 @@ const StaticSelfieTryOn = forwardRef(({
   const [isCameraLoading, setIsCameraLoading] = useState(true);
   const [cameraError, setCameraError] = useState(null);
   const [capturedSelfieDataUrl, setCapturedSelfieDataUrl] = useState(null);
-  // Separate state for results
+  // Only need state for landmarker results
   const [detectedLandmarkResults, setDetectedLandmarkResults] = useState(null);
-  const [detectedSegmentationResults, setDetectedSegmentationResults] = useState(null); // <<< New state
   const [selfieDimensions, setSelfieDimensions] = useState({ width: 0, height: 0 });
   const [isDetecting, setIsDetecting] = useState(false);
   const [debugInfo, setDebugInfo] = useState('');
@@ -28,127 +27,65 @@ const StaticSelfieTryOn = forwardRef(({
   // Refs
   const selfieVideoRef = useRef(null);
 
-  // Camera Access Effect (Original Correct Version)
+  // Camera Access Effect
   useEffect(() => {
     let isMounted = true; let stream = null;
     const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { if (isMounted) { let message = "Camera Error."; /* ... */ setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } };
     if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; } setCameraStream(null); }
     return () => { isMounted = false; const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); };
-   }, [isPreviewing, faceLandmarker]); // Keep original dependencies
+   }, [isPreviewing, faceLandmarker]);
 
-  // Selfie Capture (Original Correct Version)
+  // Selfie Capture
   const handleTakeSelfie = useCallback(() => {
     if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; }
     if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; }
     setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png');
     setCapturedSelfieDataUrl(dataUrl);
     setIsPreviewing(false);
-    setDetectedLandmarkResults(null); // Clear previous results
-    setDetectedSegmentationResults(null); // Clear previous results
+    setDetectedLandmarkResults(null);
     setStaticImageElement(null);
     setDebugInfo('Capture complete. Loading image...');
     cameraStream?.getTracks().forEach(track => track.stop());
     setCameraStream(null);
     if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; }
-   }, [cameraStream, selfieDimensions]); // Keep original dependencies
+   }, [cameraStream, selfieDimensions]);
 
-  // Image Loading and Face Detection Effect - Run BOTH tasks
+  // Image Loading and Face Detection Effect - Only run Landmarker
   useEffect(() => {
-    if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { // Check segmenter too
-        if (staticImageElement !== null) { setStaticImageElement(null); }
-        if (isDetecting) setIsDetecting(false);
-        return;
-    }
-
-    console.log("StaticSelfieTryOn Effect: Loading image for detection/segmentation...");
-    setIsDetecting(true);
-    setDebugInfo('Loading captured image...');
-    const imageElement = new Image();
-
+    if (!capturedSelfieDataUrl || !faceLandmarker) { if (staticImageElement !== null) { setStaticImageElement(null); } if (isDetecting) setIsDetecting(false); return; }
+    console.log("StaticSelfieTryOn Effect: Loading image for detection...");
+    setIsDetecting(true); setDebugInfo('Loading captured image...'); const imageElement = new Image();
     imageElement.onload = () => {
       console.log("StaticSelfieTryOn: Image loaded.");
       setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight});
-      setStaticImageElement(imageElement);
-      setDebugInfo('Image loaded, detecting/segmenting face...');
-
+      setStaticImageElement(imageElement); setDebugInfo('Image loaded, detecting face...');
       try {
-        if (faceLandmarker && imageSegmenter) {
-          console.log("StaticSelfieTryOn: Running detectForVideo() and segmentForVideo()...");
+        if (faceLandmarker) {
+          console.log("StaticSelfieTryOn: Running detectForVideo()...");
           const startTime = performance.now();
-
-          // Run BOTH tasks
           const landmarkResults = faceLandmarker.detectForVideo(imageElement, startTime);
-          const segmentationResults = imageSegmenter.segmentForVideo(imageElement, startTime);
-
           const endTime = performance.now();
-
           console.log(`--- StaticSelfieTryOn: Results (took ${endTime - startTime}ms) ---`);
-          console.log(" -> landmarkResults:", landmarkResults);
-          console.log(" -> segmentationResults:", segmentationResults);
-          if (segmentationResults?.confidenceMasks) {
-               console.log(" -> segmentationResults.confidenceMasks:", segmentationResults.confidenceMasks);
-               if(segmentationResults.confidenceMasks.length > 0 && segmentationResults.confidenceMasks[0]) {
-                    const mask = segmentationResults.confidenceMasks[0];
-                    console.log(" -> Mask 0 Type:", mask?.constructor?.name);
-                    console.log(" -> Mask 0 Data Type:", mask?.mask?.constructor?.name);
-                    console.log(" -> Mask 0 Dims:", `${mask?.width}x${mask?.height}`);
-               } else { console.log(" -> segmentationResults: confidenceMasks array is empty."); }
-          } else { console.log(" -> segmentationResults: confidenceMasks not found."); }
-          console.log(`-----------------------------------------`);
-
-          // Update BOTH state variables
+          console.log(" -> landmarkResults:", landmarkResults); console.log(`-----------------------------------------`);
           setDetectedLandmarkResults(landmarkResults);
-          setDetectedSegmentationResults(segmentationResults);
           setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks found.`);
-        } else {
-           console.warn("StaticSelfieTryOn: Models unavailable during detection phase.");
-           setDebugInfo('Analysis skipped: AI Models unavailable.');
-           setDetectedLandmarkResults(null);
-           setDetectedSegmentationResults(null);
-        }
-      } catch(err) {
-         console.error("StaticSelfieTryOn: Error during detection/segmentation:", err);
-         setDebugInfo(`Error during analysis: ${err.message}`);
-         setDetectedLandmarkResults(null);
-         setDetectedSegmentationResults(null);
-      } finally {
-         console.log("StaticSelfieTryOn: Setting isDetecting to false.");
-         setIsDetecting(false);
-      }
-    }; // End of imageElement.onload
-
-    imageElement.onerror = () => {
-        console.error("StaticSelfieTryOn: imageElement.onerror triggered.");
-        setDebugInfo('Error: Failed to load captured image.');
-        setStaticImageElement(null);
-        setIsDetecting(false);
-     };
-    imageElement.src = capturedSelfieDataUrl;
-
-    // Cleanup function
-    return () => {
-      imageElement.onload = null;
-      imageElement.onerror = null;
-      imageElement.src = '';
+        } else { /*...*/ setDetectedLandmarkResults(null); }
+      } catch(err) { /*...*/ setDetectedLandmarkResults(null); }
+      finally { setIsDetecting(false); }
     };
-  }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]); // Add imageSegmenter dependency
+    imageElement.onerror = () => { /*...*/ }; imageElement.src = capturedSelfieDataUrl;
+    return () => { /*...*/ };
+  }, [capturedSelfieDataUrl, faceLandmarker]);
 
 
    // Retake Selfie
    const handleRetakeSelfie = () => {
-    setIsPreviewing(true);
-    setCapturedSelfieDataUrl(null);
-    setDetectedLandmarkResults(null);
-    setDetectedSegmentationResults(null);
-    setStaticImageElement(null);
-    setSelfieDimensions({ width: 0, height: 0 });
-    setCameraError(null);
-    setIsCameraLoading(true);
-    setIsDetecting(false);
-    setDebugInfo('');
+    setIsPreviewing(true); setCapturedSelfieDataUrl(null); setDetectedLandmarkResults(null);
+    setStaticImageElement(null); setSelfieDimensions({ width: 0, height: 0 }); setCameraError(null);
+    setIsCameraLoading(true); setIsDetecting(false); setDebugInfo('');
    };
 
-   // --- JSX --- (Corrected Preview UI)
+   // --- ***** JSX (Preview UI Restored) ***** ---
    return (
     <div className="border p-4 rounded bg-green-50">
       <h2 className="text-xl font-semibold mb-2 text-center">Try On Selfie Mode</h2>
@@ -170,45 +107,38 @@ const StaticSelfieTryOn = forwardRef(({
          </>
       ) : ( // Render Captured UI block
         <>
-          {/* Container for aspect ratio */}
           <div className="relative w-full max-w-md mx-auto bg-gray-200 overflow-hidden rounded shadow" style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : 75}%` }}>
-            {/* Conditional rendering of TryOnRenderer or fallback */}
             {staticImageElement ? (
               <TryOnRenderer
                 videoRefProp={null}
                 imageElement={staticImageElement}
-                mediaPipeResults={detectedLandmarkResults} // Pass landmark results
-                segmentationResults={detectedSegmentationResults} // <<< Pass segmentation results
+                mediaPipeResults={detectedLandmarkResults} // Pass only landmarks
+                // Removed segmentationResults prop
                 isStatic={true}
                 brightness={FIXED_SELFIE_BRIGHTNESS}
                 contrast={FIXED_SELFIE_CONTRAST}
                 effectIntensity={effectIntensity}
                 className="absolute top-0 left-0 w-full h-full"
               />
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center">
-                 <p className="text-gray-500">{isDetecting ? 'Analyzing Selfie...' : (capturedSelfieDataUrl ? 'Loading Image...' : 'Initializing...')}</p>
-              </div>
-            )}
+            ) : ( /* ... Fallback UI ... */
+                 <div className="absolute inset-0 flex items-center justify-center"><p className="text-gray-500">{isDetecting ? 'Analyzing Selfie...' : (capturedSelfieDataUrl ? 'Loading Image...' : 'Initializing...')}</p></div>
+             )}
           </div>
-          {/* Debug Info Area */}
           <div className="mt-2 p-2 border bg-gray-100 text-xs overflow-auto max-h-20 max-w-md mx-auto rounded">
              <p className="font-semibold mb-1">Debug Info:</p>
              <pre className="whitespace-pre-wrap break-words">{debugInfo || 'N/A'}</pre>
           </div>
-          {/* Retake Button */}
           <div className="text-center mt-4">
              <button onClick={handleRetakeSelfie} className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
                Retake Selfie
              </button>
           </div>
         </>
-      )} {/* End of conditional rendering block */}
-
-      {/* Check if BOTH models are ready */}
-      {(!faceLandmarker || !imageSegmenter) && <p className="text-red-500 mt-2 text-center">Initializing AI models...</p>}
-    </div> // End of main component div
-  ); // End of return
+      )}
+      {!faceLandmarker && <p className="text-red-500 mt-2 text-center">Initializing AI model...</p>}
+    </div>
+  );
+  // --- **************************************** ---
 
 }); // End of forwardRef
 
