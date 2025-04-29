@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - Simplify init deps, Log Loop Entry
+// src/components/TryOnRenderer.jsx - Initial Direct Render + Minimal Composer
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -29,50 +29,26 @@ const TryOnRenderer = forwardRef(({
     const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
 
 
-    // --- Render Loop (Log Entry and Check) ---
+    // --- Render Loop (Use EffectComposer - Minimal) ---
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
         renderLoopCounter.current++;
-
-        // *** Log immediately on entry ***
-        // console.log(`RenderLoop CALLED - Frame ${renderLoopCounter.current}`);
-
-        // Check initialization and essential refs
-        if (!isInitialized.current || !rendererInstanceRef.current || !composerRef.current || !basePlaneMeshRef.current || !basePlaneMeshRef.current.material) {
-            // *** Log if skipping ***
-            if (renderLoopCounter.current % 10 === 1) { // Log periodically if stuck here
-                 console.log(`RenderLoop skipping Frame ${renderLoopCounter.current}: isInitialized=${isInitialized.current}, renderer=${!!rendererInstanceRef.current}, composer=${!!composerRef.current}, plane=${!!basePlaneMeshRef.current}, material=${!!basePlaneMeshRef.current?.material}`);
-            }
-             return;
-        }
-
-        const logThisFrame = (renderLoopCounter.current === 1 || renderLoopCounter.current % 150 === 0);
-        if (logThisFrame) console.log(` -> RenderLoop Frame ${renderLoopCounter.current}: Executing...`);
+        if (!isInitialized.current || !rendererInstanceRef.current || !composerRef.current || !basePlaneMeshRef.current || !basePlaneMeshRef.current.material) { return; }
 
         try {
-            // Log right before main logic
-            // if (logThisFrame) console.log("   -> Entering render logic...");
-
             // 1 & 2: Select Texture & Update Plane (Condensed)
              const baseMaterial = basePlaneMeshRef.current.material; let sourceWidth = 0, sourceHeight = 0; let textureToAssign = null; let isVideo = false; if (!isStatic && videoTextureRef.current) { textureToAssign = videoTextureRef.current; isVideo = true; if(textureToAssign.image) {sourceWidth=textureToAssign.image.videoWidth; sourceHeight=textureToAssign.image.videoHeight;} } else if (isStatic && imageTextureRef.current) { textureToAssign = imageTextureRef.current; if(textureToAssign.image){sourceWidth=textureToAssign.image.naturalWidth; sourceHeight=textureToAssign.image.naturalHeight;} if(textureToAssign.needsUpdate){textureToAssign.needsUpdate=true;} } if(baseMaterial){ if (baseMaterial.map !== textureToAssign) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; } else if (textureToAssign && textureToAssign.needsUpdate) { baseMaterial.needsUpdate = true; } } const planeVisible = !!baseMaterial?.map && sourceWidth > 0 && sourceHeight > 0; if (planeVisible) { fitPlaneToCamera(sourceWidth, sourceHeight); const scaleX = Math.abs(basePlaneMeshRef.current.scale.x); const newScaleX = isVideo ? -scaleX : scaleX; if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; } } else { if (basePlaneMeshRef.current?.scale.x !== 0 || basePlaneMeshRef.current?.scale.y !== 0) { basePlaneMeshRef.current?.scale.set(0, 0, 0); } }
 
             // Render using the Composer
-            // if(logThisFrame) console.log("   -> Calling composer.render()...");
             composerRef.current.render();
-            // if(logThisFrame) console.log("   -> composer.render() finished.");
-
 
             if (planeVisible && textureToAssign?.needsUpdate) { textureToAssign.needsUpdate = false; }
 
-        } catch (error) {
-            console.error("Error in renderLoop:", error);
-            // Stop loop on error to prevent spamming console
-            cancelAnimationFrame(animationFrameHandle.current);
-        }
-    }, [fitPlaneToCamera, isStatic]); // Keep dependencies
+        } catch (error) { console.error("Error in renderLoop:", error); }
+    }, [fitPlaneToCamera, isStatic]);
 
 
-    // --- Initialize Scene (SIMPLIFIED Dependency Array) ---
+    // --- Initialize Scene (Initial Direct Render Attempt) ---
     const initThreeScene = useCallback(() => {
         if (!canvasRef.current || isInitialized.current) { return; }
         console.log("DEBUG: initThreeScene START (EffectComposer - RenderPass + OutputPass)");
@@ -84,35 +60,51 @@ const TryOnRenderer = forwardRef(({
             basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial);
             baseSceneRef.current.add(basePlaneMeshRef.current);
 
+            // *** ATTEMPT an initial direct render before composer setup ***
+            // This requires the video texture to be ready almost immediately.
+            // We might need a short delay or a check for texture readiness.
+             console.log("DEBUG: Attempting initial direct render...");
+             const initialTexture = !isStatic ? videoTextureRef.current : imageTextureRef.current;
+             if (initialTexture && basePlaneMeshRef.current) {
+                  basePlaneMeshRef.current.material.map = initialTexture;
+                  basePlaneMeshRef.current.material.needsUpdate = true;
+                  // Need to size the plane first
+                   let initialW = 0, initialH = 0;
+                   if(!isStatic && initialTexture.image) {initialW = initialTexture.image.videoWidth; initialH = initialTexture.image.videoHeight;}
+                   else if (isStatic && initialTexture.image) { initialW = initialTexture.image.naturalWidth; initialH = initialTexture.image.naturalHeight;}
+                   if(initialW > 0 && initialH > 0) {
+                       fitPlaneToCamera(initialW, initialH); // Size the plane
+                       // Mirror if video
+                       if (!isStatic) {
+                           const scaleX = Math.abs(basePlaneMeshRef.current.scale.x);
+                           basePlaneMeshRef.current.scale.x = -scaleX;
+                       }
+                       rendererInstanceRef.current.render(baseSceneRef.current, baseCameraRef.current);
+                       console.log("DEBUG: Initial direct render executed.");
+                   } else {
+                       console.log("DEBUG: Initial direct render skipped (texture not ready/sized).");
+                   }
+             } else {
+                  console.log("DEBUG: Initial direct render skipped (texture or plane not ready).");
+             }
+            // **************************************************************
+
+            // Now setup EffectComposer
             composerRef.current = new EffectComposer(rendererInstanceRef.current);
             const renderPass = new RenderPass(baseSceneRef.current, baseCameraRef.current);
             composerRef.current.addPass(renderPass);
-            const outputPass = new OutputPass(); // OutputPass handles renderToScreen implicitly
+            const outputPass = new OutputPass();
             composerRef.current.addPass(outputPass);
-            console.log("DEBUG: EffectComposer setup complete (RenderPass + OutputPass).");
+            console.log("DEBUG: EffectComposer setup complete.");
 
-            isInitialized.current = true; // Set initialized flag
-            console.log("DEBUG: isInitialized set to true.");
-            handleResize(); // Call resize after setup
-
-            console.log("DEBUG: Requesting first animation frame...");
-            cancelAnimationFrame(animationFrameHandle.current); // Clear previous just in case
-            // *** Directly call the renderLoop function instance created in this scope ***
-            animationFrameHandle.current = requestAnimationFrame(renderLoop);
-
+            isInitialized.current = true; handleResize(); cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop);
         } catch (error) { console.error("DEBUG: initThreeScene FAILED:", error); isInitialized.current = false; }
-    // *** REMOVED renderLoop from dependency array ***
-    }, [handleResize]);
+    // Add fitPlaneToCamera to dependencies as it's used in init now
+    }, [handleResize, renderLoop, fitPlaneToCamera]);
 
 
     // --- Setup / Cleanup Effect ---
-    useEffect(() => {
-        console.log("DEBUG: Setup Effect RUNNING, calling initThreeScene...");
-        initThreeScene();
-        let resizeObserver; const currentCanvas = canvasRef.current;
-        if (currentCanvas) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(currentCanvas); }
-        return () => { console.log("DEBUG: Cleanup Effect RUNNING..."); /* ... Simplified cleanup ... */ };
-     }, [initThreeScene, handleResize]); // Keep dependencies
+    useEffect(() => { initThreeScene(); let resizeObserver; const currentCanvas = canvasRef.current; if (currentCanvas) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(currentCanvas); } return () => { /* ... Simplified cleanup ... */ }; }, [initThreeScene, handleResize]);
 
 
     // --- JSX --- (No change)
