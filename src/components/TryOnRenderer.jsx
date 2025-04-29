@@ -1,4 +1,4 @@
-// src/components/TryOnRenderer.jsx - Log Video Texture Effect + Minimal Composer
+// src/components/TryOnRenderer.jsx - Read Ref Directly in Loop + Minimal Composer
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -21,44 +21,11 @@ const TryOnRenderer = forwardRef(({
     const renderLoopCounter = useRef(0);
 
     // --- Prop Effects / Texture Effects ---
-
-    // ***** ADD LOGGING to Video Texture Effect *****
+    // Log Video Texture Effect
     useEffect(() => {
-        const videoElement = videoRefProp?.current;
-        console.log(`VideoTexture Effect Triggered: isStatic=${isStatic}, videoElement Exists=${!!videoElement}`);
-
-        if (!isStatic && videoElement) {
-            console.log(` -> Condition MET: Not static and videoElement exists.`);
-            // Check if texture needs creation/update
-            if (!videoTextureRef.current || videoTextureRef.current.image !== videoElement) {
-                 console.log(" -> Creating/Updating Video Texture...");
-                 videoTextureRef.current?.dispose(); // Dispose previous if exists
-                 try {
-                      videoTextureRef.current = new THREE.VideoTexture(videoElement);
-                      videoTextureRef.current.colorSpace = THREE.SRGBColorSpace;
-                      console.log(" -> VideoTexture CREATED/ASSIGNED to ref:", videoTextureRef.current);
-                 } catch (texError) {
-                      console.error(" -> ERROR Creating VideoTexture:", texError);
-                      videoTextureRef.current = null; // Ensure ref is null on error
-                 }
-            } else {
-                 console.log(" -> VideoTexture already exists and matches videoElement.");
-            }
-        } else {
-             console.log(` -> Condition NOT MET: isStatic=${isStatic} or videoElement missing.`);
-             // Dispose texture if mode switched or element removed
-             if (videoTextureRef.current) {
-                 console.log(" -> Disposing existing Video Texture because mode changed or element removed.");
-                 videoTextureRef.current.dispose();
-                 videoTextureRef.current = null;
-             }
-        }
-        // Log the final state of the ref after logic
-        console.log(` -> VideoTexture Effect END: videoTextureRef.current is ${videoTextureRef.current ? 'set' : 'null'}`);
-    }, [isStatic, videoRefProp]); // Keep dependencies
-    // ********************************************
-
-    useEffect(() => { /* Image Texture Logic (no changes) */ }, [isStatic, imageElement]);
+        const videoElement = videoRefProp?.current; /* console.log(...) */ if (!isStatic && videoElement) { /* console.log(...) */ if (!videoTextureRef.current || videoTextureRef.current.image !== videoElement) { /* console.log(...) */ videoTextureRef.current?.dispose(); try { videoTextureRef.current = new THREE.VideoTexture(videoElement); videoTextureRef.current.colorSpace = THREE.SRGBColorSpace; /* console.log(...) */ } catch (texError) { /* console.error(...) */ videoTextureRef.current = null; } } else { /* console.log(...) */ } } else { /* console.log(...) */ if (videoTextureRef.current) { /* console.log(...) */ videoTextureRef.current.dispose(); videoTextureRef.current = null; } } /* console.log(...) */
+    }, [isStatic, videoRefProp]);
+    useEffect(() => { /* Image Texture Logic */ }, [isStatic, imageElement]);
 
 
     // --- Handle Resizing / Scale Plane ---
@@ -66,46 +33,66 @@ const TryOnRenderer = forwardRef(({
     const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
 
 
-    // --- Render Loop (Use EffectComposer - Minimal) ---
+    // --- Render Loop (Read Ref Directly) ---
      const renderLoop = useCallback(() => {
-        animationFrameHandle.current = requestAnimationFrame(renderLoop);
+        animationFrameHandle.current = requestAnimationFrame(renderLoop); // Correct recursive call
         renderLoopCounter.current++;
+
         if (!isInitialized.current || !rendererInstanceRef.current || !composerRef.current || !basePlaneMeshRef.current || !basePlaneMeshRef.current.material) { return; }
 
         const logThisFrame = (renderLoopCounter.current <= 5 || renderLoopCounter.current % 150 === 0);
 
         try {
             // 1 & 2: Select Texture & Update Plane
-            const baseMaterial = basePlaneMeshRef.current.material; let sourceWidth = 0, sourceHeight = 0; let textureToAssign = null; let isVideo = false;
-            // *** Use videoTextureRef directly here ***
-            if (!isStatic && videoTextureRef.current) {
-                 textureToAssign = videoTextureRef.current; // Assign from ref
+            const baseMaterial = basePlaneMeshRef.current.material;
+            let sourceWidth = 0, sourceHeight = 0;
+            let textureToAssign = null; // Determine texture inside the loop based on CURRENT ref values
+            let isVideo = false;
+
+            // *** Read Refs DIRECTLY inside the loop execution ***
+            if (!isStatic && videoTextureRef.current) { // Check CURRENT value of videoTextureRef
+                 textureToAssign = videoTextureRef.current;
                  isVideo = true;
                  if(textureToAssign.image) {sourceWidth=textureToAssign.image.videoWidth; sourceHeight=textureToAssign.image.videoHeight;}
-            } else if (isStatic && imageTextureRef.current) {
+            } else if (isStatic && imageTextureRef.current) { // Check CURRENT value of imageTextureRef
                  textureToAssign = imageTextureRef.current;
                  if(textureToAssign.image){sourceWidth=textureToAssign.image.naturalWidth; sourceHeight=textureToAssign.image.naturalHeight;}
-                 if(textureToAssign.needsUpdate){textureToAssign.needsUpdate=true;}
+                 if(textureToAssign.needsUpdate){textureToAssign.needsUpdate=true;} // Keep needsUpdate handling
             }
+            // *****************************************************
 
             if (logThisFrame) { console.log(` -> Loop ${renderLoopCounter.current}: textureToAssign=${textureToAssign?.constructor?.name ?? 'null'}, current map=${baseMaterial.map?.constructor?.name ?? 'null'}`); }
 
-            if (baseMaterial.map !== textureToAssign) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; }
-            else if (textureToAssign && textureToAssign.needsUpdate) { baseMaterial.needsUpdate = true; }
+            // Assign texture directly to map if changed
+            if (baseMaterial.map !== textureToAssign) {
+                 if(logThisFrame && textureToAssign) console.log(` -> Loop ${renderLoopCounter.current}: Assigning texture map!`);
+                 baseMaterial.map = textureToAssign;
+                 baseMaterial.needsUpdate = true;
+            } else if (textureToAssign && textureToAssign.needsUpdate) {
+                 if(logThisFrame) console.log(` -> Loop ${renderLoopCounter.current}: Marking material needsUpdate (texture content updated).`);
+                 baseMaterial.needsUpdate = true;
+            }
 
             const planeVisible = !!baseMaterial.map && sourceWidth > 0 && sourceHeight > 0;
              if (planeVisible) { fitPlaneToCamera(sourceWidth, sourceHeight); const scaleX = Math.abs(basePlaneMeshRef.current.scale.x); const newScaleX = isVideo ? -scaleX : scaleX; if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; } } else { if (basePlaneMeshRef.current?.scale.x !== 0 || basePlaneMeshRef.current?.scale.y !== 0) { basePlaneMeshRef.current?.scale.set(0, 0, 0); } }
 
+             if (logThisFrame) console.log(` -> Loop ${renderLoopCounter.current}: Calling composer.render(). Plane visible: ${planeVisible}`);
+
             // Render using the Composer
             composerRef.current.render();
 
-            if (planeVisible && textureToAssign?.needsUpdate) { textureToAssign.needsUpdate = false; }
+             if (logThisFrame) console.log(` -> Loop ${renderLoopCounter.current}: composer.render() finished.`);
+
+            if (planeVisible && textureToAssign?.needsUpdate) {
+                 textureToAssign.needsUpdate = false;
+             }
 
         } catch (error) { console.error("Error in renderLoop:", error); }
+    // Dependency array for useCallback remains the same, as it accesses refs directly now.
     }, [fitPlaneToCamera, isStatic]);
 
 
-    // --- Initialize Scene (Use EffectComposer with RenderPass + CopyShader Pass) ---
+    // --- Initialize Scene (Minimal Composer) ---
     const initThreeScene = useCallback(() => {
         if (!canvasRef.current || isInitialized.current) { return; }
         console.log("DEBUG: initThreeScene START (EffectComposer - RenderPass + Copy Pass)");
@@ -113,7 +100,6 @@ const TryOnRenderer = forwardRef(({
             const canvas = canvasRef.current; const initialWidth = canvas.clientWidth || 640; const initialHeight = canvas.clientHeight || 480;
             rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); rendererInstanceRef.current.setSize(initialWidth, initialHeight); rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio); rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace;
             baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1; const planeGeometry = new THREE.PlaneGeometry(1, 1);
-            // *** Use MeshBasicMaterial ***
             const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: true });
             basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial);
             baseSceneRef.current.add(basePlaneMeshRef.current);
@@ -128,7 +114,7 @@ const TryOnRenderer = forwardRef(({
 
             isInitialized.current = true; handleResize(); cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop);
         } catch (error) { console.error("DEBUG: initThreeScene FAILED:", error); isInitialized.current = false; }
-    }, [handleResize, renderLoop]); // Dependencies
+    }, [handleResize, renderLoop]);
 
 
     // --- Setup / Cleanup Effect ---
