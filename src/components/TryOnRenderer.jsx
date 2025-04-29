@@ -5,7 +5,7 @@ import * as THREE from 'three';
 
 // --- Target value for saturation adjustment ---
 // Start with a noticeable reduction. ADJUST THIS VALUE based on visual feedback.
-const TARGET_PREVIEW_SATURATION = 0.7; // e.g., 0.7 = 70% of original saturation
+const TARGET_PREVIEW_SATURATION = 0.6; // e.g., 0.6 = 60% of original saturation
 // ---------------------------------------------
 
 const TryOnRenderer = forwardRef(({
