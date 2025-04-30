@@ -1,4 +1,4 @@
-// src/hooks/useFaceLandmarker.js - Landmarks AND Segmentation Masks Enabled
+// src/hooks/useFaceLandmarker.js - LANDMARKS ONLY Configuration
 
 import { useState, useEffect } from 'react';
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
@@ -15,7 +15,7 @@ const useFaceLandmarker = () => {
       try {
         console.log("useFaceLandmarker: Loading Vision Task Fileset...");
         const vision = await FilesetResolver.forVisionTasks("/wasm");
-        console.log("useFaceLandmarker: Fileset loaded. Creating FaceLandmarker (Landmarks + Segmentation)...");
+        console.log("useFaceLandmarker: Fileset loaded. Creating FaceLandmarker (Landmarks Only)...");
 
         const landmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
@@ -23,13 +23,14 @@ const useFaceLandmarker = () => {
             delegate: "CPU" // Keep CPU for stability check
           },
           runningMode: 'VIDEO',
-          outputFaceBlendshapes: false, // Keep false for now
-          outputFacialTransformationMatrixes: false, // Keep false for now
-          outputSegmentationMasks: true, // <<< ENABLED segmentation masks
+          // *** ONLY Request Landmarks (or blendshapes if needed later) ***
+          outputFaceBlendshapes: false, // Disable if not needed for basic effect
+          outputFacialTransformationMatrixes: false, // Disable if not needed
+          outputSegmentationMasks: false, // <<< Set explicitly to FALSE
           numFaces: 1
         });
 
-        console.log("useFaceLandmarker: FaceLandmarker created successfully (CPU, Landmarks + Segmentation).");
+        console.log("useFaceLandmarker: FaceLandmarker created successfully (CPU, Landmarks Only).");
         if (isMounted) {
           setFaceLandmarker(landmarker);
           setIsLoading(false);
@@ -51,7 +52,7 @@ const useFaceLandmarker = () => {
     };
   }, []); // Run once
 
-  return { faceLandmarker, isLoading, error }; // Return structure remains the same
+  return { faceLandmarker, isLoading, error };
 };
 
 export default useFaceLandmarker;

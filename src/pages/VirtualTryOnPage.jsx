@@ -1,56 +1,58 @@
-// src/pages/VirtualTryOnPage.jsx - Use ONLY FaceLandmarker hook
+// src/pages/VirtualTryOnPage.jsx - Use BOTH FaceLandmarker and ImageSegmenter hooks
 
 import React, { useState, useEffect, useRef } from 'react';
 import useFaceLandmarker from '../hooks/useFaceLandmarker'; // Import the hook
-// import useImageSegmenter from '../hooks/useImageSegmenter'; // <<< REMOVED ImageSegmenter import
+import useImageSegmenter from '../hooks/useImageSegmenter'; // Import the NEW hook
 import RealTimeMirror from '../components/RealTimeMirror';
 import StaticSelfieTryOn from '../components/StaticSelfieTryOn';
 
 const VirtualTryOnPage = () => {
-  console.log("VirtualTryOnPage rendering (Landmarker Only Mode)...");
+  console.log("VirtualTryOnPage rendering...");
 
   const [mode, setMode] = useState('mirror');
-  const [effectIntensity, setEffectIntensity] = useState(0.5); // Keep intensity control
+  const [effectIntensity, setEffectIntensity] = useState(0.5);
 
-  // --- Initialize ONLY FaceLandmarker hook ---
+  // --- Initialize BOTH hooks ---
   const { faceLandmarker, isLoading: isLoadingLandmarker, error: landmarkerError } = useFaceLandmarker();
-  // const { imageSegmenter, isLoadingSegmenter, segmenterError } = useImageSegmenter(); // <<< REMOVED Segmenter hook call
-  // ------------------------------------------
+  const { imageSegmenter, isLoadingSegmenter, segmenterError } = useImageSegmenter();
+  // -----------------------------
 
   const activeRendererRef = useRef(null);
 
-  // Use only Landmarker loading/error states
-  const isAnythingLoading = isLoadingLandmarker;
-  const anyError = landmarkerError;
+  // Combined loading and error state
+  const isAnythingLoading = isLoadingLandmarker || isLoadingSegmenter;
+  const anyError = landmarkerError || segmenterError;
 
   useEffect(() => {
-    console.log("Hook State Update (Landmarker Only):", {
-        isLoadingLandmarker,
+    console.log("Hook State Update:", {
+        isLoadingLandmarker, isLoadingSegmenter,
         landmarkerError: landmarkerError?.message,
+        segmenterError: segmenterError?.message,
         faceLandmarkerReady: !!faceLandmarker,
-        // imageSegmenterReady: false // No longer tracking
+        imageSegmenterReady: !!imageSegmenter
     });
-  }, [isLoadingLandmarker, landmarkerError, faceLandmarker]);
+  }, [isLoadingLandmarker, isLoadingSegmenter, landmarkerError, segmenterError, faceLandmarker, imageSegmenter]);
 
 
-  // --- Handle Loading and Error States for FaceLandmarker ONLY ---
+  // --- Handle Loading and Error States for BOTH models ---
   if (isAnythingLoading) {
-    return <div className="flex justify-center items-center h-screen"><p>Loading AI Model...</p></div>;
+    return <div className="flex justify-center items-center h-screen"><p>Loading AI Models...</p></div>;
   }
   if (anyError) {
     return (
         <div className="flex flex-col justify-center items-center h-screen text-red-500">
-            <p className="font-bold mb-2">Error loading FaceLandmarker:</p>
-            {landmarkerError && <p>{landmarkerError.message}</p>}
+            <p className="font-bold mb-2">Error loading AI model(s):</p>
+            {landmarkerError && <p>FaceLandmarker: {landmarkerError.message}</p>}
+            {segmenterError && <p>ImageSegmenter: {segmenterError.message}</p>}
       </div>
     );
   }
-  if (!faceLandmarker) { // Check only for faceLandmarker
-    return <div className="flex justify-center items-center h-screen"><p>Initializing AI model...</p></div>;
+  if (!faceLandmarker || !imageSegmenter) {
+    return <div className="flex justify-center items-center h-screen"><p>Initializing AI models...</p></div>;
   }
   // --------------------------------------------------------
 
-  console.log(`Rendering Main Content - Mode: ${mode}, Model Ready: Landmarker=${!!faceLandmarker}`);
+  console.log(`Rendering Main Content - Mode: ${mode}, Models Ready: Landmarker=${!!faceLandmarker}, Segmenter=${!!imageSegmenter}`);
 
   return (
     <div className="container mx-auto p-4">
@@ -64,28 +66,27 @@ const VirtualTryOnPage = () => {
 
       {/* Conditional Rendering based on Mode */}
       <div className="try-on-container mb-4">
-        {/* Pass only faceLandmarker down */}
-        {mode === 'mirror' && faceLandmarker && ( // Check only for faceLandmarker
+        {/* Pass BOTH models down */}
+        {mode === 'mirror' && faceLandmarker && imageSegmenter && (
           <RealTimeMirror
             ref={activeRendererRef}
             faceLandmarker={faceLandmarker}
-            // imageSegmenter={imageSegmenter} // <<< REMOVED prop
+            imageSegmenter={imageSegmenter}
             effectIntensity={effectIntensity}
            />
         )}
-        {mode === 'selfie' && faceLandmarker && ( // Check only for faceLandmarker
+        {mode === 'selfie' && faceLandmarker && imageSegmenter && (
           <StaticSelfieTryOn
             ref={activeRendererRef}
             faceLandmarker={faceLandmarker}
-            // imageSegmenter={imageSegmenter} // <<< REMOVED prop
+            imageSegmenter={imageSegmenter}
             effectIntensity={effectIntensity}
           />
         )}
-        {/* Adjust fallback message */}
-        {!faceLandmarker && (<p className="text-center text-red-500">FaceLandmarker not available.</p>)}
+        {(!faceLandmarker || !imageSegmenter) && (<p className="text-center text-red-500">AI Models not available.</p>)}
       </div>
 
-      {/* Controls Area (remains the same) */}
+      {/* Controls Area */}
       <div className="mt-4 p-4 border rounded bg-gray-100 max-w-md mx-auto">
          <h3 className="text-lg font-semibold mb-2">Controls</h3>
          <div className="mb-4 p-3 border rounded bg-blue-50">
