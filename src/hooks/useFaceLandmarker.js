@@ -20,7 +20,7 @@ const useFaceLandmarker = () => {
         const landmarker = await FaceLandmarker.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-            delegate: "CPU" // Keep CPU for now
+            delegate: "CPU" // Keep CPU for stability check
           },
           runningMode: 'VIDEO',
           // *** ONLY Request Landmarks (or blendshapes if needed later) ***
