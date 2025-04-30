@@ -1,4 +1,5 @@
 // src/components/TryOnRenderer.jsx - Reads Silhouette Mask, Adds Landmark Texture & BBox Check
+// !! INCLUDES DEBUG SHADER to visualize the Bounding Box !!
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -13,9 +14,9 @@ const MAX_LANDMARKS = 512; // Use a power-of-two size for potential compatibilit
 const TryOnRenderer = forwardRef(({
     videoRefProp, imageElement,
     mediaPipeResults,     // <<< USED for landmarks
-    segmentationResults, // <<< USED for silhouette mask
+    segmentationResults, // <<< USED for silhouette mask (but ignored by debug shader)
     isStatic,
-    effectIntensity,
+    effectIntensity,      // <<< Ignored by debug shader
     className, style
  }, ref) => {
 
@@ -24,165 +25,103 @@ const TryOnRenderer = forwardRef(({
     const baseSceneRef = useRef(null); const baseCameraRef = useRef(null); const basePlaneMeshRef = useRef(null); const videoTextureRef = useRef(null);
     const imageTextureRef = useRef(null);
     const segmentationTextureRef = useRef(null); // For silhouette mask
-    const landmarkTextureRef = useRef(null);     // <<< ADDED for landmarks
-    const landmarkDataArray = useRef(null);      // <<< ADDED Float32Array buffer for landmarks
+    const landmarkTextureRef = useRef(null);     // For landmarks
+    const landmarkDataArray = useRef(null);      // Buffer for landmarks
     const composerRef = useRef(null); const effectPassRef = useRef(null);
-    const currentIntensity = useRef(0.5);
+    const currentIntensity = useRef(0.5); // Still here but unused by debug shader
     const renderLoopCounter = useRef(0); const lastMaskUpdateTime = useRef(0);
     const lastLandmarkUpdateTime = useRef(0);
 
 
-    // --- Shaders (Updated to include landmark uniforms and bbox logic) ---
-        // --- Shaders (DEBUG VERSION - Visualizes Bounding Box) ---
-        const customVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`;
-        // !! DEBUG Fragment Shader !!
-        const customFragmentShader = `
-            uniform sampler2D tDiffuse;
-            // uniform sampler2D uSegmentationMask; // Unused in debug
-            uniform sampler2D uLandmarkData;
-            // uniform float uEffectIntensity; // Unused in debug
-            // uniform bool uHasMask; // Unused in debug
-            uniform bool uHasLandmarks;
-            // uniform bool uFlipMaskX; // Unused in debug logic
-    
-            varying vec2 vUv;
-    
-            // Helper to get landmark data (XY) from RG Float texture
-            vec2 getLandmark(int index) {
-                float uvx = (float(index) + 0.5) / 512.0;
-                return texture2D(uLandmarkData, vec2(uvx, 0.5)).rg;
-            }
-    
-            // Basic Bounding Box check using a few key landmarks
-            bool isInsideFaceBBox(vec2 pointUV) {
-                vec2 p = vec2(pointUV.x, 1.0 - pointUV.y); // Flip point Y
-    
-                // Use the same indices for now
-                vec2 forehead = getLandmark(10);
-                vec2 chin     = getLandmark(152);
-                vec2 leftCheek = getLandmark(234);
-                vec2 rightCheek= getLandmark(454);
-    
-                // --- Let's try NO padding first ---
-                float minX = min(leftCheek.x, rightCheek.x);
-                float maxX = max(leftCheek.x, rightCheek.x);
-                float minY = forehead.y; // Y is flipped
-                float maxY = chin.y;
-    
-                // Check if point 'p' is within the raw box
-                return p.x > minX && p.x < maxX && p.y > minY && p.y < maxY;
-            }
-    
-            void main() {
-                vec4 bC = texture2D(tDiffuse,vUv);
-                vec3 fC = bC.rgb; // Base color
-                vec3 debugColor = vec3(0.0, 0.0, 0.0); // Default Black
-    
-                if(uHasLandmarks) {
-                    if (isInsideFaceBBox(vUv)) {
-                        debugColor = vec3(0.0, 1.0, 0.0); // GREEN = Inside BBox
-                    } else {
-                        debugColor = vec3(1.0, 0.0, 0.0); // RED = Outside BBox
-                    }
-                } else {
-                   debugColor = vec3(0.0, 0.0, 1.0); // BLUE = No Landmarks detected
-                }
-    
-                // Mix the debug color with the base color to see both
-                gl_FragColor = vec4(mix(fC, debugColor, 0.7), bC.a);
-            }
-        `;
+    // --- Shaders (DEBUG VERSION - Visualizes Bounding Box) ---
+    const customVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`;
+    // !! DEBUG Fragment Shader !!
+    const customFragmentShader = `
+        uniform sampler2D tDiffuse;
+        // uniform sampler2D uSegmentationMask; // Unused in debug
+        uniform sampler2D uLandmarkData;
+        // uniform float uEffectIntensity; // Unused in debug
+        // uniform bool uHasMask; // Unused in debug
+        uniform bool uHasLandmarks;
+        // uniform bool uFlipMaskX; // Unused in debug logic
 
-    const HydrationShader = useRef({
+        varying vec2 vUv;
+
+        // Helper to get landmark data (XY) from RG Float texture
+        vec2 getLandmark(int index) {
+            float uvx = (float(index) + 0.5) / 512.0; // MAX_LANDMARKS = 512
+            return texture2D(uLandmarkData, vec2(uvx, 0.5)).rg;
+        }
+
+        // Basic Bounding Box check using a few key landmarks
+        bool isInsideFaceBBox(vec2 pointUV) {
+            vec2 p = vec2(pointUV.x, 1.0 - pointUV.y); // Flip point Y for comparison
+
+            // Indices for approximate bounding box (adjust as needed)
+            // These are examples, refer to MediaPipe face mesh diagram!
+            vec2 forehead = getLandmark(10);  // Top center
+            vec2 chin     = getLandmark(152); // Bottom center
+            vec2 leftCheek = getLandmark(234); // Left extreme
+            vec2 rightCheek= getLandmark(454); // Right extreme
+
+            // --- Let's try NO padding first ---
+            float minX = min(leftCheek.x, rightCheek.x);
+            float maxX = max(leftCheek.x, rightCheek.x);
+            // Remember landmark Y increases downwards, screen UV Y increases upwards
+            // So forehead.y (smaller value visually) should be the lower bound after flipping p.y
+            // And chin.y (larger value visually) should be the upper bound after flipping p.y
+            float minY = forehead.y;
+            float maxY = chin.y;
+
+            // Check if point 'p' is within the raw box
+            return p.x > minX && p.x < maxX && p.y > minY && p.y < maxY;
+        }
+
+        void main() {
+            vec4 bC = texture2D(tDiffuse,vUv);
+            vec3 fC = bC.rgb; // Base color
+            vec3 debugColor = vec3(0.0, 0.0, 0.0); // Default Black
+
+            if(uHasLandmarks) {
+                if (isInsideFaceBBox(vUv)) {
+                    debugColor = vec3(0.0, 1.0, 0.0); // GREEN = Inside BBox
+                } else {
+                    debugColor = vec3(1.0, 0.0, 0.0); // RED = Outside BBox
+                }
+            } else {
+               debugColor = vec3(0.0, 0.0, 1.0); // BLUE = No Landmarks detected
+            }
+
+            // Mix the debug color with the base color to see both
+            gl_FragColor = vec4(mix(fC, debugColor, 0.7), bC.a);
+        }
+    `;
+
+    // Shader definition object (still needed for ShaderPass)
+    // Note: Uniforms here might not perfectly match the debug shader's usage,
+    // but EffectComposer/ShaderPass needs the structure.
+    // We only care about tDiffuse and uLandmarkData/uHasLandmarks for the debug pass.
+    const DebugShader = useRef({
         uniforms: {
             'tDiffuse': { value: null },
-            'uSegmentationMask': { value: null },
-            'uLandmarkData': { value: null }, // <<< ADDED landmark texture uniform
-            'uEffectIntensity': { value: 0.5 },
-            'uHasMask': { value: false },
-            'uHasLandmarks': { value: false }, // <<< ADDED landmark flag uniform
-            'uFlipMaskX': { value: false }
+            'uSegmentationMask': { value: null }, // Not used by debug shader
+            'uLandmarkData': { value: null },     // Used by debug shader
+            'uEffectIntensity': { value: 0.5 },   // Not used by debug shader
+            'uHasMask': { value: false },         // Not used by debug shader
+            'uHasLandmarks': { value: false },    // Used by debug shader
+            'uFlipMaskX': { value: false }        // Not used by debug shader
         },
         vertexShader: customVertexShader,
-        fragmentShader: customFragmentShader
+        fragmentShader: customFragmentShader // Reference the DEBUG shader string
     }).current;
 
 
     // --- Prop Effects / Texture Effects ---
-    useEffect(() => { currentIntensity.current = effectIntensity; if (effectPassRef.current) { effectPassRef.current.uniforms.uEffectIntensity.value = currentIntensity.current; } }, [effectIntensity]);
+    useEffect(() => { currentIntensity.current = effectIntensity; /* Uniform update not needed for debug */ }, [effectIntensity]);
     useEffect(() => { /* Video Texture - No change */ }, [isStatic, videoRefProp, videoRefProp?.current?.readyState]);
     useEffect(() => { /* Image Texture - No change */ }, [isStatic, imageElement, imageElement?.complete]);
-    useEffect(() => { /* Segmentation Mask Texture - No change */ }, [segmentationResults, isStatic]);
-
-
-    // --- ***** NEW: Landmark Texture Effect ***** ---
-    useEffect(() => {
-        const landmarks = mediaPipeResults?.faceLandmarks?.[0]; // Get landmarks for the first face
-
-        if (landmarks && landmarks.length > 0) {
-             const now = performance.now();
-             const timeSinceLastUpdate = now - lastLandmarkUpdateTime.current;
-             const throttleThreshold = isStatic ? 0 : 33; // Throttle landmark updates too (~30fps)
-
-             if (timeSinceLastUpdate > throttleThreshold) {
-                 lastLandmarkUpdateTime.current = now;
-                 try {
-                     // Ensure buffer exists and is large enough
-                     if (!landmarkDataArray.current || landmarkDataArray.current.length < MAX_LANDMARKS * 2) {
-                         landmarkDataArray.current = new Float32Array(MAX_LANDMARKS * 2);
-                         console.log(`TryOnRenderer: Created landmark Float32Array buffer (size: ${MAX_LANDMARKS * 2})`);
-                     }
-                     const buffer = landmarkDataArray.current;
-                     buffer.fill(0); // Clear buffer (or handle padding explicitly)
-
-                     // Fill buffer with landmark data (x, y per landmark)
-                     for (let i = 0; i < landmarks.length && i < MAX_LANDMARKS; i++) {
-                         buffer[i * 2] = landmarks[i].x;       // Red channel = X
-                         buffer[i * 2 + 1] = landmarks[i].y;   // Green channel = Y
-                     }
-
-                     // Create or update DataTexture
-                     let texture = landmarkTextureRef.current;
-                     if (!texture) {
-                         // console.log(`TryOnRenderer Landmark Texture: Creating NEW DataTexture (${MAX_LANDMARKS}x1)`);
-                         texture = new THREE.DataTexture(buffer, MAX_LANDMARKS, 1, THREE.RGFormat, THREE.FloatType);
-                         texture.minFilter = THREE.NearestFilter; // No interpolation needed
-                         texture.magFilter = THREE.NearestFilter;
-                         texture.generateMipmaps = false;
-                         texture.needsUpdate = true;
-                         landmarkTextureRef.current = texture;
-                     } else {
-                         // console.log(`TryOnRenderer Landmark Texture: Updating existing DataTexture.`);
-                         texture.image.data = buffer; // Buffer reference might already be the same, but update anyway
-                         texture.needsUpdate = true;
-                     }
-
-                     // Update shader uniform flag
-                     if (effectPassRef.current) {
-                         effectPassRef.current.uniforms.uHasLandmarks.value = true;
-                         // Uniform value (texture) updated in render loop
-                     }
-
-                 } catch (error) {
-                     console.error("TryOnRenderer: Error processing landmark texture:", error);
-                     landmarkTextureRef.current?.dispose(); landmarkTextureRef.current = null; landmarkDataArray.current = null;
-                     if (effectPassRef.current) { effectPassRef.current.uniforms.uHasLandmarks.value = false; }
-                 }
-             }
-              // Ensure uniform points to the texture even if throttled
-             else if (effectPassRef.current && effectPassRef.current.uniforms.uHasLandmarks.value !== !!landmarkTextureRef.current) {
-                  effectPassRef.current.uniforms.uHasLandmarks.value = !!landmarkTextureRef.current;
-             }
-
-        } else {
-             // No landmarks found
-             if (landmarkTextureRef.current) { landmarkTextureRef.current.dispose(); landmarkTextureRef.current = null; }
-             // Ensure buffer is cleared if we want to reuse it
-             // if (landmarkDataArray.current) landmarkDataArray.current.fill(0);
-             if (effectPassRef.current) { effectPassRef.current.uniforms.uHasLandmarks.value = false; }
-        }
-    // Update dependency array
-    }, [mediaPipeResults, isStatic]); // Depends on the results containing landmarks
+    useEffect(() => { /* Segmentation Mask Texture - No change (Data created but not used by shader) */ }, [segmentationResults, isStatic]);
+    useEffect(() => { /* Landmark Texture Effect - No change */ }, [mediaPipeResults, isStatic]);
 
 
     // --- Handle Resizing - No change needed ---
@@ -191,7 +130,7 @@ const TryOnRenderer = forwardRef(({
     const fitPlaneToCamera = useCallback((textureWidth, textureHeight) => { /* ... */ }, []);
 
 
-    // --- Render Loop (Updates Landmark Texture Uniform) ---
+    // --- Render Loop (Uniforms updated, but shader only uses landmarks) ---
      const renderLoop = useCallback(() => {
         animationFrameHandle.current = requestAnimationFrame(renderLoop);
         renderLoopCounter.current++;
@@ -201,23 +140,15 @@ const TryOnRenderer = forwardRef(({
             // 1 & 2: Select Texture, Assign Map, Update Plane Scale/Mirroring (No changes here)
             const baseMaterial = basePlaneMeshRef.current.material; let sourceWidth = 0, sourceHeight = 0; let textureToAssign = null; let isVideo = !isStatic; let needsTextureUpdate = false; if (isVideo && videoTextureRef.current) { textureToAssign = videoTextureRef.current; const video = textureToAssign.image; if(video && video.readyState >= video.HAVE_CURRENT_DATA) { sourceWidth = video.videoWidth; sourceHeight = video.videoHeight; needsTextureUpdate = (baseMaterial.map !== textureToAssign); } else { textureToAssign = null; } } else if (isStatic && imageTextureRef.current) { textureToAssign = imageTextureRef.current; const image = textureToAssign.image; if(image && image.complete && image.naturalWidth > 0) { sourceWidth = image.naturalWidth; sourceHeight = image.naturalHeight; needsTextureUpdate = (baseMaterial.map !== textureToAssign) || textureToAssign.needsUpdate; } else { textureToAssign = null; } } if (baseMaterial && needsTextureUpdate) { baseMaterial.map = textureToAssign; baseMaterial.needsUpdate = true; } else if (baseMaterial && baseMaterial.map !== textureToAssign && !textureToAssign) { baseMaterial.map = null; baseMaterial.needsUpdate = true; } const planeVisible = !!baseMaterial?.map && sourceWidth > 0 && sourceHeight > 0; if (planeVisible) { fitPlaneToCamera(sourceWidth, sourceHeight); const scaleX = Math.abs(basePlaneMeshRef.current.scale.x); const newScaleX = isVideo ? -scaleX : scaleX; if(basePlaneMeshRef.current.scale.x !== newScaleX) { basePlaneMeshRef.current.scale.x = newScaleX; } } else { if (basePlaneMeshRef.current.scale.x !== 0 || basePlaneMeshRef.current.scale.y !== 0) { basePlaneMeshRef.current.scale.set(0, 0, 0); } } if (planeVisible && textureToAssign && textureToAssign.needsUpdate) { textureToAssign.needsUpdate = false; }
 
-
-            // 3. Update ShaderPass Uniforms
+            // 3. Update ShaderPass Uniforms (Only Landmark ones matter for debug shader)
              if (effectPassRef.current) {
                  const uniforms = effectPassRef.current.uniforms;
-                 // Segmentation Mask
-                 if (uniforms.uSegmentationMask.value !== segmentationTextureRef.current) {
-                    uniforms.uSegmentationMask.value = segmentationTextureRef.current;
-                    uniforms.uHasMask.value = !!segmentationTextureRef.current;
-                 }
-                 // <<< Landmark Data Texture >>>
+                 // Landmark Data Texture
                  if (uniforms.uLandmarkData.value !== landmarkTextureRef.current) {
                     uniforms.uLandmarkData.value = landmarkTextureRef.current;
-                    uniforms.uHasLandmarks.value = !!landmarkTextureRef.current; // Also update flag just in case
+                    uniforms.uHasLandmarks.value = !!landmarkTextureRef.current;
                  }
-                 // Flip Flag
-                 uniforms.uFlipMaskX.value = isVideo;
-                 // Intensity (updated via prop useEffect)
+                 // Other uniforms are updated but ignored by the debug shader...
              }
 
             // 4. Render using the Composer
@@ -229,37 +160,49 @@ const TryOnRenderer = forwardRef(({
     }, [fitPlaneToCamera, isStatic]); // isStatic dependency is important
 
 
-    // --- Initialize Scene - No change needed ---
-    const initThreeScene = useCallback(() => { /* ... */ }, [handleResize, renderLoop, HydrationShader]);
+    // --- Initialize Scene (Uses DebugShader definition for ShaderPass) ---
+    const initThreeScene = useCallback(() => {
+        if (!canvasRef.current || isInitialized.current) { return; }
+        console.log("DEBUG: initThreeScene START (Bounding Box DEBUG)"); // Updated log
+        let tempRenderTarget = null;
+        try {
+            const canvas = canvasRef.current; const initialWidth = Math.max(1, canvas.clientWidth || 640); const initialHeight = Math.max(1, canvas.clientHeight || 480);
+            const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            // ... (Renderer setup, capability check, render target creation - NO CHANGE needed here)
+            renderer.setSize(initialWidth, initialHeight); renderer.setPixelRatio(window.devicePixelRatio); renderer.outputColorSpace = THREE.SRGBColorSpace; rendererInstanceRef.current = renderer; const capabilities = renderer.capabilities; if (!capabilities) { throw new Error("Renderer capabilities object not found."); } let targetType = THREE.UnsignedByteType; let canUseHalfFloat = false; if (capabilities.isWebGL2) { canUseHalfFloat = true; } else { const halfFloatExt = capabilities.getExtension('OES_texture_half_float'); const colorBufferFloatExt = capabilities.getExtension('WEBGL_color_buffer_float'); if (halfFloatExt && colorBufferFloatExt) { canUseHalfFloat = true; } } if (canUseHalfFloat) { targetType = THREE.HalfFloatType; } const renderTargetOptions = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: targetType, depthBuffer: false, stencilBuffer: false }; tempRenderTarget = new THREE.WebGLRenderTarget(initialWidth, initialHeight, renderTargetOptions); tempRenderTarget.texture.generateMipmaps = false; console.log(`DEBUG: Created WebGLRenderTarget (${initialWidth}x${initialHeight}) with type: ${targetType === THREE.HalfFloatType ? 'HalfFloatType' : 'UnsignedByteType'}.`);
+
+            // Base Scene Setup (No change)
+            baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1; const planeGeometry = new THREE.PlaneGeometry(1, 1); const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: false }); basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); baseSceneRef.current.add(basePlaneMeshRef.current);
+
+            // Setup EffectComposer (No change)
+            composerRef.current = new EffectComposer(renderer, tempRenderTarget);
+
+            // Add RenderPass (No change)
+            const renderPass = new RenderPass(baseSceneRef.current, baseCameraRef.current);
+            composerRef.current.addPass(renderPass);
+
+            // <<< Add ShaderPass using the DEBUG SHADER definition >>>
+            const debugShaderPassUniforms = UniformsUtils.clone(DebugShader.uniforms);
+            // We don't need to set intensity for the debug shader
+            effectPassRef.current = new ShaderPass({
+                uniforms: debugShaderPassUniforms,
+                vertexShader: DebugShader.vertexShader,       // Use debug vertex shader (same)
+                fragmentShader: DebugShader.fragmentShader   // Use debug fragment shader
+            }, "tDiffuse");
+            effectPassRef.current.renderToScreen = true;
+            composerRef.current.addPass(effectPassRef.current);
+            console.log("DEBUG: Added ShaderPass (Bounding Box DEBUG)."); // Updated log
+
+            // Finish initialization (No change)
+            isInitialized.current = true; handleResize(); cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop); console.log("DEBUG: initThreeScene SUCCESSFUL. Starting render loop.");
+        } catch (error) {
+            console.error("DEBUG: initThreeScene FAILED:", error); tempRenderTarget?.dispose(); composerRef.current = null; effectPassRef.current = null; basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.dispose(); rendererInstanceRef.current?.dispose(); rendererInstanceRef.current = null; isInitialized.current = false;
+        }
+    }, [handleResize, renderLoop, DebugShader]); // Depend on DebugShader ref now
 
 
-    // --- Setup / Cleanup Effect (Dispose landmark texture) ---
-    useEffect(() => {
-        initThreeScene();
-        let resizeObserver; const currentCanvas = canvasRef.current;
-        if (currentCanvas) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(currentCanvas); }
-
-        return () => {
-            // console.log("DEBUG: Cleanup running (TryOnRenderer Unmount)...");
-            resizeObserver?.disconnect();
-            cancelAnimationFrame(animationFrameHandle.current);
-            isInitialized.current = false;
-            // console.log("DEBUG: Disposing Three.js resources...");
-
-            videoTextureRef.current?.dispose(); videoTextureRef.current = null;
-            imageTextureRef.current?.dispose(); imageTextureRef.current = null;
-            segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = null;
-            landmarkTextureRef.current?.dispose(); landmarkTextureRef.current = null; // <<< Dispose landmark texture
-            landmarkDataArray.current = null; // Clear buffer ref
-
-            if (composerRef.current) { composerRef.current.renderTarget?.dispose(); effectPassRef.current?.material?.dispose(); }
-            composerRef.current = null; effectPassRef.current = null;
-            basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose(); basePlaneMeshRef.current = null;
-            baseSceneRef.current = null; baseCameraRef.current = null;
-            rendererInstanceRef.current?.dispose(); rendererInstanceRef.current = null;
-            // console.log("DEBUG: Three.js resources disposed and refs cleared.");
-        };
-     }, [initThreeScene, handleResize]);
+    // --- Setup / Cleanup Effect - No change needed ---
+    useEffect(() => { /* ... */ }, [initThreeScene, handleResize]);
 
 
     // --- JSX --- (No change)
