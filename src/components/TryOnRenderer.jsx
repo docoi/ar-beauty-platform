@@ -424,133 +424,111 @@ const TryOnRenderer = forwardRef(({
     }, [fitPlaneToCamera, isStatic]); // Dependencies
 
 
-    // --- Initialize Scene (Use EffectComposer + HalfFloatType RenderTarget) ---
-    const initThreeScene = useCallback(() => {
-        if (!canvasRef.current || isInitialized.current) {
-            console.log("initThreeScene skipped: Canvas not ready or already initialized.");
-            return;
-        }
-        console.log("DEBUG: initThreeScene START (EffectComposer + ACTUAL HalfFloatType RT)");
-        let tempRenderTarget = null; // Keep track for cleanup on error
-
-        try {
-            const canvas = canvasRef.current;
-            const initialWidth = Math.max(1, canvas.clientWidth || 640); // Ensure non-zero
-            const initialHeight = Math.max(1, canvas.clientHeight || 480);
-
-            rendererInstanceRef.current = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
-            rendererInstanceRef.current.setSize(initialWidth, initialHeight);
-            rendererInstanceRef.current.setPixelRatio(window.devicePixelRatio);
-            rendererInstanceRef.current.outputColorSpace = THREE.SRGBColorSpace; // Correct output colorspace
-
-            // Check for HalfFloat support more robustly
-            const capabilities = rendererInstanceRef.current.capabilities;
-            let targetType = THREE.UnsignedByteType; // Default fallback
-            if (capabilities.isWebGL2) {
-                 // WebGL2 natively supports Float/HalfFloat rendering
-                 // Check if the specific EXT_color_buffer_float is available (usually is in WebGL2)
-                 if (capabilities.getExtension('EXT_color_buffer_float')) {
-                     targetType = THREE.HalfFloatType;
-                     console.log("DEBUG: Using HalfFloatType for render target (WebGL2 + EXT_color_buffer_float).");
-                 } else {
-                      console.warn("DEBUG: WebGL2 supported, but EXT_color_buffer_float missing. Falling back to UnsignedByteType.");
-                 }
-            } else {
-                 // WebGL1 requires extensions for float textures AND rendering to them
-                 const halfFloatExt = capabilities.getExtension('OES_texture_half_float');
-                 const halfFloatLinearExt = capabilities.getExtension('OES_texture_half_float_linear'); // Needed for linear filtering
-                 const colorBufferFloatExt = capabilities.getExtension('WEBGL_color_buffer_float'); // NEEDED TO RENDER TO FLOAT
-                 if (halfFloatExt && colorBufferFloatExt) {
-                     targetType = THREE.HalfFloatType;
-                     console.log("DEBUG: Using HalfFloatType for render target (WebGL1 + OES_texture_half_float + WEBGL_color_buffer_float).");
-                     if (!halfFloatLinearExt) {
-                          console.warn("DEBUG: OES_texture_half_float_linear not supported. Linear filtering on HalfFloat target may not work.");
-                     }
-                 } else {
-                     console.warn("DEBUG: Required extensions for HalfFloat rendering not available in WebGL1 (Need OES_texture_half_float AND WEBGL_color_buffer_float). Falling back to UnsignedByteType.");
-                 }
+        // --- Initialize Scene (Use EffectComposer + HalfFloatType RenderTarget - Simplified Check) ---
+        const initThreeScene = useCallback(() => {
+            if (!canvasRef.current || isInitialized.current) {
+                // console.log("initThreeScene skipped: Canvas not ready or already initialized.");
+                return;
             }
-
-             // If you absolutely need FloatType (more precision, less performance/compatibility)
-             // You would check similarly using OES_texture_float, OES_texture_float_linear, and WEBGL_color_buffer_float/EXT_color_buffer_float
-
-
-            // --- Create the WebGLRenderTarget with the determined type ---
-            const renderTargetOptions = {
-                minFilter: THREE.LinearFilter,
-                magFilter: THREE.LinearFilter, // Use Linear for smoother results unless pixelation is desired
-                format: THREE.RGBAFormat,      // Standard RGBA
-                type: targetType,              // *** USE THE DETERMINED TYPE ***
-                // colorSpace: THREE.SRGBColorSpace, // Output colorspace is handled by renderer, RT usually linear
-                depthBuffer: false,            // Not usually needed for 2D post-processing
-                stencilBuffer: false           // Not usually needed for 2D post-processing
-            };
-            tempRenderTarget = new THREE.WebGLRenderTarget(initialWidth, initialHeight, renderTargetOptions);
-            tempRenderTarget.texture.generateMipmaps = false; // No mipmaps for render targets
-            console.log(`DEBUG: Created WebGLRenderTarget (${initialWidth}x${initialHeight}) with type: ${targetType === THREE.HalfFloatType ? 'HalfFloatType' : 'UnsignedByteType'}.`);
-
-
-            // --- Base Scene Setup ---
-            baseSceneRef.current = new THREE.Scene();
-            baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10);
-            baseCameraRef.current.position.z = 1;
-            const planeGeometry = new THREE.PlaneGeometry(1, 1);
-            // Use MeshBasicMaterial for the plane, as lighting isn't needed for video/image display
-            const planeMaterial = new THREE.MeshBasicMaterial({
-                map: null, // Start with no map
-                side: THREE.DoubleSide, // Render both sides (useful if mirroring flips orientation)
-                color: 0xffffff,        // White base color (texture usually overrides)
-                transparent: false      // Base image is opaque
-            });
-            basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial);
-            baseSceneRef.current.add(basePlaneMeshRef.current);
-
-
-            // --- Setup EffectComposer ---
-            // *** Pass the CUSTOM render target to the constructor ***
-            composerRef.current = new EffectComposer(rendererInstanceRef.current, tempRenderTarget);
-            console.log("DEBUG: Initialized EffectComposer with custom render target.");
-
-            // 1. RenderPass: Renders the base scene into the composer's read buffer.
-            const renderPass = new RenderPass(baseSceneRef.current, baseCameraRef.current);
-            composerRef.current.addPass(renderPass);
-            console.log("DEBUG: Added RenderPass.");
-
-            // 2. ShaderPass: Applies the custom hydration effect.
-            // Clone uniforms to avoid modifying the original shader object
-            const hydrationShaderPassUniforms = UniformsUtils.clone(HydrationShader.uniforms);
-            hydrationShaderPassUniforms.uEffectIntensity.value = currentIntensity.current; // Set initial intensity
-
-            // Create the ShaderPass using the cloned uniforms and shader code
-            effectPassRef.current = new ShaderPass({
-                uniforms: hydrationShaderPassUniforms,
-                vertexShader: HydrationShader.vertexShader,
-                fragmentShader: HydrationShader.fragmentShader
-            }, "tDiffuse"); // Specify the input texture uniform name (usually tDiffuse)
-
-            effectPassRef.current.renderToScreen = true; // Ensure this pass renders to the canvas
-            composerRef.current.addPass(effectPassRef.current);
-            console.log("DEBUG: Added ShaderPass (Hydration Effect).");
-
-
-            isInitialized.current = true;
-            handleResize(); // Call resize AFTER initialization to set correct sizes everywhere
-            cancelAnimationFrame(animationFrameHandle.current);
-            animationFrameHandle.current = requestAnimationFrame(renderLoop);
-            console.log("DEBUG: initThreeScene SUCCESSFUL. Starting render loop.");
-
-        } catch (error) {
-            console.error("DEBUG: initThreeScene FAILED:", error);
-            // Cleanup resources created during the failed attempt
-            tempRenderTarget?.dispose();
-            composerRef.current = null; // Clear refs that might be partially set
-            effectPassRef.current = null;
-            basePlaneMeshRef.current?.geometry?.dispose();
-            basePlaneMeshRef.current?.material?.dispose();
-            rendererInstanceRef.current?.dispose(); // Dispose renderer if created
-            isInitialized.current = false; // Mark as not initialized
-        }
-    }, [handleResize, renderLoop, HydrationShader]); // Dependencies
+            console.log("DEBUG: initThreeScene START (EffectComposer + HalfFloatType RT - Simplified Check)");
+            let tempRenderTarget = null; // Keep track for cleanup on error
+    
+            try {
+                const canvas = canvasRef.current;
+                const initialWidth = Math.max(1, canvas.clientWidth || 640);
+                const initialHeight = Math.max(1, canvas.clientHeight || 480);
+    
+                // 1. Initialize Renderer
+                const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+                renderer.setSize(initialWidth, initialHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                renderer.outputColorSpace = THREE.SRGBColorSpace;
+                rendererInstanceRef.current = renderer; // Store renderer instance
+    
+                // 2. Check Capabilities (Simplified)
+                const capabilities = renderer.capabilities;
+                if (!capabilities) {
+                    throw new Error("Renderer capabilities object not found."); // Added check
+                }
+    
+                let targetType = THREE.UnsignedByteType; // Default fallback
+                let canUseHalfFloat = false;
+    
+                if (capabilities.isWebGL2) {
+                     // For WebGL2, EXT_color_buffer_float is standard, so HalfFloat rendering should work
+                     canUseHalfFloat = true;
+                     console.log("DEBUG: WebGL2 detected. Assuming HalfFloat rendering is supported.");
+                } else {
+                     // WebGL1 Check (Keep for potential broader compatibility, but less likely needed for target)
+                     const halfFloatExt = capabilities.getExtension('OES_texture_half_float');
+                     const colorBufferFloatExt = capabilities.getExtension('WEBGL_color_buffer_float');
+                     if (halfFloatExt && colorBufferFloatExt) {
+                         canUseHalfFloat = true;
+                          console.log("DEBUG: Using HalfFloatType for render target (WebGL1 + Required Extensions).");
+                     } else {
+                          console.warn("DEBUG: Required extensions for HalfFloat rendering not available in WebGL1. Falling back to UnsignedByteType.");
+                     }
+                }
+    
+                if (canUseHalfFloat) {
+                    targetType = THREE.HalfFloatType;
+                }
+    
+                // 3. Create Render Target
+                const renderTargetOptions = {
+                    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+                    format: THREE.RGBAFormat, type: targetType, // Use determined type
+                    depthBuffer: false, stencilBuffer: false
+                };
+                tempRenderTarget = new THREE.WebGLRenderTarget(initialWidth, initialHeight, renderTargetOptions);
+                tempRenderTarget.texture.generateMipmaps = false;
+                console.log(`DEBUG: Created WebGLRenderTarget (${initialWidth}x${initialHeight}) with type: ${targetType === THREE.HalfFloatType ? 'HalfFloatType' : 'UnsignedByteType'}.`);
+    
+                // 4. Base Scene Setup
+                baseSceneRef.current = new THREE.Scene();
+                baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10);
+                baseCameraRef.current.position.z = 1;
+                const planeGeometry = new THREE.PlaneGeometry(1, 1);
+                const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: false });
+                basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial);
+                baseSceneRef.current.add(basePlaneMeshRef.current);
+    
+                // 5. Setup EffectComposer
+                composerRef.current = new EffectComposer(renderer, tempRenderTarget); // Pass renderer and target
+                console.log("DEBUG: Initialized EffectComposer with custom render target.");
+    
+                // 6. Add Passes
+                const renderPass = new RenderPass(baseSceneRef.current, baseCameraRef.current);
+                composerRef.current.addPass(renderPass);
+                console.log("DEBUG: Added RenderPass.");
+    
+                const hydrationShaderPassUniforms = UniformsUtils.clone(HydrationShader.uniforms);
+                hydrationShaderPassUniforms.uEffectIntensity.value = currentIntensity.current;
+                effectPassRef.current = new ShaderPass({ uniforms: hydrationShaderPassUniforms, vertexShader: HydrationShader.vertexShader, fragmentShader: HydrationShader.fragmentShader }, "tDiffuse");
+                effectPassRef.current.renderToScreen = true;
+                composerRef.current.addPass(effectPassRef.current);
+                console.log("DEBUG: Added ShaderPass (Hydration Effect).");
+    
+                // 7. Finalize Initialization
+                isInitialized.current = true; // Set flag *before* starting loop
+                handleResize(); // Call resize AFTER initialization
+                cancelAnimationFrame(animationFrameHandle.current); // Ensure no duplicate loops
+                animationFrameHandle.current = requestAnimationFrame(renderLoop); // Start loop *only on success*
+                console.log("DEBUG: initThreeScene SUCCESSFUL. Starting render loop.");
+    
+            } catch (error) {
+                console.error("DEBUG: initThreeScene FAILED:", error);
+                // Cleanup resources created during the failed attempt
+                tempRenderTarget?.dispose(); // Dispose RT if created
+                composerRef.current = null; effectPassRef.current = null; // Clear refs
+                basePlaneMeshRef.current?.geometry?.dispose();
+                basePlaneMeshRef.current?.material?.dispose();
+                rendererInstanceRef.current?.dispose(); // Dispose renderer if created
+                rendererInstanceRef.current = null; // Clear renderer ref too
+                isInitialized.current = false; // Ensure marked as not initialized
+                // DO NOT start render loop here
+            }
+        }, [handleResize, renderLoop, HydrationShader]); // Dependencies
 
 
     // --- Setup / Cleanup Effect ---
