@@ -1,62 +1,63 @@
-// src/pages/VirtualTryOnPage.jsx - BASELINE COMPATIBLE
-// Only checks for FaceLandmarker readiness, does NOT pass results down.
+// src/pages/VirtualTryOnPage.jsx - Use BOTH FaceLandmarker and ImageSegmenter hooks
+// Passes results down to children
 
 import React, { useState, useEffect, useRef } from 'react';
-import useFaceLandmarker from '../hooks/useFaceLandmarker'; // Still needed to know when models are ready
-// import useImageSegmenter from '../hooks/useImageSegmenter'; // Not needed for baseline render
+import useFaceLandmarker from '../hooks/useFaceLandmarker'; // Import the hook
+import useImageSegmenter from '../hooks/useImageSegmenter'; // Import the NEW hook
 import RealTimeMirror from '../components/RealTimeMirror';
 import StaticSelfieTryOn from '../components/StaticSelfieTryOn';
 
 const VirtualTryOnPage = () => {
-  console.log("VirtualTryOnPage rendering (Baseline Render Test)...");
+  console.log("VirtualTryOnPage rendering (Passing AI Data)...");
 
   const [mode, setMode] = useState('mirror');
-  // const [effectIntensity, setEffectIntensity] = useState(0.5); // Not used by baseline
+  const [effectIntensity, setEffectIntensity] = useState(0.5);
 
-  // --- Initialize ONLY FaceLandmarker hook for readiness check ---
-  // We still need to wait for the model files etc., even if not using landmarks yet
+  // --- Initialize BOTH hooks ---
   const { faceLandmarker, isLoading: isLoadingLandmarker, error: landmarkerError } = useFaceLandmarker();
-  // const { imageSegmenter, isLoadingSegmenter, segmenterError } = useImageSegmenter(); // Not needed now
-  // ------------------------------------------
+  const { imageSegmenter, isLoadingSegmenter, segmenterError } = useImageSegmenter();
+  // -----------------------------
 
-  const activeRendererRef = useRef(null); // Ref might not be needed for baseline
+  const activeRendererRef = useRef(null);
 
-  // Loading/Error states
-  const isAnythingLoading = isLoadingLandmarker; // Base loading on landmarker init
-  const anyError = landmarkerError; // Base error on landmarker init
+  // Combined loading and error state
+  const isAnythingLoading = isLoadingLandmarker || isLoadingSegmenter;
+  const anyError = landmarkerError || segmenterError;
 
   useEffect(() => {
-    console.log("Hook State Update (Baseline Render Test):", {
-        isLoadingLandmarker,
+    console.log("Hook State Update:", {
+        isLoadingLandmarker, isLoadingSegmenter,
         landmarkerError: landmarkerError?.message,
+        segmenterError: segmenterError?.message,
         faceLandmarkerReady: !!faceLandmarker,
+        imageSegmenterReady: !!imageSegmenter
     });
-  }, [isLoadingLandmarker, landmarkerError, faceLandmarker]);
+  }, [isLoadingLandmarker, isLoadingSegmenter, landmarkerError, segmenterError, faceLandmarker, imageSegmenter]);
 
 
-  // --- Handle Loading and Error States ---
+  // --- Handle Loading and Error States for BOTH models ---
   if (isAnythingLoading) {
     return <div className="flex justify-center items-center h-screen"><p>Loading AI Models...</p></div>;
   }
   if (anyError) {
     return (
         <div className="flex flex-col justify-center items-center h-screen text-red-500">
-            <p className="font-bold mb-2">Error loading AI model support:</p>
-            {landmarkerError && <p>{landmarkerError.message}</p>}
+            <p className="font-bold mb-2">Error loading AI model(s):</p>
+            {landmarkerError && <p>FaceLandmarker: {landmarkerError.message}</p>}
+            {segmenterError && <p>ImageSegmenter: {segmenterError.message}</p>}
       </div>
     );
   }
-  // Wait for landmarker just to ensure WASM etc. is ready before rendering component
-  if (!faceLandmarker) {
-    return <div className="flex justify-center items-center h-screen"><p>Initializing AI support...</p></div>;
+  if (!faceLandmarker || !imageSegmenter) {
+    return <div className="flex justify-center items-center h-screen"><p>Initializing AI models...</p></div>;
   }
   // --------------------------------------------------------
 
-  console.log(`Rendering Main Content - Mode: ${mode}, AI Support Ready: ${!!faceLandmarker}`);
+  console.log(`Rendering Main Content - Mode: ${mode}, Models Ready: Landmarker=${!!faceLandmarker}, Segmenter=${!!imageSegmenter}`);
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold text-center mb-4">Virtual Try-On (Baseline Test)</h1>
+      <h1 className="text-2xl font-bold text-center mb-4">Virtual Try-On</h1>
 
       {/* Mode Selection Tabs/Buttons */}
       <div className="flex justify-center mb-4 border-b">
@@ -66,37 +67,35 @@ const VirtualTryOnPage = () => {
 
       {/* Conditional Rendering based on Mode */}
       <div className="try-on-container mb-4">
-        {/* Pass ONLY necessary props for baseline rendering */}
-        {mode === 'mirror' && faceLandmarker && ( // Check readiness
+        {/* Pass BOTH models results down */}
+        {mode === 'mirror' && faceLandmarker && imageSegmenter && (
           <RealTimeMirror
             ref={activeRendererRef}
-            // REMOVED faceLandmarker={faceLandmarker} prop
-            // REMOVED imageSegmenter prop
-            // REMOVED effectIntensity prop
+            faceLandmarker={faceLandmarker} // Pass the instance
+            imageSegmenter={imageSegmenter} // Pass the instance
+            effectIntensity={effectIntensity}
            />
         )}
-        {mode === 'selfie' && faceLandmarker && ( // Check readiness
+        {mode === 'selfie' && faceLandmarker && imageSegmenter && (
           <StaticSelfieTryOn
             ref={activeRendererRef}
-            // REMOVED faceLandmarker prop
-            // REMOVED imageSegmenter prop
-            // REMOVED effectIntensity prop
+            faceLandmarker={faceLandmarker} // Pass the instance
+            imageSegmenter={imageSegmenter} // Pass the instance
+            effectIntensity={effectIntensity}
           />
         )}
-        {!faceLandmarker && (<p className="text-center text-red-500">AI Support not ready.</p>)}
+        {(!faceLandmarker || !imageSegmenter) && (<p className="text-center text-red-500">AI Models not available.</p>)}
       </div>
 
-      {/* Controls Area (Hidden/Disabled for baseline test) */}
-      {/*
+      {/* Controls Area */}
       <div className="mt-4 p-4 border rounded bg-gray-100 max-w-md mx-auto">
-         <h3 className="text-lg font-semibold mb-2">Controls (Disabled)</h3>
-         <div className="mb-4 p-3 border rounded bg-blue-50 opacity-50">
-              <h4 className="text-md font-semibold mb-1 text-blue-800">Effect</h4>
-              <label htmlFor="effect-slider" className="block mb-1 text-sm">Intensity: </label>
-              <input id="effect-slider" type="range" min="0" max="1" step="0.01" value={0.5} disabled className="w-full accent-blue-600"/>
+         <h3 className="text-lg font-semibold mb-2">Controls</h3>
+         <div className="mb-4 p-3 border rounded bg-blue-50">
+              <h4 className="text-md font-semibold mb-1 text-blue-800">Serum Effect</h4>
+              <label htmlFor="effect-slider" className="block mb-1 text-sm">Intensity: {effectIntensity.toFixed(2)}</label>
+              <input id="effect-slider" type="range" min="0" max="1" step="0.01" value={effectIntensity} onChange={(e) => setEffectIntensity(parseFloat(e.target.value))} className="w-full accent-blue-600"/>
          </div>
       </div>
-      */}
     </div>
   );
 };
