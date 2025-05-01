@@ -1,6 +1,6 @@
 // src/components/TryOnRenderer.jsx - Reads Silhouette Mask from ImageSegmenter results
 // Includes HalfFloatType Render Target Fix
-// !! Applies MASK ALIGNMENT FIX in Fragment Shader !!
+// !! Applies MASK ALIGNMENT FIX in Fragment Shader !! (Attempt 2)
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -49,8 +49,29 @@ const TryOnRenderer = forwardRef(({
                 // <<< APPLY CONDITIONAL X FLIP for mask sampling >>>
                 float maskCoordX = uFlipMaskX ? (1.0 - vUv.x) : vUv.x; // Correct X coord
                 float maskCoordY = 1.0 - vUv.y;                       // Correct Y coord
+                // Sample using void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`;
+    // !! Shader uses uFlipMaskX correctly !!
+    const customFragmentShader = `
+        uniform sampler2D tDiffuse;
+        uniform sampler2D uSegmentationMask;
+        uniform float uEffectIntensity;
+        uniform bool uHasMask;
+        uniform bool uFlipMaskX; // <<< Now USED correctly
+
+        varying vec2 vUv;
+
+        vec3 applyHydrationEffect(vec3 c){ vec3 h=c*(1.0+0.1*uEffectIntensity); h+=vec3(0.05*uEffectIntensity); return h; }
+
+        void main() {
+            vec4 bC=texture2D(tDiffuse,vUv);
+            vec3 fC=bC.rgb;
+
+            if(uHasMask && uEffectIntensity > 0.01) {
+                // <<< APPLY CONDITIONAL X FLIP for mask sampling >>>
+                float maskCoordX = uFlipMaskX ? (1.0 - vUv.x) : vUv.x; // Correct X coord
+                float maskCoordY = 1.0 - vUv.y;                       // Correct Y coord
                 // Sample using the corrected coordinates
-                float mV = texture2D(uSegmentationMask, vec2(maskCoordX, maskCoordY)).r; // *** THE ONLY LINE CHANGED ***
+                float mV = texture2D(uSegmentationMask, vec2(maskCoordX, maskCoordY)).r; // *** THIS LINE WAS THE ONLY CHANGE ***
 
                 vec3 hC=applyHydrationEffect(fC);
                 float bA=smoothstep(0.3, 0.8, mV) * uEffectIntensity;
@@ -61,6 +82,7 @@ const TryOnRenderer = forwardRef(({
         }
     `;
 
+    // Shader definition (No changes needed to structure)
     const HydrationShader = useRef({
         uniforms: { 'tDiffuse': { value: null }, 'uSegmentationMask': { value: null }, 'uEffectIntensity': { value: 0.5 }, 'uHasMask': { value: false }, 'uFlipMaskX': { value: false } },
         vertexShader: customVertexShader, fragmentShader: customFragmentShader
