@@ -1,6 +1,7 @@
-// src/components/TryOnRenderer.jsx - Reads Silhouette Mask from ImageSegmenter results
+// src/components/TryOnRenderer.jsx - FINAL MASK ALIGNMENT FIX (Corrected Declaration)
+// Reads Silhouette Mask from ImageSegmenter results
 // Includes HalfFloatType Render Target Fix
-// !! Applies MASK ALIGNMENT FIX in Fragment Shader !! (Attempt 2)
+// Applies MASK ALIGNMENT FIX in Fragment Shader
 
 import React, { useRef, forwardRef, useEffect, useCallback } from 'react';
 import * as THREE from 'three';
@@ -27,7 +28,7 @@ const TryOnRenderer = forwardRef(({
     const renderLoopCounter = useRef(0); const lastMaskUpdateTime = useRef(0);
 
 
-    // --- Shaders (CORRECTED MASK SAMPLING LOGIC) ---
+    // --- Shaders (CORRECTED MASK SAMPLING LOGIC - Single Definition) ---
     const customVertexShader = `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`;
     // !! Shader uses uFlipMaskX correctly !!
     const customFragmentShader = `
@@ -49,29 +50,8 @@ const TryOnRenderer = forwardRef(({
                 // <<< APPLY CONDITIONAL X FLIP for mask sampling >>>
                 float maskCoordX = uFlipMaskX ? (1.0 - vUv.x) : vUv.x; // Correct X coord
                 float maskCoordY = 1.0 - vUv.y;                       // Correct Y coord
-                // Sample using void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 ); }`;
-    // !! Shader uses uFlipMaskX correctly !!
-    const customFragmentShader = `
-        uniform sampler2D tDiffuse;
-        uniform sampler2D uSegmentationMask;
-        uniform float uEffectIntensity;
-        uniform bool uHasMask;
-        uniform bool uFlipMaskX; // <<< Now USED correctly
-
-        varying vec2 vUv;
-
-        vec3 applyHydrationEffect(vec3 c){ vec3 h=c*(1.0+0.1*uEffectIntensity); h+=vec3(0.05*uEffectIntensity); return h; }
-
-        void main() {
-            vec4 bC=texture2D(tDiffuse,vUv);
-            vec3 fC=bC.rgb;
-
-            if(uHasMask && uEffectIntensity > 0.01) {
-                // <<< APPLY CONDITIONAL X FLIP for mask sampling >>>
-                float maskCoordX = uFlipMaskX ? (1.0 - vUv.x) : vUv.x; // Correct X coord
-                float maskCoordY = 1.0 - vUv.y;                       // Correct Y coord
                 // Sample using the corrected coordinates
-                float mV = texture2D(uSegmentationMask, vec2(maskCoordX, maskCoordY)).r; // *** THIS LINE WAS THE ONLY CHANGE ***
+                float mV = texture2D(uSegmentationMask, vec2(maskCoordX, maskCoordY)).r;
 
                 vec3 hC=applyHydrationEffect(fC);
                 float bA=smoothstep(0.3, 0.8, mV) * uEffectIntensity;
@@ -82,10 +62,17 @@ const TryOnRenderer = forwardRef(({
         }
     `;
 
-    // Shader definition (No changes needed to structure)
+    // Shader definition object (Refers to the shaders defined above)
     const HydrationShader = useRef({
-        uniforms: { 'tDiffuse': { value: null }, 'uSegmentationMask': { value: null }, 'uEffectIntensity': { value: 0.5 }, 'uHasMask': { value: false }, 'uFlipMaskX': { value: false } },
-        vertexShader: customVertexShader, fragmentShader: customFragmentShader
+        uniforms: {
+            'tDiffuse': { value: null },
+            'uSegmentationMask': { value: null },
+            'uEffectIntensity': { value: 0.5 },
+            'uHasMask': { value: false },
+            'uFlipMaskX': { value: false }
+        },
+        vertexShader: customVertexShader,      // Use the vertex shader defined above
+        fragmentShader: customFragmentShader   // Use the fragment shader defined above
     }).current;
 
 
@@ -114,9 +101,13 @@ const TryOnRenderer = forwardRef(({
 
 
     // --- Initialize Scene (No changes) ---
-    const initThreeScene = useCallback(() => { /* ... */ }, [handleResize, renderLoop, HydrationShader]);
+    const initThreeScene = useCallback(() => {
+        if (!canvasRef.current || isInitialized.current) { return; } console.log("DEBUG: initThreeScene START (Mask Alignment Fix)"); let tempRenderTarget = null; try { console.log("DEBUG: Initializing renderer..."); const canvas = canvasRef.current; const initialWidth = Math.max(1, canvas.clientWidth || 640); const initialHeight = Math.max(1, canvas.clientHeight || 480); const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); renderer.setSize(initialWidth, initialHeight); renderer.setPixelRatio(window.devicePixelRatio); renderer.outputColorSpace = THREE.SRGBColorSpace; rendererInstanceRef.current = renderer; console.log("DEBUG: Renderer initialized."); console.log("DEBUG: Checking capabilities and creating render target..."); const capabilities = renderer.capabilities; if (!capabilities) { throw new Error("Renderer capabilities object not found."); } let targetType = THREE.UnsignedByteType; let canUseHalfFloat = false; if (capabilities.isWebGL2) { canUseHalfFloat = true; } else { const halfFloatExt = capabilities.getExtension('OES_texture_half_float'); const colorBufferFloatExt = capabilities.getExtension('WEBGL_color_buffer_float'); if (halfFloatExt && colorBufferFloatExt) { canUseHalfFloat = true; } } if (canUseHalfFloat) { targetType = THREE.HalfFloatType; } const renderTargetOptions = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: targetType, depthBuffer: false, stencilBuffer: false }; tempRenderTarget = new THREE.WebGLRenderTarget(initialWidth, initialHeight, renderTargetOptions); tempRenderTarget.texture.generateMipmaps = false; console.log(`DEBUG: Created WebGLRenderTarget (${initialWidth}x${initialHeight}) with type: ${targetType === THREE.HalfFloatType ? 'HalfFloatType' : 'UnsignedByteType'}.`); console.log("DEBUG: Setting up base scene..."); baseSceneRef.current = new THREE.Scene(); baseCameraRef.current = new THREE.OrthographicCamera(-initialWidth / 2, initialWidth / 2, initialHeight / 2, -initialHeight / 2, 0.1, 10); baseCameraRef.current.position.z = 1; const planeGeometry = new THREE.PlaneGeometry(1, 1); const planeMaterial = new THREE.MeshBasicMaterial({ map: null, side: THREE.DoubleSide, color: 0xffffff, transparent: false }); basePlaneMeshRef.current = new THREE.Mesh(planeGeometry, planeMaterial); baseSceneRef.current.add(basePlaneMeshRef.current); console.log("DEBUG: Base scene setup complete."); console.log("DEBUG: Setting up EffectComposer..."); composerRef.current = new EffectComposer(renderer, tempRenderTarget); const renderPass = new RenderPass(baseSceneRef.current, baseCameraRef.current); composerRef.current.addPass(renderPass); console.log("DEBUG: Added RenderPass."); console.log("DEBUG: Setting up ShaderPass..."); const hydrationShaderPassUniforms = UniformsUtils.clone(HydrationShader.uniforms); hydrationShaderPassUniforms.uEffectIntensity.value = currentIntensity.current; effectPassRef.current = new ShaderPass({ uniforms: hydrationShaderPassUniforms, vertexShader: HydrationShader.vertexShader, fragmentShader: HydrationShader.fragmentShader }, "tDiffuse"); effectPassRef.current.renderToScreen = true; composerRef.current.addPass(effectPassRef.current); console.log("DEBUG: Added ShaderPass (Hydration Effect)."); isInitialized.current = true; handleResize(); cancelAnimationFrame(animationFrameHandle.current); animationFrameHandle.current = requestAnimationFrame(renderLoop); console.log("DEBUG: initThreeScene SUCCESSFUL. Starting render loop."); } catch (error) { console.error("DEBUG: initThreeScene FAILED:", error); tempRenderTarget?.dispose(); composerRef.current = null; effectPassRef.current = null; basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.dispose(); rendererInstanceRef.current?.dispose(); rendererInstanceRef.current = null; isInitialized.current = false; }
+    }, [handleResize, renderLoop, HydrationShader]); // Depend on HydrationShader
+
+
     // --- Setup / Cleanup Effect (No changes) ---
-    useEffect(() => { /* ... */ }, [initThreeScene, handleResize]);
+    useEffect(() => { initThreeScene(); let resizeObserver; const currentCanvas = canvasRef.current; if (currentCanvas) { resizeObserver = new ResizeObserver(() => { handleResize(); }); resizeObserver.observe(currentCanvas); } return () => { resizeObserver?.disconnect(); cancelAnimationFrame(animationFrameHandle.current); isInitialized.current = false; videoTextureRef.current?.dispose(); videoTextureRef.current = null; imageTextureRef.current?.dispose(); imageTextureRef.current = null; segmentationTextureRef.current?.dispose(); segmentationTextureRef.current = null; if (composerRef.current) { composerRef.current.renderTarget?.dispose(); effectPassRef.current?.material?.dispose(); } composerRef.current = null; effectPassRef.current = null; basePlaneMeshRef.current?.geometry?.dispose(); basePlaneMeshRef.current?.material?.map?.dispose(); basePlaneMeshRef.current?.material?.dispose(); basePlaneMeshRef.current = null; baseSceneRef.current = null; baseCameraRef.current = null; rendererInstanceRef.current?.dispose(); rendererInstanceRef.current = null; }; }, [initThreeScene, handleResize]);
 
 
     // --- JSX --- (No change)
