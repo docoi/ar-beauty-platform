@@ -1,4 +1,4 @@
-// src/components/RealTimeMirror.jsx - Get Dimensions from MediaPipe Results
+// src/components/RealTimeMirror.jsx - Added Logging INSIDE predictWebcam (Corrected JSX)
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // Expects the onBeforeCompile version
@@ -16,6 +16,7 @@ const RealTimeMirror = forwardRef(({
   const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
   const [latestLandmarkResults, setLatestLandmarkResults] = useState(null);
   const [latestSegmentationResults, setLatestSegmentationResults] = useState(null);
+  // const metadataLoadedRef = useRef(false); // No longer using event listeners
 
   // Camera Access Effect - Simpler, no event listeners needed here
   useEffect(() => {
@@ -25,14 +26,11 @@ const RealTimeMirror = forwardRef(({
 
     const enableStream = async () => {
         console.log("RealTimeMirror: enableStream called.");
-        if (!faceLandmarker) { if (isMounted) { console.warn("RealTimeMirror: FaceLandmarker not ready."); setCameraError("AI models initializing..."); setIsCameraLoading(false); } return; } // Show error if AI isn't ready
+        if (!faceLandmarker) { if (isMounted) { console.warn("RealTimeMirror: FaceLandmarker not ready."); setCameraError("AI models initializing..."); setIsCameraLoading(false); } return; }
         if (!navigator.mediaDevices?.getUserMedia) { if (isMounted) { console.error("RealTimeMirror: getUserMedia not supported."); setCameraError("getUserMedia not supported."); setIsCameraLoading(false); } return; }
 
         console.log("RealTimeMirror: Setting camera STARTING state (will wait for AI result for dimensions)...");
-        setIsCameraLoading(true); // Keep true until AI gives dimensions
-        setCameraError(null);
-        setVideoStream(null);
-        setVideoDimensions({ width: 0, height: 0 });
+        setIsCameraLoading(true); setCameraError(null); setVideoStream(null); setVideoDimensions({ width: 0, height: 0 });
         animationFrameRef.current.hasGottenDims = false; // Reset flag
 
         try {
@@ -43,16 +41,14 @@ const RealTimeMirror = forwardRef(({
             if (isMounted && videoRef.current) {
                 console.log("RealTimeMirror: Assigning stream to video element.");
                 videoRef.current.srcObject = stream;
-                setVideoStream(stream); // We still need the stream for prediction loop
+                setVideoStream(stream);
 
-                // Attempt to play video
-                console.log("RealTimeMirror: Attempting videoRef.current.play()...");
-                videoRef.current.play().then(() => {
+                 console.log("RealTimeMirror: Attempting videoRef.current.play()...");
+                 videoRef.current.play().then(() => {
                      console.log("RealTimeMirror: video.play() promise resolved. Ready for prediction loop.");
-                     // Don't set loading false here, wait for first prediction
                  }).catch(err => {
                      console.error("RealTimeMirror: video.play() failed:", err);
-                     if (isMounted) { setCameraError("Could not play video stream."); setIsCameraLoading(false); } // Show error if play fails
+                     if (isMounted) { setCameraError("Could not play video stream."); setIsCameraLoading(false); }
                  });
 
             } else {
@@ -68,117 +64,117 @@ const RealTimeMirror = forwardRef(({
 
     // Cleanup
     return () => {
-        isMounted = false;
-        console.log("RealTimeMirror: Camera useEffect - Cleaning up.");
-        const currentStream = videoStream || stream;
-        currentStream?.getTracks().forEach(track => track.stop());
+        isMounted = false; console.log("RealTimeMirror: Camera useEffect - Cleaning up.");
+        const currentStream = videoStream || stream; currentStream?.getTracks().forEach(track => track.stop());
         console.log("   - MediaStream tracks stopped.");
         if (videoRef.current) { videoRef.current.srcObject = null; console.log("   - videoRef srcObject cleared."); }
-        cancelAnimationFrame(animationFrameRef.current?.rafId); // Stop prediction loop too
+        cancelAnimationFrame(animationFrameRef.current?.rafId);
         setVideoStream(null); setIsCameraLoading(true); setCameraError(null); setVideoDimensions({ width: 0, height: 0 });
     };
-   }, [faceLandmarker]); // Only depends on landmarker for initial readiness
+   }, [faceLandmarker]);
 
 
-  // Prediction Loop Callback - Gets Dimensions from first result
+  // Prediction Loop Callback - ADDED INTERNAL LOGGING
   const predictWebcam = useCallback(() => {
-    animationFrameRef.current.rafId = requestAnimationFrame(predictWebcam); // Request next frame first
+    animationFrameRef.current.rafId = requestAnimationFrame(predictWebcam);
     animationFrameRef.current.count++;
     const frameCount = animationFrameRef.current.count;
+    const logThisFrame = frameCount <= 5 || frameCount % 60 === 0; // Log frequently at start
+
+    // --- >>> ADDED LOGGING <<< ---
+    if (logThisFrame) {
+        console.log(`>>> predictWebcam Frame ${frameCount}: Checking conditions...`);
+        console.log(`    - faceLandmarker ready?: ${!!faceLandmarker}`);
+        console.log(`    - imageSegmenter ready?: ${!!imageSegmenter}`);
+        console.log(`    - videoRef exists?: ${!!videoRef.current}`);
+        if (videoRef.current) {
+            console.log(`    - videoRef.readyState: ${videoRef.current.readyState}`);
+        } else {
+             console.log(`    - videoRef.readyState: N/A (videoRef null)`);
+        }
+    }
+    // --- >>> END ADDED LOGGING <<< ---
 
     // Ensure models and video are ready
-    if (!faceLandmarker || !imageSegmenter || !videoRef.current || videoRef.current.readyState < 2 ) {
-        // Optionally log if waiting long
-        // if (frameCount % 100 === 0) console.log("predictWebcam waiting for models/video...");
-        return;
+    if (!faceLandmarker || !imageSegmenter || !videoRef.current || videoRef.current.readyState < 2 ) { // HAVE_CURRENT_DATA = 2
+        if (logThisFrame && animationFrameRef.current.rafId) console.log(`--- predictWebcam Frame ${frameCount}: EXITING - Conditions not met.`);
+        return; // Exit if not ready
     }
+
+     // If conditions are met, proceed
+    if (logThisFrame) console.log(`--- predictWebcam Frame ${frameCount}: Conditions MET - Running detection...`);
 
     const video = videoRef.current;
     const startTime = performance.now();
 
     try {
-      // Run predictions
-      const landmarkResults = faceLandmarker.detectForVideo(video, startTime);
-      const segmentationResults = imageSegmenter.segmentForVideo(video, startTime);
+        if (logThisFrame) console.log("    - Calling detectForVideo/segmentForVideo...");
+        // Run predictions
+        const landmarkResults = faceLandmarker.detectForVideo(video, startTime);
+        const segmentationResults = imageSegmenter.segmentForVideo(video, startTime);
+        if (logThisFrame) console.log("    - Detection calls complete.");
 
-      // --- Get Dimensions from First Successful Landmark Result ---
-      if (!animationFrameRef.current.hasGottenDims && landmarkResults?.image) {
-          const width = landmarkResults.image.width;
-          const height = landmarkResults.image.height;
-          if (width > 0 && height > 0) {
+        // Get Dimensions from First Successful Landmark Result
+        if (!animationFrameRef.current.hasGottenDims && landmarkResults?.image) {
+            const width = landmarkResults.image.width; const height = landmarkResults.image.height;
+            if (width > 0 && height > 0) {
                 console.log(`<<<< RealTimeMirror: Got Dimensions from MediaPipe Result! (${width}x${height}) >>>>`);
-                setVideoDimensions({ width, height });
-                setIsCameraLoading(false); // <<<--- Trigger rendering HERE
-                animationFrameRef.current.hasGottenDims = true; // Set flag
-                 console.log("     State updated: isCameraLoading=false, videoDimensions set from result.");
-          } else {
-               console.warn("     MediaPipe result present, but image dimensions are zero?");
-          }
-      }
-      // -----------------------------------------------------------
+                setVideoDimensions({ width, height }); setIsCameraLoading(false); animationFrameRef.current.hasGottenDims = true;
+                console.log("     State updated: isCameraLoading=false, videoDimensions set from result.");
+            } else { console.warn("     MediaPipe result present, but image dimensions are zero?"); }
+        }
 
-      // Update results state regardless of dimensions being set yet
-      setLatestLandmarkResults(landmarkResults);
-      setLatestSegmentationResults(segmentationResults);
+        // Update results state
+        setLatestLandmarkResults(landmarkResults);
+        setLatestSegmentationResults(segmentationResults);
 
-      // Add a timeout check: if dimensions not found after X frames, show error
+        // Timeout check
        if (!animationFrameRef.current.hasGottenDims && frameCount > 200) { // Approx 3-4 seconds
             console.error("RealTimeMirror: Failed to get video dimensions from MediaPipe after 200 frames.");
-            setCameraError("Could not determine video size.");
-            setIsCameraLoading(false); // Stop loading, show error
-            cancelAnimationFrame(animationFrameRef.current.rafId); // Stop loop
+            setCameraError("Could not determine video size."); setIsCameraLoading(false); cancelAnimationFrame(animationFrameRef.current.rafId);
        }
 
     } catch (error) {
         console.error(`PredictWebcam Error (Frame ${frameCount}):`, error);
         setLatestLandmarkResults(null); setLatestSegmentationResults(null);
-        // Optionally stop loop or set error state on prediction error
-         setCameraError("AI Prediction Failed.");
-         setIsCameraLoading(false);
-         cancelAnimationFrame(animationFrameRef.current.rafId);
+        setCameraError("AI Prediction Failed."); setIsCameraLoading(false); cancelAnimationFrame(animationFrameRef.current.rafId);
     }
   }, [faceLandmarker, imageSegmenter]); // Depends on models
 
 
   // Effect to manage loop start/stop
   useEffect(() => {
-       // Start loop only when stream is ready AND models are ready
-       // Dimensions will be handled *inside* the loop now
        if (videoStream && faceLandmarker && imageSegmenter) {
            console.log("RealTimeMirror: Starting prediction loop (All Models Ready, waiting for first result for dims)...");
-           cancelAnimationFrame(animationFrameRef.current?.rafId); // Clear previous loops
+           cancelAnimationFrame(animationFrameRef.current?.rafId);
            animationFrameRef.current.count = 0;
-           animationFrameRef.current.hasGottenDims = false; // Reset flag
-           animationFrameRef.current.rafId = requestAnimationFrame(predictWebcam); // Start
+           animationFrameRef.current.hasGottenDims = false;
+           animationFrameRef.current.rafId = requestAnimationFrame(predictWebcam);
        } else {
-            // Ensure loop is stopped if dependencies aren't met
            cancelAnimationFrame(animationFrameRef.current?.rafId);
        }
-       // Cleanup function for this effect instance
        return () => {
             console.log("RealTimeMirror: Prediction loop useEffect cleanup.");
             cancelAnimationFrame(animationFrameRef.current?.rafId);
        };
-   }, [videoStream, faceLandmarker, imageSegmenter, predictWebcam]); // Dependencies
+   }, [videoStream, faceLandmarker, imageSegmenter, predictWebcam]);
 
 
-  // Determine if renderer should be shown (logic remains the same)
+  // Determine if renderer should be shown
   const shouldRenderTryOn = !isCameraLoading && !cameraError && videoDimensions.width > 0;
   console.log("RealTimeMirror: Render() Check. isCameraLoading:", isCameraLoading, "cameraError:", cameraError, "videoDimensions:", videoDimensions, "shouldRenderTryOn:", shouldRenderTryOn);
 
-  // JSX
+  // *** Corrected JSX Return Block ***
   return (
     <div className="border p-4 rounded bg-blue-50 relative">
        <h2 className="text-xl font-semibold mb-2 text-center">Real-Time Mirror Mode</h2>
-       {/* Keep conditional rendering based on loading/error states */}
        {isCameraLoading && !cameraError && <p className="text-center py-4">Starting camera & AI...</p>}
        {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
 
       <div className="relative w-full max-w-md mx-auto" style={{ paddingTop: `${videoDimensions.width > 0 ? (videoDimensions.height / videoDimensions.width) * 100 : 75}%` }}>
-        {/* Make video slightly visible for debugging? Optional. */}
+        {/* Video element still needed */}
         <video ref={videoRef} autoPlay playsInline muted className="absolute top-0 left-0 -z-10" style={{width:'1px', height:'1px', opacity: 0.1}}/>
 
-        {/* Render TryOnRenderer or fallback */}
         {shouldRenderTryOn ? (
           <>
             {console.log("RealTimeMirror: Rendering TryOnRenderer...")}
@@ -192,14 +188,12 @@ const RealTimeMirror = forwardRef(({
               className="absolute top-0 left-0 w-full h-full rounded shadow overflow-hidden"
             />
           </>
-        ) : ( // Fallback UI shows while !shouldRenderTryOn
+        ) : ( // Fallback UI
            <div className="absolute inset-0 flex items-center justify-center bg-gray-200 rounded shadow">
               {!cameraError && !isCameraLoading && videoDimensions.width === 0 && console.log("RealTimeMirror: Rendering Fallback (Waiting for dimensions from AI)...")}
               {!cameraError && isCameraLoading && console.log("RealTimeMirror: Rendering Fallback (Camera Loading)...")}
               {cameraError && console.log("RealTimeMirror: Rendering Fallback (Error State)...")}
-
               <p className="text-gray-500">
-                   {/* Display more informative message */}
                   {cameraError ? cameraError : (isCameraLoading ? 'Initializing Camera & AI...' : 'Processing first frame...')}
               </p>
            </div>
@@ -208,6 +202,8 @@ const RealTimeMirror = forwardRef(({
       {(!faceLandmarker || !imageSegmenter) && !cameraError && !isCameraLoading && <p className="text-red-500 mt-2 text-center">AI Models loaded, waiting for camera...</p>}
     </div>
   );
+  // *********************************
+
 });
 RealTimeMirror.displayName = 'RealTimeMirror';
 export default RealTimeMirror;
