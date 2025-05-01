@@ -1,4 +1,4 @@
-// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach
+// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Corrected Preview JSX)
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -26,17 +26,29 @@ const StaticSelfieTryOn = forwardRef(({
 
   // Refs
   const selfieVideoRef = useRef(null);
-  const webglCanvasRef = useRef(null); // Ref for base WebGL canvas
-  const overlayCanvasRef = useRef(null); // Ref for 2D overlay canvas
+  const webglCanvasRef = useRef(null);
+  const overlayCanvasRef = useRef(null);
 
-  // Camera Access Effect (No change needed)
-  useEffect(() => { /* ... */ }, [isPreviewing, faceLandmarker]);
-  // Selfie Capture (No change needed)
-  const handleTakeSelfie = useCallback(() => { /* ... */ }, [cameraStream, selfieDimensions]);
-
-  // Image Loading and AI Detection Effect (No change needed here)
+  // Camera Access Effect
   useEffect(() => {
-    if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { /* ... cleanup/return ... */ if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; }
+    let isMounted = true; let stream = null;
+    const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { if (isMounted) { let message = "Camera Error."; setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } };
+    if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; } setCameraStream(null); }
+    return () => { isMounted = false; const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); };
+   }, [isPreviewing, faceLandmarker]);
+
+  // Selfie Capture
+  const handleTakeSelfie = useCallback(() => {
+    if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; }
+    if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; }
+    setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png');
+    setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setDebugInfo('Capture complete. Loading image...');
+    cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; }
+   }, [cameraStream, selfieDimensions]);
+
+  // Image Loading and AI Detection Effect
+  useEffect(() => {
+    if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; }
     console.log("StaticSelfieTryOn: Loading image for detection/segmentation..."); setIsDetecting(true); setDebugInfo('Loading captured image...'); const imageElement = new Image();
     imageElement.onload = () => {
       console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); setStaticImageElement(imageElement); setDebugInfo('Image loaded, running AI...');
@@ -48,153 +60,78 @@ const StaticSelfieTryOn = forwardRef(({
           setDetectedLandmarkResults(landmarkResults); setDetectedSegmentationResults(segmentationResults); setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks found.`);
         } else { setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo('AI models not ready for analysis.'); }
       } catch(err) { console.error("StaticSelfieTryOn: Error during AI processing:", err); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo(`AI Error: ${err.message}`); }
-      finally { setIsDetecting(false); } // Analysis finished (or failed)
+      finally { setIsDetecting(false); }
     };
     imageElement.onerror = () => { console.error("StaticSelfieTryOn: imageElement.onerror triggered."); setDebugInfo('Error: Failed to load captured image.'); setStaticImageElement(null); setIsDetecting(false); }; imageElement.src = capturedSelfieDataUrl;
     return () => { imageElement.onload = null; imageElement.onerror = null; imageElement.src = ''; };
   }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
 
 
-  // --- Canvas Drawing Function for Static Selfie ---
+  // Canvas Drawing Function for Static Selfie
   const drawStaticOverlay = useCallback(() => {
-    const overlayCanvas = overlayCanvasRef.current;
-    const image = staticImageElement; // Source dimensions from image
-    const landmarks = detectedLandmarkResults; // Source landmarks
-    // const segmentationMask = detectedSegmentationResults; // Source mask (unused for now)
-
-    if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) {
-         console.log("drawStaticOverlay: Skipping, missing canvas, image, landmarks, or dimensions.");
-         // Clear canvas if conditions aren't met but canvas exists
-         if(overlayCanvas) {
-            const ctx = overlayCanvas.getContext('2d');
-            if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-         }
-         return;
-    }
-
-    console.log("drawStaticOverlay: Drawing...");
-    const ctx = overlayCanvas.getContext('2d');
-    if (!ctx) return;
-
-    const canvasWidth = selfieDimensions.width;
-    const canvasHeight = selfieDimensions.height;
-
-    // Ensure overlay canvas matches image dimensions
-    if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) {
-        overlayCanvas.width = canvasWidth;
-        overlayCanvas.height = canvasHeight;
-        console.log(`Resized Static Overlay Canvas to ${canvasWidth}x${canvasHeight}`);
-    }
-
-    // Clear canvas
+    const overlayCanvas = overlayCanvasRef.current; const image = staticImageElement; const landmarks = detectedLandmarkResults;
+    if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) { if(overlayCanvas) { const ctx = overlayCanvas.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height); } return; }
+    // console.log("drawStaticOverlay: Drawing...");
+    const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height;
+    if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; /* console.log(`Resized Static Overlay Canvas to ${canvasWidth}x${canvasHeight}`); */ }
     ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-    // --- IMPORTANT: DO NOT Mirror the context for static selfie ---
-
-    // --- Draw Effects ---
     try {
         const facePoints = landmarks.faceLandmarks[0];
-
-        // 1. Create clipping path for the face outline
         if (facePoints.length > 0) {
-            ctx.beginPath();
-            FACE_OUTLINE_INDICES.forEach((index, i) => {
-                if (index < facePoints.length) {
-                    const point = facePoints[index];
-                    const x = point.x * canvasWidth; // Scale normalized coords
-                    const y = point.y * canvasHeight;
-                    if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
-                }
-            });
-            ctx.closePath();
-            ctx.save(); // Save context state before clipping
-            ctx.clip(); // Apply the face polygon as a clipping mask
+            ctx.beginPath(); FACE_OUTLINE_INDICES.forEach((index, i) => { if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } } }); ctx.closePath();
+            ctx.save(); ctx.clip();
+            if (effectIntensity > 0.01) { ctx.fillStyle = `rgba(255, 255, 255, ${0.15 * effectIntensity})`; ctx.fillRect(0, 0, canvasWidth, canvasHeight); }
+            ctx.restore();
         }
-
-        // 2. Apply Hydration Effect (Example: semi-transparent white overlay)
-        if (effectIntensity > 0.01) {
-            ctx.fillStyle = `rgba(255, 255, 255, ${0.15 * effectIntensity})`;
-            ctx.fillRect(0, 0, canvasWidth, canvasHeight); // Fill the clipped area
-        }
-
-        // Restore context state if clipped
-        if (facePoints.length > 0) {
-            ctx.restore(); // Remove the clipping mask
-        }
-
-    } catch (error) {
-        console.error("Error during static overlay drawing:", error);
-    }
-    // No final ctx.restore() needed as we didn't ctx.save() for mirroring
-
+    } catch (error) { console.error("Error during static overlay drawing:", error); }
   }, [staticImageElement, detectedLandmarkResults, effectIntensity, selfieDimensions]);
 
-
-  // --- Effect to Trigger Static Drawing ---
-  useEffect(() => {
-      // Draw whenever the required data changes and we are *not* previewing
-      if (!isPreviewing && staticImageElement && detectedLandmarkResults) {
-          drawStaticOverlay();
-      } else if (!isPreviewing && overlayCanvasRef.current) {
-          // Clear overlay if we lose landmarks or image while in result view
-           const ctx = overlayCanvasRef.current.getContext('2d');
-           if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
-      }
-  }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]); // Rerun draw when data changes
-
+  // Effect to Trigger Static Drawing
+  useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);
 
    // Retake Selfie
-   const handleRetakeSelfie = useCallback(() => {
-       setIsPreviewing(true); setCapturedSelfieDataUrl(null); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setSelfieDimensions({ width: 0, height: 0 }); setCameraError(null); setIsCameraLoading(true); setIsDetecting(false); setDebugInfo('');
-       // Clear overlay canvas on retake
-       if(overlayCanvasRef.current) {
-           const ctx = overlayCanvasRef.current.getContext('2d');
-           if(ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height);
-       }
-   }, []); // Added useCallback wrapper
+   const handleRetakeSelfie = useCallback(() => { setIsPreviewing(true); setCapturedSelfieDataUrl(null); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setSelfieDimensions({ width: 0, height: 0 }); setCameraError(null); setIsCameraLoading(true); setIsDetecting(false); setDebugInfo(''); if(overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, []);
 
-   // JSX - Includes Overlay Canvas
+   // --- JSX --- (Restored Preview UI) ---
    return (
     <div className="border p-4 rounded bg-green-50">
       <h2 className="text-xl font-semibold mb-2 text-center">Try On Selfie Mode</h2>
-      {isPreviewing ? ( // Render Preview UI block
-         <> /* ... (Preview UI - No changes needed) ... */ </>
+      {isPreviewing ? ( // *** RESTORED PREVIEW UI BLOCK ***
+         <>
+            {isCameraLoading && <p className="text-center py-4">Starting camera...</p>}
+            {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
+            {/* Container for aspect ratio */}
+            <div className="relative w-full max-w-md mx-auto aspect-[9/16] bg-gray-200 overflow-hidden rounded shadow">
+               {/* Live video preview */}
+               <video ref={selfieVideoRef} autoPlay playsInline muted className={`absolute top-0 left-0 w-full h-full ${isCameraLoading || cameraError ? 'opacity-0' : 'opacity-100'}`} style={{ transform: 'scaleX(-1)', transition: 'opacity 0.3s', objectFit: 'cover' }}></video>
+               {/* Loading/Error overlay */}
+               {(isCameraLoading || cameraError) && ( <div className="absolute inset-0 flex items-center justify-center"><p className="text-gray-500 bg-white px-2 py-1 rounded shadow">{cameraError ? 'Error' : 'Loading...'}</p></div> )}
+            </div>
+            {/* Capture button */}
+            <div className="text-center mt-4">
+               <button onClick={handleTakeSelfie} disabled={isCameraLoading || !!cameraError || !cameraStream} className="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed"> Take Selfie </button>
+            </div>
+         </> // *** END RESTORED BLOCK ***
       ) : ( // Render Captured UI block
         <>
-          {/* --- Container for Layered Canvases --- */}
+          {/* Container for Layered Canvases */}
           <div
-              className="relative w-full max-w-md mx-auto bg-gray-700" // Added bg color
-              style={{
-                  paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : 75}%`, // Aspect Ratio
-                  overflow: 'hidden'
-              }}
+              className="relative w-full max-w-md mx-auto bg-gray-700"
+              style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : 75}%`, overflow: 'hidden' }}
            >
                 {/* Base WebGL Canvas (Renders static image) */}
                 {staticImageElement ? (
                   <TryOnRenderer
-                    ref={webglCanvasRef}
-                    videoRefProp={null}
-                    imageElement={staticImageElement}
-                    isStatic={true}
-                    className="absolute top-0 left-0 w-full h-full z-0" // Base layer
-                    style={{ objectFit: 'cover' }}
+                    ref={webglCanvasRef} videoRefProp={null} imageElement={staticImageElement} isStatic={true}
+                    className="absolute top-0 left-0 w-full h-full z-0" style={{ objectFit: 'cover' }}
                   />
                 ) : ( /* Fallback UI while image loads/analyzes */
                      <div className="absolute inset-0 flex items-center justify-center bg-gray-200 z-20"><p className="text-gray-500">{isDetecting ? 'Analyzing Selfie...' : (capturedSelfieDataUrl ? 'Loading Image...' : 'Initializing...')}</p></div>
                  )}
-
                  {/* Overlay 2D Canvas */}
-                 {/* Render overlay canvas only when not previewing */}
-                 <canvas
-                    ref={overlayCanvasRef}
-                    className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none"
-                    // Width/Height set dynamically in drawStaticOverlay
-                    style={{ objectFit: 'cover' }}
-                 />
+                 <canvas ref={overlayCanvasRef} className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none" style={{ objectFit: 'cover' }} />
           </div>
-           {/* --- End Container --- */}
-
-          {/* Debug Info & Retake Button */}
+           {/* Debug Info & Retake Button */}
            <div className="mt-2 p-2 border bg-gray-100 text-xs overflow-auto max-h-20 max-w-md mx-auto rounded"><p className="font-semibold mb-1">Debug Info:</p><pre className="whitespace-pre-wrap break-words">{debugInfo || 'N/A'}</pre></div>
            <div className="text-center mt-4"><button onClick={handleRetakeSelfie} className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Retake Selfie</button></div>
         </>
@@ -203,6 +140,7 @@ const StaticSelfieTryOn = forwardRef(({
       {(!faceLandmarker || !imageSegmenter) && <p className="text-red-500 mt-2 text-center">Initializing AI models...</p>}
     </div>
   );
+  // **********************************
 
 });
 StaticSelfieTryOn.displayName = 'StaticSelfieTryOn';
