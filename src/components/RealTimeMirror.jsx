@@ -1,4 +1,4 @@
-// src/components/RealTimeMirror.jsx - REVERT to Smooth Paths + evenodd fill (From Message #357)
+// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick via Path2D / evenodd - VERIFIED COMPLETE)
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -8,16 +8,11 @@ const LIP_OUTLINE_UPPER_INDICES = [ 61, 185, 40, 39, 37, 0, 267, 269, 270, 409 ]
 const LIP_OUTLINE_LOWER_INDICES = [ 291, 375, 321, 405, 314, 17, 84, 181, 91, 146 ];
 const INNER_LIP_UPPER_INDICES = [ 78, 191, 80, 81, 82, 13, 312, 311, 310, 415 ];
 const INNER_LIP_LOWER_INDICES = [ 308, 324, 318, 402, 317, 14, 87, 178, 88, 95 ];
+// Combine indices for drawing straight line paths
 const DETAILED_LIP_OUTER_INDICES = [ ...LIP_OUTLINE_UPPER_INDICES, ...LIP_OUTLINE_LOWER_INDICES.slice().reverse() ];
 const DETAILED_LIP_INNER_INDICES = [ ...INNER_LIP_UPPER_INDICES, ...INNER_LIP_LOWER_INDICES.slice().reverse() ];
 
-// Helper function to draw a smooth path using quadratic curves
-const drawSmoothPath = (ctx, points, isClosed = true) => {
-    if (!points || points.length < 2) return;
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 0; i < points.length; i++) { const p0 = points[i]; const p1 = points[(i + 1) % points.length]; const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2; ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY); }
-    if (isClosed) ctx.closePath();
-};
+// Removed drawSmoothPath helper - using lineTo with Path2D
 
 const RealTimeMirror = forwardRef(({
   faceLandmarker, imageSegmenter, effectIntensity // Unused for now
@@ -32,7 +27,7 @@ const RealTimeMirror = forwardRef(({
   const [cameraError, setCameraError] = useState(null);
   const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
 
-  // --- Canvas Drawing Function (Smooth Lipstick - evenodd fill) ---
+  // --- Canvas Drawing Function (Lipstick via Path2D) ---
   const drawOverlay = useCallback((landmarks, segmentationMask) => {
     const overlayCanvas = overlayCanvasRef.current; const video = videoRef.current; if (!overlayCanvas || !video || !videoDimensions.width || !videoDimensions.height) return; const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = videoDimensions.width; const canvasHeight = videoDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
@@ -42,22 +37,30 @@ const RealTimeMirror = forwardRef(({
     try {
         const facePoints = landmarks?.faceLandmarks?.[0];
         if (facePoints && facePoints.length > 0) {
+
+            // --- Create Path2D Object ---
+            const lipPath = new Path2D();
+
+            // --- Add Outer Lip Path (Straight Lines) ---
+            let firstPointOuter = null; // Not strictly needed with Path2D but good practice
+            DETAILED_LIP_OUTER_INDICES.forEach((index, i) => {
+                if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { lipPath.moveTo(x, y); firstPointOuter = {x, y}; } else { lipPath.lineTo(x, y); } }
+                else { console.warn(`Outer Lip index ${index} out of bounds`); }
+            });
+            lipPath.closePath();
+
+            // --- Add Inner Lip Path (Straight Lines) ---
+             let firstPointInner = null; // Not strictly needed with Path2D but good practice
+            DETAILED_LIP_INNER_INDICES.forEach((index, i) => {
+                if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { lipPath.moveTo(x, y); firstPointInner = {x, y}; } else { lipPath.lineTo(x, y); } }
+                 else { console.warn(`Inner Lip index ${index} out of bounds`); }
+            });
+            lipPath.closePath();
+
+            // --- Fill the combined path ---
             ctx.fillStyle = "#0000FF"; // Bright Blue
-            ctx.beginPath();
-            // Draw Outer Lip Path (Smooth)
-            const outerPoints = DETAILED_LIP_OUTER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
-            if (outerPoints.length > 2) {
-                drawSmoothPath(ctx, outerPoints, true);
-            }
-            // Draw Inner Lip Path (Smooth - Reverse Order for Hole)
-            const innerPointsReverse = DETAILED_LIP_INNER_INDICES.slice().reverse().map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
-             if(innerPointsReverse.length > 2) {
-                 // Start inner path from its "first" point (last point of original inner path)
-                 ctx.moveTo(innerPointsReverse[0].x, innerPointsReverse[0].y);
-                 drawSmoothPath(ctx, innerPointsReverse, true);
-             }
-             // Fill using the even-odd rule
-             ctx.fill('evenodd');
+            ctx.fill(lipPath, 'evenodd'); // Use evenodd fill rule
+
         } // End facePoints check
     } catch (error) { console.error("Error during overlay drawing:", error); }
     finally { ctx.restore(); } // Restore mirror transform
@@ -94,7 +97,7 @@ const RealTimeMirror = forwardRef(({
       </div>
       {/* AI Model Status */}
     </div>
-  );
-});
+  ); // Closing parenthesis for return
+}); // Closing brace and parenthesis for forwardRef
 RealTimeMirror.displayName = 'RealTimeMirror';
 export default RealTimeMirror;
