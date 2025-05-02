@@ -1,4 +1,4 @@
-// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick Effect via Clipping) - VERIFIED SYNTAX
+// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick Effect via Clipping) - VERIFIED JSX
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -15,21 +15,13 @@ const DETAILED_LIP_INNER_INDICES = [ ...INNER_LIP_UPPER_INDICES, ...INNER_LIP_LO
 const drawSmoothPath = (ctx, points, isClosed = true) => {
     if (!points || points.length < 2) return;
     ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 0; i < points.length; i++) { // Loop through all points for better curve control
-        const p0 = points[i];
-        const p1 = points[(i + 1) % points.length]; // Next point (wraps around)
-        const midPointX = (p0.x + p1.x) / 2;
-        const midPointY = (p0.y + p1.y) / 2;
-        ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY);
-    }
-    if (isClosed) ctx.closePath(); // Close path after looping
+    for (let i = 0; i < points.length; i++) { const p0 = points[i]; const p1 = points[(i + 1) % points.length]; const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2; ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY); }
+    if (isClosed) ctx.closePath();
 };
 
 
 const RealTimeMirror = forwardRef(({
-  faceLandmarker,
-  imageSegmenter,
-  effectIntensity // Unused for now
+  faceLandmarker, imageSegmenter, effectIntensity // Unused for now
 }, ref) => {
   const videoRef = useRef(null);
   const webglCanvasRef = useRef(null);
@@ -45,7 +37,7 @@ const RealTimeMirror = forwardRef(({
   const drawOverlay = useCallback((landmarks, segmentationMask) => {
     const overlayCanvas = overlayCanvasRef.current; const video = videoRef.current; if (!overlayCanvas || !video || !videoDimensions.width || !videoDimensions.height) return; const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = videoDimensions.width; const canvasHeight = videoDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-    ctx.save(); // Save original context state
+    ctx.save(); // Save original state
     ctx.scale(-1, 1); ctx.translate(-canvasWidth, 0); // Mirror context
 
     try {
@@ -60,9 +52,9 @@ const RealTimeMirror = forwardRef(({
                 drawSmoothPath(ctx, outerPoints, true);
                 ctx.fill(); // Fill the outer shape first
 
-                // --- Erase Inner Lip Area ---
+                // --- Erase Inner Lip Area using Clipping ---
                 ctx.save(); // Save state before changing composite operation
-                ctx.globalCompositeOperation = 'destination-out'; // Erase mode
+                ctx.globalCompositeOperation = 'destination-out'; // Set erase mode
                 ctx.beginPath();
                 const innerPoints = DETAILED_LIP_INNER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
                 if (innerPoints.length > 2) {
@@ -70,11 +62,12 @@ const RealTimeMirror = forwardRef(({
                     ctx.fill(); // Fill the inner shape (which erases it due to composite op)
                 }
                 ctx.restore(); // Restore composite operation to default ('source-over')
+                // --- End Erase Inner Lip ---
             } // End outerPoints check
         } // End facePoints check
     } catch (error) { console.error("Error during overlay drawing:", error); }
     finally { ctx.restore(); } // Restore mirror transform
-  }, [videoDimensions]); // Removed intensity dependency for now
+  }, [videoDimensions]);
 
 
   // --- Camera Access Effect (Polling) ---
@@ -89,7 +82,7 @@ const RealTimeMirror = forwardRef(({
   // --- Determine if base WebGL renderer should be shown ---
   const shouldRenderTryOnBase = !isCameraLoading && !cameraError;
 
-  // --- JSX ---
+  // --- JSX --- (VERIFIED)
   return (
     <div className="border p-4 rounded bg-blue-50 relative">
        <h2 className="text-xl font-semibold mb-2 text-center">Real-Time Mirror Mode</h2>
@@ -107,8 +100,8 @@ const RealTimeMirror = forwardRef(({
       </div>
       {/* AI Model Status */}
     </div>
-  ); // Closing parenthesis for return
-}); // Closing brace and parenthesis for forwardRef
-
+  );
+  // ******************
+});
 RealTimeMirror.displayName = 'RealTimeMirror';
 export default RealTimeMirror;

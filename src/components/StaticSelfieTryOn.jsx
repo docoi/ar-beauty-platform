@@ -1,4 +1,4 @@
-// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick Effect via Clipping) - VERIFIED SYNTAX
+// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick Effect via Clipping) - VERIFIED JSX
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -41,6 +41,7 @@ const StaticSelfieTryOn = forwardRef(({
   // --- Canvas Drawing Function for Static Selfie (Lipstick via Clipping) ---
   const drawStaticOverlay = useCallback(() => {
     const overlayCanvas = overlayCanvasRef.current; const image = staticImageElement; const landmarks = detectedLandmarkResults; if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) { if(overlayCanvas) { const ctx = overlayCanvas.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height); } return; } const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    // No context mirroring needed
     try {
         const facePoints = landmarks.faceLandmarks[0];
         if (facePoints.length > 0) {
@@ -67,7 +68,6 @@ const StaticSelfieTryOn = forwardRef(({
         } // End facePoints check
     } catch (error) { console.error("Error during static overlay drawing:", error); }
   }, [staticImageElement, detectedLandmarkResults, selfieDimensions]); // Removed effectIntensity dependency
-
 
   // Effect to Trigger Static Drawing
   useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);
