@@ -1,4 +1,4 @@
-// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick via Clipping - Straight Inner Line - VERIFIED SYNTAX & JSX)
+// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick via Clipping - STRAIGHT LINES - VERIFIED JSX)
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -32,7 +32,7 @@ const StaticSelfieTryOn = forwardRef(({
   useEffect(() => { if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; } console.log("StaticSelfieTryOn: Loading image..."); setIsDetecting(true); setDebugInfo('Loading image...'); const imageElement = new Image(); imageElement.onload = () => { console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); setStaticImageElement(imageElement); setDebugInfo('Running AI...'); try { if (faceLandmarker && imageSegmenter) { const startTime = performance.now(); const landmarkResults = faceLandmarker.detectForVideo(imageElement, startTime); const segmentationResults = imageSegmenter.segmentForVideo(imageElement, startTime); const endTime = performance.now(); console.log(`StaticSelfieTryOn: AI took ${endTime - startTime}ms`); setDetectedLandmarkResults(landmarkResults); setDetectedSegmentationResults(segmentationResults); setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks.`); } else { setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo('AI models not ready.'); } } catch(err) { console.error("AI Error:", err); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo(`AI Error: ${err.message}`); } finally { setIsDetecting(false); } }; imageElement.onerror = () => { console.error("Image load error."); setDebugInfo('Error loading image.'); setStaticImageElement(null); setIsDetecting(false); }; imageElement.src = capturedSelfieDataUrl; return () => { imageElement.onload = null; imageElement.onerror = null; imageElement.src = ''; }; }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
 
 
-  // --- Canvas Drawing Function for Static Selfie (Lipstick via Clipping - Straight Inner Line) ---
+  // --- Canvas Drawing Function for Static Selfie (Lipstick via Clipping - STRAIGHT LINES) ---
   const drawStaticOverlay = useCallback(() => {
     const overlayCanvas = overlayCanvasRef.current; const image = staticImageElement; const landmarks = detectedLandmarkResults; if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) { if(overlayCanvas) { const ctx = overlayCanvas.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height); } return; } const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
     try {
@@ -61,7 +61,7 @@ const StaticSelfieTryOn = forwardRef(({
              } // End outerPoints check
         } // End facePoints check
     } catch (error) { console.error("Error during static overlay drawing:", error); }
-  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]);
+  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]); // Removed effectIntensity
 
   // Effect to Trigger Static Drawing
   useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);

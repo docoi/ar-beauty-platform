@@ -1,4 +1,4 @@
-// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick via Clipping - Straight Inner Line - VERIFIED SYNTAX & JSX)
+// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick via Clipping - STRAIGHT LINES - VERIFIED JSX)
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -104,7 +104,9 @@ const RealTimeMirror = forwardRef(({
       </div>
       {/* AI Model Status */}
     </div>
-  ); // Closing parenthesis for return
+  );
+  // ******************
 }); // Closing brace and parenthesis for forwardRef
+
 RealTimeMirror.displayName = 'RealTimeMirror';
 export default RealTimeMirror;
