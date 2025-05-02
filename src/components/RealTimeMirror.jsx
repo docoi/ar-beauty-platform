@@ -1,17 +1,17 @@
-// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick Effect)
+// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Precise Lipstick Effect)
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
 
-// Define LIP landmark indices (Outer Lips - from MediaPipe Docs/Visualizer)
+// Define LIP landmark indices
 const LIP_OUTLINE_INDICES = [ 61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185 ];
-// Example: Inner lip indices if needed later for subtraction/hole punching
-// const INNER_LIP_INDICES = [ 78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191 ];
+// Inner lip indices (ensure these match MediaPipe diagrams accurately)
+const INNER_LIP_INDICES = [ 78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191 ];
 
 const RealTimeMirror = forwardRef(({
   faceLandmarker,
   imageSegmenter,
-  effectIntensity // <<< Can be repurposed for opacity or gloss later
+  effectIntensity // Unused for now
 }, ref) => {
   const videoRef = useRef(null);
   const webglCanvasRef = useRef(null);
@@ -23,7 +23,7 @@ const RealTimeMirror = forwardRef(({
   const [cameraError, setCameraError] = useState(null);
   const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
 
-  // --- Canvas Drawing Function (Lipstick) ---
+  // --- Canvas Drawing Function (Precise Lipstick) ---
   const drawOverlay = useCallback((landmarks, segmentationMask) => {
     const overlayCanvas = overlayCanvasRef.current;
     const video = videoRef.current;
@@ -39,24 +39,38 @@ const RealTimeMirror = forwardRef(({
     ctx.save(); ctx.scale(-1, 1); ctx.translate(-canvasWidth, 0); // Mirror context
     try {
         const facePoints = landmarks?.faceLandmarks?.[0];
-        // Draw Lipstick using Outer Lip Contour
         if (facePoints && facePoints.length > 0) {
+            ctx.fillStyle = "#0000FF"; // Bright Blue
+
             ctx.beginPath();
+            // --- Draw Outer Lip Path ---
             LIP_OUTLINE_INDICES.forEach((index, i) => {
                 if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } }
-                else { console.warn(`Lip index ${index} out of bounds`); }
             });
-            ctx.closePath();
-            ctx.fillStyle = "#0000FF"; // Bright Blue Lipstick Color
-            // Set alpha based on intensity? Example:
-            // ctx.globalAlpha = Math.max(0.1, effectIntensity); // Ensure minimum visibility if using alpha
-            ctx.fill();
-            // ctx.globalAlpha = 1.0; // Reset alpha if changed
+            ctx.closePath(); // Close the outer path
+
+            // --- Draw Inner Lip Path (Reverse Order for Hole) ---
+            // Start from the last point of inner loop and move to first
+            ctx.moveTo(
+                facePoints[INNER_LIP_INDICES[INNER_LIP_INDICES.length - 1]].x * canvasWidth,
+                facePoints[INNER_LIP_INDICES[INNER_LIP_INDICES.length - 1]].y * canvasHeight
+            );
+            for (let i = INNER_LIP_INDICES.length - 2; i >= 0; i--) { // Loop backwards
+                 const index = INNER_LIP_INDICES[i];
+                 if (index < facePoints.length) {
+                     const point = facePoints[index];
+                     ctx.lineTo(point.x * canvasWidth, point.y * canvasHeight);
+                 }
+            }
+            ctx.closePath(); // Close the inner path
+
+            // Fill using the even-odd rule to create the hole
+            ctx.fill('evenodd');
         }
     } catch (error) { console.error("Error during overlay drawing:", error); }
     finally { ctx.restore(); } // Restore mirror transform
-  // Using effectIntensity here allows slider to control opacity/effect later
-  }, [effectIntensity, videoDimensions]);
+  }, [videoDimensions]); // Removed intensity dependency for now
+
 
   // --- Camera Access Effect (Polling) ---
   useEffect(() => { let isMounted = true; let stream = null; let checkReadyFrameId = null; const checkVideoReady = () => { if (!isMounted || !videoRef.current) return; const video = videoRef.current; const readyState = video.readyState; const width = video.videoWidth; const height = video.videoHeight; const hasDimensions = width > 0 && height > 0; const isReady = readyState >= 2 && hasDimensions; if (isReady) { console.log(`<<<< RealTimeMirror: Video Ready via Polling! State=${readyState}, Dims=${width}x${height} >>>>`); setVideoDimensions({ width, height }); setIsCameraLoading(false); setCameraError(null); cancelAnimationFrame(checkReadyRafRef.current); checkReadyRafRef.current = null; } else { if (isMounted) { checkReadyFrameId = requestAnimationFrame(checkVideoReady); checkReadyRafRef.current = checkReadyFrameId; } } }; const enableStream = async () => { if (!faceLandmarker) { if (isMounted) { setCameraError("AI models initializing..."); setIsCameraLoading(false); } return; } if (!navigator.mediaDevices?.getUserMedia) { if (isMounted) { setCameraError("getUserMedia not supported."); setIsCameraLoading(false); } return; } setIsCameraLoading(true); setCameraError(null); setVideoStream(null); setVideoDimensions({ width: 0, height: 0 }); cancelAnimationFrame(checkReadyRafRef.current); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && videoRef.current) { videoRef.current.srcObject = stream; setVideoStream(stream); videoRef.current.onloadedmetadata = null; videoRef.current.onloadeddata = null; videoRef.current.oncanplay = null; videoRef.current.onplaying = null; videoRef.current.onerror = (e) => { if(isMounted) { console.error("Video Error:", e); setCameraError("Video element error."); setIsCameraLoading(false); cancelAnimationFrame(checkReadyRafRef.current); } }; checkReadyFrameId = requestAnimationFrame(checkVideoReady); checkReadyRafRef.current = checkReadyFrameId; videoRef.current.play().catch(err => { console.warn("video.play() failed:", err); }); } else { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { console.error("enableStream Error:", err); if (isMounted) { setCameraError("Failed to access camera."); setIsCameraLoading(false); } } }; enableStream(); return () => { isMounted = false; cancelAnimationFrame(checkReadyRafRef.current); cancelAnimationFrame(animationFrameRef.current?.rafId); const currentStream = videoStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (videoRef.current) { videoRef.current.onerror = null; videoRef.current.srcObject = null; } setVideoStream(null); setIsCameraLoading(true); setCameraError(null); setVideoDimensions({ width: 0, height: 0 }); }; }, [faceLandmarker]);
@@ -72,24 +86,7 @@ const RealTimeMirror = forwardRef(({
   // console.log("RealTimeMirror: Render() Check...", shouldRenderTryOnBase);
 
   // --- JSX ---
-  return (
-    <div className="border p-4 rounded bg-blue-50 relative">
-       <h2 className="text-xl font-semibold mb-2 text-center">Real-Time Mirror Mode</h2>
-       {(isCameraLoading && !cameraError) && <p className="text-center py-4">Initializing Camera & AI...</p>}
-       {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
-      {/* Container for Layered Canvases */}
-      <div className="relative w-full max-w-md mx-auto bg-gray-700" style={{ aspectRatio: `${videoDimensions.width || 16}/${videoDimensions.height || 9}`, overflow: 'hidden' }}>
-          <video ref={videoRef} autoPlay playsInline muted className="absolute top-0 left-0 w-[1px] h-[1px] opacity-5 -z-10" />
-          {/* Base WebGL Canvas */}
-          {shouldRenderTryOnBase && ( <TryOnRenderer ref={webglCanvasRef} videoRefProp={videoRef} imageElement={null} isStatic={false} className="absolute top-0 left-0 w-full h-full z-0" style={{ objectFit: 'cover' }} /> )}
-          {/* Overlay 2D Canvas */}
-           <canvas ref={overlayCanvasRef} className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none" style={{ objectFit: 'cover' }} />
-           {/* Fallback UI */}
-           {isCameraLoading && !cameraError && ( <div className="absolute inset-0 flex items-center justify-center bg-gray-200 z-20"><p className="text-gray-500">Initializing...</p></div> )}
-      </div>
-      {/* AI Model Status */}
-    </div>
-  );
+  return ( <div className="border p-4 rounded bg-blue-50 relative"> <h2 className="text-xl font-semibold mb-2 text-center">Real-Time Mirror Mode</h2> {(isCameraLoading && !cameraError) && <p className="text-center py-4">Initializing Camera & AI...</p>} {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>} <div className="relative w-full max-w-md mx-auto bg-gray-700" style={{ aspectRatio: `${videoDimensions.width || 16}/${videoDimensions.height || 9}`, overflow: 'hidden' }}> <video ref={videoRef} autoPlay playsInline muted className="absolute top-0 left-0 w-[1px] h-[1px] opacity-5 -z-10" /> {shouldRenderTryOnBase && ( <TryOnRenderer ref={webglCanvasRef} videoRefProp={videoRef} imageElement={null} isStatic={false} className="absolute top-0 left-0 w-full h-full z-0" style={{ objectFit: 'cover' }} /> )} <canvas ref={overlayCanvasRef} className="absolute top-0 left-0 w-full h-full z-10 pointer-events-none" style={{ objectFit: 'cover' }} /> {isCameraLoading && !cameraError && ( <div className="absolute inset-0 flex items-center justify-center bg-gray-200 z-20"><p className="text-gray-500">Initializing...</p></div> )} </div> </div> );
 });
 RealTimeMirror.displayName = 'RealTimeMirror';
 export default RealTimeMirror;
