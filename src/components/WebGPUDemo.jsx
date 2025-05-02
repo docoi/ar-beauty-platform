@@ -1,9 +1,8 @@
 // File: src/components/WebGPUDemo.jsx
 
 import { useEffect, useRef } from 'react';
-import initWebGPU from '../utils/initWebGPU.js';
-import createPipeline from '../utils/createPipeline.js';
-
+import initWebGPU from '@utils/initWebGPU.js';
+import createPipeline from '@utils/createPipeline.js';
 
 export default function WebGPUDemo() {
   const canvasRef = useRef(null);
@@ -55,12 +54,12 @@ export default function WebGPUDemo() {
         passEncoder.setBindGroup(0, bindGroup);
         passEncoder.draw(6, 1, 0, 0);
         passEncoder.end();
-
         device.queue.submit([commandEncoder.finish()]);
+
         requestAnimationFrame(frame);
       }
 
-      requestAnimationFrame(frame);
+      frame();
     });
   }, []);
 
