@@ -1,4 +1,5 @@
 // File: src/components/WebGPUDemo.jsx
+import shaderCode from './shaders/basicEffect.wgsl?raw';
 import { useEffect, useRef } from 'react';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
