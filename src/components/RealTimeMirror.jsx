@@ -1,15 +1,17 @@
-// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Blue Lipstick Effect) - Corrected JSX
+// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick Effect)
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
 
-// Define LIP landmark indices (Outer Lips)
+// Define LIP landmark indices (Outer Lips - from MediaPipe Docs/Visualizer)
 const LIP_OUTLINE_INDICES = [ 61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185 ];
+// Example: Inner lip indices if needed later for subtraction/hole punching
+// const INNER_LIP_INDICES = [ 78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191 ];
 
 const RealTimeMirror = forwardRef(({
   faceLandmarker,
   imageSegmenter,
-  effectIntensity // <<< Currently unused by lipstick effect
+  effectIntensity // <<< Can be repurposed for opacity or gloss later
 }, ref) => {
   const videoRef = useRef(null);
   const webglCanvasRef = useRef(null);
@@ -20,23 +22,44 @@ const RealTimeMirror = forwardRef(({
   const [isCameraLoading, setIsCameraLoading] = useState(true);
   const [cameraError, setCameraError] = useState(null);
   const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
-  // No results state needed
 
   // --- Canvas Drawing Function (Lipstick) ---
   const drawOverlay = useCallback((landmarks, segmentationMask) => {
-    const overlayCanvas = overlayCanvasRef.current; const video = videoRef.current; if (!overlayCanvas || !video || !videoDimensions.width || !videoDimensions.height) return; const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = videoDimensions.width; const canvasHeight = videoDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight); ctx.save(); ctx.scale(-1, 1); ctx.translate(-canvasWidth, 0); // Mirror context
+    const overlayCanvas = overlayCanvasRef.current;
+    const video = videoRef.current;
+    if (!overlayCanvas || !video || !videoDimensions.width || !videoDimensions.height) return;
+    const ctx = overlayCanvas.getContext('2d');
+    if (!ctx) return;
+    const canvasWidth = videoDimensions.width;
+    const canvasHeight = videoDimensions.height;
+    if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) {
+        overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight;
+    }
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.save(); ctx.scale(-1, 1); ctx.translate(-canvasWidth, 0); // Mirror context
     try {
-        const facePoints = landmarks?.faceLandmarks?.[0]; if (facePoints && facePoints.length > 0) {
-            ctx.beginPath(); LIP_OUTLINE_INDICES.forEach((index, i) => { if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } } else { console.warn(`Lip index ${index} out of bounds`); } }); ctx.closePath();
-            ctx.fillStyle = "#0000FF"; ctx.fill(); // Blue Lipstick
+        const facePoints = landmarks?.faceLandmarks?.[0];
+        // Draw Lipstick using Outer Lip Contour
+        if (facePoints && facePoints.length > 0) {
+            ctx.beginPath();
+            LIP_OUTLINE_INDICES.forEach((index, i) => {
+                if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } }
+                else { console.warn(`Lip index ${index} out of bounds`); }
+            });
+            ctx.closePath();
+            ctx.fillStyle = "#0000FF"; // Bright Blue Lipstick Color
+            // Set alpha based on intensity? Example:
+            // ctx.globalAlpha = Math.max(0.1, effectIntensity); // Ensure minimum visibility if using alpha
+            ctx.fill();
+            // ctx.globalAlpha = 1.0; // Reset alpha if changed
         }
-    } catch (error) { console.error("Error during overlay drawing:", error); } finally { ctx.restore(); } // Restore mirror transform
-  }, [effectIntensity, videoDimensions]); // effectIntensity kept if needed later
-
+    } catch (error) { console.error("Error during overlay drawing:", error); }
+    finally { ctx.restore(); } // Restore mirror transform
+  // Using effectIntensity here allows slider to control opacity/effect later
+  }, [effectIntensity, videoDimensions]);
 
   // --- Camera Access Effect (Polling) ---
-  useEffect(() => { let isMounted = true; let stream = null; let checkReadyFrameId = null; const checkVideoReady = () => { if (!isMounted || !videoRef.current) return; const video = videoRef.current; const readyState = video.readyState; const width = video.videoWidth; const height = video.videoHeight; const hasDimensions = width > 0 && height > 0; const isReady = readyState >= 2 && hasDimensions; if (isReady) { console.log(`<<<< RealTimeMirror: Video Ready via Polling! State=${readyState}, Dims=${width}x${height} >>>>`); setVideoDimensions({ width, height }); setIsCameraLoading(false); setCameraError(null); cancelAnimationFrame(checkReadyRafRef.current); checkReadyRafRef.current = null; } else { if (isMounted) { checkReadyFrameId = requestAnimationFrame(checkVideoReady); checkReadyRafRef.current = checkReadyFrameId; } } }; const enableStream = async () => { console.log("RealTimeMirror: enableStream called."); if (!faceLandmarker) { if (isMounted) { setCameraError("AI models initializing..."); setIsCameraLoading(false); } return; } if (!navigator.mediaDevices?.getUserMedia) { if (isMounted) { setCameraError("getUserMedia not supported."); setIsCameraLoading(false); } return; } console.log("RealTimeMirror: Setting camera STARTING state..."); setIsCameraLoading(true); setCameraError(null); setVideoStream(null); setVideoDimensions({ width: 0, height: 0 }); cancelAnimationFrame(checkReadyRafRef.current); try { console.log("RealTimeMirror: Calling getUserMedia..."); stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); console.log("RealTimeMirror: getUserMedia SUCCESS."); if (isMounted && videoRef.current) { console.log("RealTimeMirror: Assigning stream to video element."); videoRef.current.srcObject = stream; setVideoStream(stream); videoRef.current.onloadedmetadata = null; videoRef.current.onloadeddata = null; videoRef.current.oncanplay = null; videoRef.current.onplaying = null; videoRef.current.onerror = (e) => { if(isMounted) { console.error("Video Error:", e); setCameraError("Video element error."); setIsCameraLoading(false); cancelAnimationFrame(checkReadyRafRef.current); } }; console.log("RealTimeMirror: Starting readiness polling..."); checkReadyFrameId = requestAnimationFrame(checkVideoReady); checkReadyRafRef.current = checkReadyFrameId; console.log("RealTimeMirror: Attempting videoRef.current.play()..."); videoRef.current.play().catch(err => { console.warn("RealTimeMirror: video.play() failed:", err); }); } else { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { console.error("RealTimeMirror: enableStream Error:", err); if (isMounted) { setCameraError("Failed to access camera."); setIsCameraLoading(false); } } }; enableStream(); return () => { isMounted = false; console.log("RealTimeMirror: Camera useEffect - Cleaning up."); cancelAnimationFrame(checkReadyRafRef.current); cancelAnimationFrame(animationFrameRef.current?.rafId); const currentStream = videoStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (videoRef.current) { videoRef.current.onerror = null; videoRef.current.srcObject = null; } setVideoStream(null); setIsCameraLoading(true); setCameraError(null); setVideoDimensions({ width: 0, height: 0 }); }; }, [faceLandmarker]);
-
+  useEffect(() => { let isMounted = true; let stream = null; let checkReadyFrameId = null; const checkVideoReady = () => { if (!isMounted || !videoRef.current) return; const video = videoRef.current; const readyState = video.readyState; const width = video.videoWidth; const height = video.videoHeight; const hasDimensions = width > 0 && height > 0; const isReady = readyState >= 2 && hasDimensions; if (isReady) { console.log(`<<<< RealTimeMirror: Video Ready via Polling! State=${readyState}, Dims=${width}x${height} >>>>`); setVideoDimensions({ width, height }); setIsCameraLoading(false); setCameraError(null); cancelAnimationFrame(checkReadyRafRef.current); checkReadyRafRef.current = null; } else { if (isMounted) { checkReadyFrameId = requestAnimationFrame(checkVideoReady); checkReadyRafRef.current = checkReadyFrameId; } } }; const enableStream = async () => { if (!faceLandmarker) { if (isMounted) { setCameraError("AI models initializing..."); setIsCameraLoading(false); } return; } if (!navigator.mediaDevices?.getUserMedia) { if (isMounted) { setCameraError("getUserMedia not supported."); setIsCameraLoading(false); } return; } setIsCameraLoading(true); setCameraError(null); setVideoStream(null); setVideoDimensions({ width: 0, height: 0 }); cancelAnimationFrame(checkReadyRafRef.current); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && videoRef.current) { videoRef.current.srcObject = stream; setVideoStream(stream); videoRef.current.onloadedmetadata = null; videoRef.current.onloadeddata = null; videoRef.current.oncanplay = null; videoRef.current.onplaying = null; videoRef.current.onerror = (e) => { if(isMounted) { console.error("Video Error:", e); setCameraError("Video element error."); setIsCameraLoading(false); cancelAnimationFrame(checkReadyRafRef.current); } }; checkReadyFrameId = requestAnimationFrame(checkVideoReady); checkReadyRafRef.current = checkReadyFrameId; videoRef.current.play().catch(err => { console.warn("video.play() failed:", err); }); } else { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { console.error("enableStream Error:", err); if (isMounted) { setCameraError("Failed to access camera."); setIsCameraLoading(false); } } }; enableStream(); return () => { isMounted = false; cancelAnimationFrame(checkReadyRafRef.current); cancelAnimationFrame(animationFrameRef.current?.rafId); const currentStream = videoStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (videoRef.current) { videoRef.current.onerror = null; videoRef.current.srcObject = null; } setVideoStream(null); setIsCameraLoading(true); setCameraError(null); setVideoDimensions({ width: 0, height: 0 }); }; }, [faceLandmarker]);
 
   // --- Prediction & Drawing Loop ---
   const predictionDrawLoop = useCallback(() => { animationFrameRef.current.rafId = requestAnimationFrame(predictionDrawLoop); animationFrameRef.current.count++; if (isCameraLoading || cameraError || !videoRef.current || !faceLandmarker || !imageSegmenter) { return; } const video = videoRef.current; const startTime = performance.now(); try { const landmarkResults = faceLandmarker.detectForVideo(video, startTime); const segmentationResults = imageSegmenter.segmentForVideo(video, startTime); drawOverlay(landmarkResults, segmentationResults); } catch (error) { console.error(`Prediction/Draw Error:`, error); } }, [faceLandmarker, imageSegmenter, isCameraLoading, cameraError, drawOverlay]);
@@ -48,7 +71,7 @@ const RealTimeMirror = forwardRef(({
   const shouldRenderTryOnBase = !isCameraLoading && !cameraError;
   // console.log("RealTimeMirror: Render() Check...", shouldRenderTryOnBase);
 
-  // --- JSX --- (Restored)
+  // --- JSX ---
   return (
     <div className="border p-4 rounded bg-blue-50 relative">
        <h2 className="text-xl font-semibold mb-2 text-center">Real-Time Mirror Mode</h2>
@@ -67,7 +90,6 @@ const RealTimeMirror = forwardRef(({
       {/* AI Model Status */}
     </div>
   );
-  // ******************
-}); // Closing brace and parenthesis for forwardRef
+});
 RealTimeMirror.displayName = 'RealTimeMirror';
 export default RealTimeMirror;

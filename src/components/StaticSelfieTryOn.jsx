@@ -1,4 +1,4 @@
-// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Blue Lipstick Effect) - Corrected Syntax
+// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Blue Lipstick Effect)
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -12,83 +12,41 @@ const StaticSelfieTryOn = forwardRef(({
     effectIntensity // <<< Currently unused by lipstick effect
 }, ref) => {
   // State
-  const [isPreviewing, setIsPreviewing] = useState(true);
-  const [cameraStream, setCameraStream] = useState(null);
-  const [isCameraLoading, setIsCameraLoading] = useState(true);
-  const [cameraError, setCameraError] = useState(null);
-  const [capturedSelfieDataUrl, setCapturedSelfieDataUrl] = useState(null);
-  const [detectedLandmarkResults, setDetectedLandmarkResults] = useState(null);
-  const [detectedSegmentationResults, setDetectedSegmentationResults] = useState(null); // Keep state even if unused
-  const [selfieDimensions, setSelfieDimensions] = useState({ width: 0, height: 0 });
-  const [isDetecting, setIsDetecting] = useState(false);
-  const [debugInfo, setDebugInfo] = useState('');
-  const [staticImageElement, setStaticImageElement] = useState(null);
-
+  const [isPreviewing, setIsPreviewing] = useState(true); const [cameraStream, setCameraStream] = useState(null); const [isCameraLoading, setIsCameraLoading] = useState(true); const [cameraError, setCameraError] = useState(null); const [capturedSelfieDataUrl, setCapturedSelfieDataUrl] = useState(null); const [detectedLandmarkResults, setDetectedLandmarkResults] = useState(null); const [detectedSegmentationResults, setDetectedSegmentationResults] = useState(null); const [selfieDimensions, setSelfieDimensions] = useState({ width: 0, height: 0 }); const [isDetecting, setIsDetecting] = useState(false); const [debugInfo, setDebugInfo] = useState(''); const [staticImageElement, setStaticImageElement] = useState(null);
   // Refs
-  const selfieVideoRef = useRef(null);
-  const webglCanvasRef = useRef(null);
-  const overlayCanvasRef = useRef(null);
+  const selfieVideoRef = useRef(null); const webglCanvasRef = useRef(null); const overlayCanvasRef = useRef(null);
 
   // Camera Access Effect
-  useEffect(() => {
-    let isMounted = true; let stream = null;
-    const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { if (isMounted) { let message = "Camera Error."; setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } };
-    if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; } setCameraStream(null); }
-    return () => { isMounted = false; const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); };
-   }, [isPreviewing, faceLandmarker]);
+  useEffect(() => { let isMounted = true; let stream = null; const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { if (isMounted) { let message = "Camera Error."; setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } }; if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; } setCameraStream(null); } return () => { isMounted = false; const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); }; }, [isPreviewing, faceLandmarker]);
 
   // Selfie Capture
-  const handleTakeSelfie = useCallback(() => {
-    if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; }
-    if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; }
-    setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png');
-    setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setDebugInfo('Capture complete. Loading image...');
-    cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; }
-   }, [cameraStream, selfieDimensions]);
+  const handleTakeSelfie = useCallback(() => { if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; } if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; } setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png'); setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setDebugInfo('Capture complete. Loading image...'); cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; } }, [cameraStream, selfieDimensions]);
 
   // Image Loading and AI Detection Effect
-  useEffect(() => {
-    if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; }
-    console.log("StaticSelfieTryOn: Loading image for detection/segmentation..."); setIsDetecting(true); setDebugInfo('Loading captured image...'); const imageElement = new Image();
-    imageElement.onload = () => {
-      console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); setStaticImageElement(imageElement); setDebugInfo('Image loaded, running AI...');
-      try {
-        if (faceLandmarker && imageSegmenter) {
-          console.log("StaticSelfieTryOn: Running detectForVideo() and segmentForVideo()..."); const startTime = performance.now();
-          const landmarkResults = faceLandmarker.detectForVideo(imageElement, startTime); const segmentationResults = imageSegmenter.segmentForVideo(imageElement, startTime);
-          const endTime = performance.now(); console.log(`StaticSelfieTryOn: AI Processing took ${endTime - startTime}ms`);
-          setDetectedLandmarkResults(landmarkResults); setDetectedSegmentationResults(segmentationResults); setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks found.`);
-        } else { setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo('AI models not ready for analysis.'); }
-      } catch(err) { console.error("StaticSelfieTryOn: Error during AI processing:", err); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo(`AI Error: ${err.message}`); }
-      finally { setIsDetecting(false); }
-    };
-    imageElement.onerror = () => { console.error("StaticSelfieTryOn: imageElement.onerror triggered."); setDebugInfo('Error: Failed to load captured image.'); setStaticImageElement(null); setIsDetecting(false); }; imageElement.src = capturedSelfieDataUrl;
-    return () => { imageElement.onload = null; imageElement.onerror = null; imageElement.src = ''; };
-  }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
+  useEffect(() => { if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; } console.log("StaticSelfieTryOn: Loading image..."); setIsDetecting(true); setDebugInfo('Loading image...'); const imageElement = new Image(); imageElement.onload = () => { console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); setStaticImageElement(imageElement); setDebugInfo('Running AI...'); try { if (faceLandmarker && imageSegmenter) { const startTime = performance.now(); const landmarkResults = faceLandmarker.detectForVideo(imageElement, startTime); const segmentationResults = imageSegmenter.segmentForVideo(imageElement, startTime); const endTime = performance.now(); console.log(`StaticSelfieTryOn: AI took ${endTime - startTime}ms`); setDetectedLandmarkResults(landmarkResults); setDetectedSegmentationResults(segmentationResults); setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks.`); } else { setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo('AI models not ready.'); } } catch(err) { console.error("AI Error:", err); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo(`AI Error: ${err.message}`); } finally { setIsDetecting(false); } }; imageElement.onerror = () => { console.error("Image load error."); setDebugInfo('Error loading image.'); setStaticImageElement(null); setIsDetecting(false); }; imageElement.src = capturedSelfieDataUrl; return () => { imageElement.onload = null; imageElement.onerror = null; imageElement.src = ''; }; }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
 
 
   // --- Canvas Drawing Function for Static Selfie (Blue Lipstick) ---
   const drawStaticOverlay = useCallback(() => {
     const overlayCanvas = overlayCanvasRef.current; const image = staticImageElement; const landmarks = detectedLandmarkResults;
     if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) { if(overlayCanvas) { const ctx = overlayCanvas.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height); } return; }
-    const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height;
-    if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
     try {
         const facePoints = landmarks.faceLandmarks[0];
+        // Draw Lipstick
         if (facePoints.length > 0) {
-            // Draw Lipstick
             ctx.beginPath();
             LIP_OUTLINE_INDICES.forEach((index, i) => {
                  if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } }
-                 else { console.warn(`Lip index ${index} out of bounds (landmarks length: ${facePoints.length})`); }
+                 else { console.warn(`Lip index ${index} out of bounds`); }
             });
             ctx.closePath();
-            ctx.fillStyle = "#0000FF"; // Bright Blue
+            ctx.fillStyle = "#0000FF"; // Bright Blue Lipstick Color
             ctx.fill();
         }
     } catch (error) { console.error("Error during static overlay drawing:", error); }
-  // Dependencies - remove effectIntensity if not used
-  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]); // Removed effectIntensity
+  // Dependencies
+  }, [staticImageElement, detectedLandmarkResults, effectIntensity, selfieDimensions]); // effectIntensity not strictly needed now but harmless
 
   // Effect to Trigger Static Drawing
   useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);
@@ -96,7 +54,7 @@ const StaticSelfieTryOn = forwardRef(({
    // Retake Selfie
    const handleRetakeSelfie = useCallback(() => { setIsPreviewing(true); setCapturedSelfieDataUrl(null); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setSelfieDimensions({ width: 0, height: 0 }); setCameraError(null); setIsCameraLoading(true); setIsDetecting(false); setDebugInfo(''); if(overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, []);
 
-   // --- JSX --- (Restored Preview UI) ---
+   // --- JSX ---
    return (
     <div className="border p-4 rounded bg-green-50">
       <h2 className="text-xl font-semibold mb-2 text-center">Try On Selfie Mode</h2>
@@ -129,7 +87,8 @@ const StaticSelfieTryOn = forwardRef(({
       )}
       {(!faceLandmarker || !imageSegmenter) && <p className="text-red-500 mt-2 text-center">Initializing AI models...</p>}
     </div>
-  ); // Closing parenthesis for return
+  );
+  // **********************************
 }); // Closing brace and parenthesis for forwardRef
 
 StaticSelfieTryOn.displayName = 'StaticSelfieTryOn';
