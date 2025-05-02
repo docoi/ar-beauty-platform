@@ -1,11 +1,16 @@
-// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Precise Lipstick Effect)
+// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Precise Lipstick - Corrected Preview JSX)
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
 
-// Define LIP landmark indices
-const LIP_OUTLINE_INDICES = [ 61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185 ];
-const INNER_LIP_INDICES = [ 78, 95, 88, 178, 87, 14, 317, 402, 318, 324, 308, 415, 310, 311, 312, 13, 82, 81, 80, 191 ];
+// Define LIP landmark indices (DETAILED SET - Same as Mirror)
+const LIP_OUTLINE_UPPER_INDICES = [ 61, 185, 40, 39, 37, 0, 267, 269, 270, 409 ];
+const LIP_OUTLINE_LOWER_INDICES = [ 291, 375, 321, 405, 314, 17, 84, 181, 91, 146 ];
+const INNER_LIP_UPPER_INDICES = [ 78, 191, 80, 81, 82, 13, 312, 311, 310, 415 ];
+const INNER_LIP_LOWER_INDICES = [ 308, 324, 318, 402, 317, 14, 87, 178, 88, 95 ];
+const DETAILED_LIP_OUTER_INDICES = [ ...LIP_OUTLINE_UPPER_INDICES, ...LIP_OUTLINE_LOWER_INDICES.slice().reverse() ];
+const DETAILED_LIP_INNER_INDICES = [ ...INNER_LIP_UPPER_INDICES, ...INNER_LIP_LOWER_INDICES.slice().reverse() ];
+
 
 const StaticSelfieTryOn = forwardRef(({
     faceLandmarker,
@@ -18,33 +23,28 @@ const StaticSelfieTryOn = forwardRef(({
   const selfieVideoRef = useRef(null); const webglCanvasRef = useRef(null); const overlayCanvasRef = useRef(null);
 
   // Camera Access Effect
-  useEffect(() => { /* ... (No change) ... */ }, [isPreviewing, faceLandmarker]);
-  // Selfie Capture
-  const handleTakeSelfie = useCallback(() => { /* ... (No change) ... */ }, [cameraStream, selfieDimensions]);
-  // Image Loading and AI Detection Effect
-  useEffect(() => { /* ... (No change) ... */ }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
+  useEffect(() => { let isMounted = true; let stream = null; const enableStream = async () => { if (!isPreviewing || !faceLandmarker || !navigator.mediaDevices?.getUserMedia) { if (isMounted) setIsCameraLoading(false); return; } setIsCameraLoading(true); setCameraError(null); setDebugInfo(''); try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }); if (isMounted && selfieVideoRef.current) { selfieVideoRef.current.srcObject = stream; setCameraStream(stream); selfieVideoRef.current.onloadedmetadata = () => { if (isMounted && selfieVideoRef.current) { setSelfieDimensions({ width: selfieVideoRef.current.videoWidth, height: selfieVideoRef.current.videoHeight }); setIsCameraLoading(false); } }; } else if (stream) { stream?.getTracks().forEach(track => track.stop()); } } catch (err) { if (isMounted) { let message = "Camera Error."; setCameraError(message); setIsCameraLoading(false); setDebugInfo(`Camera Error: ${message}`); } } }; if (isPreviewing) { enableStream(); } else { setIsCameraLoading(false); const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; } setCameraStream(null); } return () => { isMounted = false; const currentStream = cameraStream || stream; currentStream?.getTracks().forEach(track => track.stop()); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; selfieVideoRef.current.onloadedmetadata = null; } setCameraStream(null); }; }, [isPreviewing, faceLandmarker]);
 
-  // --- Canvas Drawing Function for Static Selfie (Precise Lipstick) ---
+  // Selfie Capture
+  const handleTakeSelfie = useCallback(() => { if (!selfieVideoRef.current || selfieVideoRef.current.readyState < 2) { setCameraError("Cam not ready."); setDebugInfo("Error: Cam not ready."); return; } if (!selfieDimensions.width || !selfieDimensions.height){ setCameraError("No dims."); setDebugInfo("Error: No camera dims."); return; } setDebugInfo("Capturing..."); const video = selfieVideoRef.current; const tempCanvas = document.createElement('canvas'); tempCanvas.width = selfieDimensions.width; tempCanvas.height = selfieDimensions.height; const ctx = tempCanvas.getContext('2d'); ctx.save(); ctx.scale(-1, 1); ctx.translate(-tempCanvas.width, 0); ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); ctx.restore(); const dataUrl = tempCanvas.toDataURL('image/png'); setCapturedSelfieDataUrl(dataUrl); setIsPreviewing(false); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setDebugInfo('Capture complete. Loading image...'); cameraStream?.getTracks().forEach(track => track.stop()); setCameraStream(null); if (selfieVideoRef.current) { selfieVideoRef.current.srcObject = null; } }, [cameraStream, selfieDimensions]);
+
+  // Image Loading and AI Detection Effect
+  useEffect(() => { if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; } console.log("StaticSelfieTryOn: Loading image..."); setIsDetecting(true); setDebugInfo('Loading image...'); const imageElement = new Image(); imageElement.onload = () => { console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); setStaticImageElement(imageElement); setDebugInfo('Running AI...'); try { if (faceLandmarker && imageSegmenter) { const startTime = performance.now(); const landmarkResults = faceLandmarker.detectForVideo(imageElement, startTime); const segmentationResults = imageSegmenter.segmentForVideo(imageElement, startTime); const endTime = performance.now(); console.log(`StaticSelfieTryOn: AI took ${endTime - startTime}ms`); setDetectedLandmarkResults(landmarkResults); setDetectedSegmentationResults(segmentationResults); setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks.`); } else { setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo('AI models not ready.'); } } catch(err) { console.error("AI Error:", err); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo(`AI Error: ${err.message}`); } finally { setIsDetecting(false); } }; imageElement.onerror = () => { console.error("Image load error."); setDebugInfo('Error loading image.'); setStaticImageElement(null); setIsDetecting(false); }; imageElement.src = capturedSelfieDataUrl; return () => { imageElement.onload = null; imageElement.onerror = null; imageElement.src = ''; }; }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
+
+  // --- Canvas Drawing Function for Static Selfie (Precise Lipstick - Detailed Indices) ---
   const drawStaticOverlay = useCallback(() => {
     const overlayCanvas = overlayCanvasRef.current; const image = staticImageElement; const landmarks = detectedLandmarkResults;
     if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) { if(overlayCanvas) { const ctx = overlayCanvas.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height); } return; }
     const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-    // No context mirroring needed
     try {
         const facePoints = landmarks.faceLandmarks[0];
         if (facePoints.length > 0) {
-             ctx.fillStyle = "#0000FF"; // Bright Blue Lipstick Color
-             ctx.beginPath();
+             ctx.fillStyle = "#0000FF"; ctx.beginPath();
              // Draw Outer Lip Path
-             LIP_OUTLINE_INDICES.forEach((index, i) => { if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } } });
-             ctx.closePath();
+             DETAILED_LIP_OUTER_INDICES.forEach((index, i) => { if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } } }); ctx.closePath();
              // Draw Inner Lip Path (Reverse Order)
-             const innerLastIndex = INNER_LIP_INDICES[INNER_LIP_INDICES.length - 1];
-             if (innerLastIndex < facePoints.length) { ctx.moveTo(facePoints[innerLastIndex].x * canvasWidth, facePoints[innerLastIndex].y * canvasHeight); }
-             for (let i = INNER_LIP_INDICES.length - 2; i >= 0; i--) { const index = INNER_LIP_INDICES[i]; if (index < facePoints.length) { const point = facePoints[index]; ctx.lineTo(point.x * canvasWidth, point.y * canvasHeight); } }
-             ctx.closePath();
-             // Fill using even-odd rule
-             ctx.fill('evenodd');
+             const innerLastIndex = DETAILED_LIP_INNER_INDICES[DETAILED_LIP_INNER_INDICES.length - 1]; if (innerLastIndex < facePoints.length) { ctx.moveTo(facePoints[innerLastIndex].x * canvasWidth, facePoints[innerLastIndex].y * canvasHeight); } for (let i = DETAILED_LIP_INNER_INDICES.length - 2; i >= 0; i--) { const index = DETAILED_LIP_INNER_INDICES[i]; if (index < facePoints.length) { const point = facePoints[index]; ctx.lineTo(point.x * canvasWidth, point.y * canvasHeight); } } ctx.closePath();
+             ctx.fill('evenodd'); // Fill the shape
         }
     } catch (error) { console.error("Error during static overlay drawing:", error); }
   }, [staticImageElement, detectedLandmarkResults, selfieDimensions]); // Removed effectIntensity
@@ -53,15 +53,29 @@ const StaticSelfieTryOn = forwardRef(({
   useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);
 
    // Retake Selfie
-   const handleRetakeSelfie = useCallback(() => { /* ... (No change) ... */ }, []);
+   const handleRetakeSelfie = useCallback(() => { setIsPreviewing(true); setCapturedSelfieDataUrl(null); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setSelfieDimensions({ width: 0, height: 0 }); setCameraError(null); setIsCameraLoading(true); setIsDetecting(false); setDebugInfo(''); if(overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, []);
 
-   // --- JSX ---
+   // --- JSX --- (RESTORED Preview UI) ---
    return (
     <div className="border p-4 rounded bg-green-50">
       <h2 className="text-xl font-semibold mb-2 text-center">Try On Selfie Mode</h2>
-      {isPreviewing ? ( // Preview UI block
-         <> /* ... (Preview UI - No changes) ... */ </>
-      ) : ( // Captured UI block
+      {isPreviewing ? ( // *** RESTORED PREVIEW UI BLOCK ***
+         <>
+            {isCameraLoading && <p className="text-center py-4">Starting camera...</p>}
+            {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
+            {/* Container for aspect ratio */}
+            <div className="relative w-full max-w-md mx-auto aspect-[9/16] bg-gray-200 overflow-hidden rounded shadow">
+               {/* Live video preview */}
+               <video ref={selfieVideoRef} autoPlay playsInline muted className={`absolute top-0 left-0 w-full h-full ${isCameraLoading || cameraError ? 'opacity-0' : 'opacity-100'}`} style={{ transform: 'scaleX(-1)', transition: 'opacity 0.3s', objectFit: 'cover' }}></video>
+               {/* Loading/Error overlay */}
+               {(isCameraLoading || cameraError) && ( <div className="absolute inset-0 flex items-center justify-center"><p className="text-gray-500 bg-white px-2 py-1 rounded shadow">{cameraError ? 'Error' : 'Loading...'}</p></div> )}
+            </div>
+            {/* Capture button */}
+            <div className="text-center mt-4">
+               <button onClick={handleTakeSelfie} disabled={isCameraLoading || !!cameraError || !cameraStream} className="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed"> Take Selfie </button>
+            </div>
+         </> // *** END RESTORED BLOCK ***
+      ) : ( // Render Captured UI block
         <>
           {/* Container for Layered Canvases */}
           <div className="relative w-full max-w-md mx-auto bg-gray-700" style={{ paddingTop: `${selfieDimensions.height && selfieDimensions.width ? (selfieDimensions.height / selfieDimensions.width) * 100 : 75}%`, overflow: 'hidden' }} >
@@ -79,6 +93,7 @@ const StaticSelfieTryOn = forwardRef(({
       {(!faceLandmarker || !imageSegmenter) && <p className="text-red-500 mt-2 text-center">Initializing AI models...</p>}
     </div>
   );
+  // **********************************
 }); // Closing brace and parenthesis for forwardRef
 
 StaticSelfieTryOn.displayName = 'StaticSelfieTryOn';
