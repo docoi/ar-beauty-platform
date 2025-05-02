@@ -15,7 +15,7 @@ import ComingSoon from './pages/ComingSoon.jsx';
 import AvatarSwitcher from './pages/AvatarSwitcher.jsx';
 import HydrationSerumPage from './pages/hydration_serum';
 import VirtualTryOnPage from './pages/VirtualTryOnPage';
-import WebGPUDemo from './components/WebGPUDemo';
+import WebGPUDemo from './components/WebGPUDemo.jsx';
 
 
 
