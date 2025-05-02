@@ -1,9 +1,9 @@
-// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Precise Lipstick - Syntax Fix)
+// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick Effect via Clipping) - VERIFIED SYNTAX
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
 
-// Define LIP landmark indices (DETAILED SET - Same as Mirror)
+// Define LIP landmark indices (DETAILED SET)
 const LIP_OUTLINE_UPPER_INDICES = [ 61, 185, 40, 39, 37, 0, 267, 269, 270, 409 ];
 const LIP_OUTLINE_LOWER_INDICES = [ 291, 375, 321, 405, 314, 17, 84, 181, 91, 146 ];
 const INNER_LIP_UPPER_INDICES = [ 78, 191, 80, 81, 82, 13, 312, 311, 310, 415 ];
@@ -11,20 +11,12 @@ const INNER_LIP_LOWER_INDICES = [ 308, 324, 318, 402, 317, 14, 87, 178, 88, 95 ]
 const DETAILED_LIP_OUTER_INDICES = [ ...LIP_OUTLINE_UPPER_INDICES, ...LIP_OUTLINE_LOWER_INDICES.slice().reverse() ];
 const DETAILED_LIP_INNER_INDICES = [ ...INNER_LIP_UPPER_INDICES, ...INNER_LIP_LOWER_INDICES.slice().reverse() ];
 
-// Helper function to draw a smooth path through points
+// Helper function to draw a smooth path using quadratic curves
 const drawSmoothPath = (ctx, points, isClosed = true) => {
     if (!points || points.length < 2) return;
     ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 0; i < points.length - (isClosed ? 0 : 1); i++) {
-        const p0 = points[i]; const p1 = points[(i + 1) % points.length];
-        const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2;
-        ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY);
-    }
-    if (isClosed) {
-         const lastPoint = points[points.length - 1]; const firstPoint = points[0];
-         const midPointX = (lastPoint.x + firstPoint.x) / 2; const midPointY = (lastPoint.y + firstPoint.y) / 2;
-         ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, midPointX, midPointY);
-    }
+    for (let i = 0; i < points.length; i++) { const p0 = points[i]; const p1 = points[(i + 1) % points.length]; const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2; ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY); }
+    if (isClosed) ctx.closePath();
 };
 
 
@@ -46,22 +38,36 @@ const StaticSelfieTryOn = forwardRef(({
   useEffect(() => { if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; } console.log("StaticSelfieTryOn: Loading image..."); setIsDetecting(true); setDebugInfo('Loading image...'); const imageElement = new Image(); imageElement.onload = () => { console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); setStaticImageElement(imageElement); setDebugInfo('Running AI...'); try { if (faceLandmarker && imageSegmenter) { const startTime = performance.now(); const landmarkResults = faceLandmarker.detectForVideo(imageElement, startTime); const segmentationResults = imageSegmenter.segmentForVideo(imageElement, startTime); const endTime = performance.now(); console.log(`StaticSelfieTryOn: AI took ${endTime - startTime}ms`); setDetectedLandmarkResults(landmarkResults); setDetectedSegmentationResults(segmentationResults); setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks.`); } else { setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo('AI models not ready.'); } } catch(err) { console.error("AI Error:", err); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo(`AI Error: ${err.message}`); } finally { setIsDetecting(false); } }; imageElement.onerror = () => { console.error("Image load error."); setDebugInfo('Error loading image.'); setStaticImageElement(null); setIsDetecting(false); }; imageElement.src = capturedSelfieDataUrl; return () => { imageElement.onload = null; imageElement.onerror = null; imageElement.src = ''; }; }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
 
 
-  // --- Canvas Drawing Function for Static Selfie (Smooth Lipstick) ---
+  // --- Canvas Drawing Function for Static Selfie (Lipstick via Clipping) ---
   const drawStaticOverlay = useCallback(() => {
     const overlayCanvas = overlayCanvasRef.current; const image = staticImageElement; const landmarks = detectedLandmarkResults; if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) { if(overlayCanvas) { const ctx = overlayCanvas.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height); } return; } const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
     try {
         const facePoints = landmarks.faceLandmarks[0];
         if (facePoints.length > 0) {
-             ctx.fillStyle = "#0000FF"; ctx.beginPath();
+             ctx.fillStyle = "#0000FF"; // Bright Blue
+
+             // --- Draw Outer Lip Path and Fill ---
+             ctx.beginPath();
              const outerPoints = DETAILED_LIP_OUTER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
-             drawSmoothPath(ctx, outerPoints, true); // Draw smooth outer path
-             const innerPointsReverse = DETAILED_LIP_INNER_INDICES.slice().reverse().map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
-             if(innerPointsReverse.length > 0) { ctx.moveTo(innerPointsReverse[0].x, innerPointsReverse[0].y); drawSmoothPath(ctx, innerPointsReverse, true); } // Draw smooth inner path
-             ctx.fill('evenodd');
-        }
-    // <<< Corrected: Added closing brace for try block >>>
+             if (outerPoints.length > 2) {
+                drawSmoothPath(ctx, outerPoints, true);
+                ctx.fill(); // Fill outer shape
+
+                // --- Erase Inner Lip Area ---
+                ctx.save();
+                ctx.globalCompositeOperation = 'destination-out'; // Erase mode
+                ctx.beginPath();
+                const innerPoints = DETAILED_LIP_INNER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
+                if (innerPoints.length > 2) {
+                    drawSmoothPath(ctx, innerPoints, true);
+                    ctx.fill(); // Erase inner shape
+                }
+                ctx.restore(); // Restore composite operation
+             } // End outerPoints check
+        } // End facePoints check
     } catch (error) { console.error("Error during static overlay drawing:", error); }
-  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]);
+  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]); // Removed effectIntensity dependency
+
 
   // Effect to Trigger Static Drawing
   useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);
