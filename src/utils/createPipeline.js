@@ -1,5 +1,5 @@
 // File: src/utils/createPipeline.js
-import shaderCode from '../shaders/basicEffect.wgsl?raw'; // Adjust path if needed
+import shaderCode from '@shaders/basicEffect.wgsl?raw';
 
 export default async function createPipeline(device, format) {
   const shaderModule = device.createShaderModule({
