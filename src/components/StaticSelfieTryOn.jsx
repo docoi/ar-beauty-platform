@@ -1,4 +1,4 @@
-// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick via Clipping - STRAIGHT LINES + Style Reset)
+// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick via Clipping - Explicit Erase Fill)
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -9,9 +9,16 @@ const LIP_OUTLINE_LOWER_INDICES = [ 291, 375, 321, 405, 314, 17, 84, 181, 91, 14
 const INNER_LIP_UPPER_INDICES = [ 78, 191, 80, 81, 82, 13, 312, 311, 310, 415 ];
 const INNER_LIP_LOWER_INDICES = [ 308, 324, 318, 402, 317, 14, 87, 178, 88, 95 ];
 const DETAILED_LIP_OUTER_INDICES = [ ...LIP_OUTLINE_UPPER_INDICES, ...LIP_OUTLINE_LOWER_INDICES.slice().reverse() ];
-// Inner indices used directly now for lineTo
+const DETAILED_LIP_INNER_INDICES = [ ...INNER_LIP_UPPER_INDICES, ...INNER_LIP_LOWER_INDICES.slice().reverse() ];
 
-// REMOVED drawSmoothPath helper
+// Helper function to draw a smooth path using quadratic curves
+const drawSmoothPath = (ctx, points, isClosed = true) => {
+    if (!points || points.length < 2) return;
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 0; i < points.length; i++) { const p0 = points[i]; const p1 = points[(i + 1) % points.length]; const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2; ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY); }
+    if (isClosed) ctx.closePath();
+};
+
 
 const StaticSelfieTryOn = forwardRef(({
     faceLandmarker, imageSegmenter, effectIntensity // Unused for now
@@ -31,37 +38,39 @@ const StaticSelfieTryOn = forwardRef(({
   useEffect(() => { if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; } console.log("StaticSelfieTryOn: Loading image..."); setIsDetecting(true); setDebugInfo('Loading image...'); const imageElement = new Image(); imageElement.onload = () => { console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); setStaticImageElement(imageElement); setDebugInfo('Running AI...'); try { if (faceLandmarker && imageSegmenter) { const startTime = performance.now(); const landmarkResults = faceLandmarker.detectForVideo(imageElement, startTime); const segmentationResults = imageSegmenter.segmentForVideo(imageElement, startTime); const endTime = performance.now(); console.log(`StaticSelfieTryOn: AI took ${endTime - startTime}ms`); setDetectedLandmarkResults(landmarkResults); setDetectedSegmentationResults(segmentationResults); setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks.`); } else { setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo('AI models not ready.'); } } catch(err) { console.error("AI Error:", err); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo(`AI Error: ${err.message}`); } finally { setIsDetecting(false); } }; imageElement.onerror = () => { console.error("Image load error."); setDebugInfo('Error loading image.'); setStaticImageElement(null); setIsDetecting(false); }; imageElement.src = capturedSelfieDataUrl; return () => { imageElement.onload = null; imageElement.onerror = null; imageElement.src = ''; }; }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
 
 
-  // --- Canvas Drawing Function for Static Selfie (Lipstick via Clipping - STRAIGHT LINES + Style Reset) ---
+  // --- Canvas Drawing Function for Static Selfie (Lipstick via Clipping - Explicit Erase Fill) ---
   const drawStaticOverlay = useCallback(() => {
     const overlayCanvas = overlayCanvasRef.current; const image = staticImageElement; const landmarks = detectedLandmarkResults; if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) { if(overlayCanvas) { const ctx = overlayCanvas.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height); } return; } const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    // No context mirroring needed
     try {
         const facePoints = landmarks.faceLandmarks[0];
         if (facePoints.length > 0) {
              ctx.fillStyle = "#0000FF"; // Bright Blue
-             // --- Explicitly set line styles ---
-             ctx.lineCap = 'round';
+             ctx.lineCap = 'round'; // Prevent sharp corners during clipping
              ctx.lineJoin = 'round';
-             // ---
 
-             // --- Draw Outer Lip Path (Straight) and Fill ---
+             // --- Draw Outer Lip Path (Smooth) and Fill ---
              ctx.beginPath();
-             DETAILED_LIP_OUTER_INDICES.forEach((index, i) => { if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } } }); // USE lineTo
-             ctx.closePath();
-             ctx.fill(); // Fill outer shape
+             const outerPoints = DETAILED_LIP_OUTER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
+             if (outerPoints.length > 2) {
+                drawSmoothPath(ctx, outerPoints, true);
+                ctx.fill(); // Fill outer shape
 
-             // --- Erase Inner Lip Area using STRAIGHT LINES ---
-             ctx.save();
-             ctx.globalCompositeOperation = 'destination-out'; // Erase mode
-             ctx.beginPath();
-             INNER_LIP_UPPER_INDICES.forEach((index, i) => { if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } }); // USE lineTo
-             INNER_LIP_LOWER_INDICES.slice().reverse().forEach((index, i) => { if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; ctx.lineTo(x, y); } }); // USE lineTo
-             ctx.closePath(); // Close inner path
-             ctx.fill(); // Erase inner shape
-             ctx.restore(); // Restore composite operation
-             // --- End Erase Inner Lip ---
+                // --- Erase Inner Lip Area ---
+                ctx.save();
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.beginPath();
+                const innerPoints = DETAILED_LIP_INNER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
+                if (innerPoints.length > 2) {
+                    drawSmoothPath(ctx, innerPoints, true); // Can use smooth here too
+                    ctx.fillStyle = "#000000"; // Fill with *any* opaque color to erase
+                    ctx.fill(); // Erase inner shape
+                }
+                ctx.restore(); // Restore composite operation
+             }
         }
     } catch (error) { console.error("Error during static overlay drawing:", error); }
-  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]); // Removed effectIntensity
+  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]);
 
   // Effect to Trigger Static Drawing
   useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);
