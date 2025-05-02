@@ -11,8 +11,7 @@ const INNER_LIP_LOWER_INDICES = [ 308, 324, 318, 402, 317, 14, 87, 178, 88, 95 ]
 const DETAILED_LIP_OUTER_INDICES = [ ...LIP_OUTLINE_UPPER_INDICES, ...LIP_OUTLINE_LOWER_INDICES.slice().reverse() ];
 // Inner indices used directly now for lineTo
 
-// Helper function to draw a smooth path (for outer lips only)
-const drawSmoothPath = (ctx, points, isClosed = true) => { if (!points || points.length < 2) return; ctx.moveTo(points[0].x, points[0].y); for (let i = 0; i < points.length; i++) { const p0 = points[i]; const p1 = points[(i + 1) % points.length]; const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2; ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY); } if (isClosed) ctx.closePath(); };
+// REMOVED drawSmoothPath helper
 
 const StaticSelfieTryOn = forwardRef(({
     faceLandmarker, imageSegmenter, effectIntensity // Unused for now
@@ -40,28 +39,25 @@ const StaticSelfieTryOn = forwardRef(({
         if (facePoints.length > 0) {
              ctx.fillStyle = "#0000FF"; // Bright Blue
 
-             // --- Draw Outer Lip Path (Smooth) and Fill ---
+             // --- Draw Outer Lip Path (Straight) and Fill ---
              ctx.beginPath();
-             const outerPoints = DETAILED_LIP_OUTER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
-             if (outerPoints.length > 2) {
-                drawSmoothPath(ctx, outerPoints, true); // Use smooth path for outer
-                ctx.fill(); // Fill outer shape
+             DETAILED_LIP_OUTER_INDICES.forEach((index, i) => { if (index < facePoints.length) { const point = facePoints[index]; const x = point.x * canvasWidth; const y = point.y * canvasHeight; if (i === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); } } }); // USE lineTo
+             ctx.closePath();
+             ctx.fill(); // Fill outer shape
 
-                // --- Erase Inner Lip Area using STRAIGHT LINES ---
-                ctx.save();
-                ctx.globalCompositeOperation = 'destination-out'; // Erase mode
-                ctx.beginPath();
-                // Loop through inner indices using lineTo
-                INNER_LIP_UPPER_INDICES.forEach((index, i) => { if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } });
-                INNER_LIP_LOWER_INDICES.slice().reverse().forEach((index, i) => { if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; ctx.lineTo(x, y); } });
-                ctx.closePath(); // Close the inner path
-                ctx.fill(); // Fill inner path (erases)
-                ctx.restore(); // Restore composite operation
-                // --- End Erase Inner Lip ---
-             } // End outerPoints check
-        } // End facePoints check
+             // --- Erase Inner Lip Area using STRAIGHT LINES ---
+             ctx.save();
+             ctx.globalCompositeOperation = 'destination-out'; // Erase mode
+             ctx.beginPath();
+             INNER_LIP_UPPER_INDICES.forEach((index, i) => { if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } }); // USE lineTo
+             INNER_LIP_LOWER_INDICES.slice().reverse().forEach((index, i) => { if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; ctx.lineTo(x, y); } }); // USE lineTo
+             ctx.closePath(); // Close inner path
+             ctx.fill(); // Erase inner shape
+             ctx.restore(); // Restore composite operation
+             // --- End Erase Inner Lip ---
+        }
     } catch (error) { console.error("Error during static overlay drawing:", error); }
-  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]); // Removed effectIntensity
+  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]);
 
   // Effect to Trigger Static Drawing
   useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);
