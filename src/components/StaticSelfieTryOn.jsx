@@ -1,4 +1,4 @@
-// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick Effect via Clipping) - VERIFIED JSX
+// src/components/StaticSelfieTryOn.jsx - Layered Canvas Approach (Lipstick via Clipping - Straight Inner Line - VERIFIED SYNTAX & JSX)
 
 import React, { useState, useRef, useEffect, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -9,16 +9,10 @@ const LIP_OUTLINE_LOWER_INDICES = [ 291, 375, 321, 405, 314, 17, 84, 181, 91, 14
 const INNER_LIP_UPPER_INDICES = [ 78, 191, 80, 81, 82, 13, 312, 311, 310, 415 ];
 const INNER_LIP_LOWER_INDICES = [ 308, 324, 318, 402, 317, 14, 87, 178, 88, 95 ];
 const DETAILED_LIP_OUTER_INDICES = [ ...LIP_OUTLINE_UPPER_INDICES, ...LIP_OUTLINE_LOWER_INDICES.slice().reverse() ];
-const DETAILED_LIP_INNER_INDICES = [ ...INNER_LIP_UPPER_INDICES, ...INNER_LIP_LOWER_INDICES.slice().reverse() ];
+// Inner indices used directly now for lineTo
 
-// Helper function to draw a smooth path using quadratic curves
-const drawSmoothPath = (ctx, points, isClosed = true) => {
-    if (!points || points.length < 2) return;
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 0; i < points.length; i++) { const p0 = points[i]; const p1 = points[(i + 1) % points.length]; const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2; ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY); }
-    if (isClosed) ctx.closePath();
-};
-
+// Helper function to draw a smooth path (for outer lips only)
+const drawSmoothPath = (ctx, points, isClosed = true) => { if (!points || points.length < 2) return; ctx.moveTo(points[0].x, points[0].y); for (let i = 0; i < points.length; i++) { const p0 = points[i]; const p1 = points[(i + 1) % points.length]; const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2; ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY); } if (isClosed) ctx.closePath(); };
 
 const StaticSelfieTryOn = forwardRef(({
     faceLandmarker, imageSegmenter, effectIntensity // Unused for now
@@ -38,36 +32,36 @@ const StaticSelfieTryOn = forwardRef(({
   useEffect(() => { if (!capturedSelfieDataUrl || !faceLandmarker || !imageSegmenter) { if (staticImageElement) setStaticImageElement(null); if (isDetecting) setIsDetecting(false); return; } console.log("StaticSelfieTryOn: Loading image..."); setIsDetecting(true); setDebugInfo('Loading image...'); const imageElement = new Image(); imageElement.onload = () => { console.log("StaticSelfieTryOn: Image loaded."); setSelfieDimensions({width: imageElement.naturalWidth, height: imageElement.naturalHeight}); setStaticImageElement(imageElement); setDebugInfo('Running AI...'); try { if (faceLandmarker && imageSegmenter) { const startTime = performance.now(); const landmarkResults = faceLandmarker.detectForVideo(imageElement, startTime); const segmentationResults = imageSegmenter.segmentForVideo(imageElement, startTime); const endTime = performance.now(); console.log(`StaticSelfieTryOn: AI took ${endTime - startTime}ms`); setDetectedLandmarkResults(landmarkResults); setDetectedSegmentationResults(segmentationResults); setDebugInfo(`Analysis complete: ${landmarkResults?.faceLandmarks?.[0]?.length || 0} landmarks.`); } else { setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo('AI models not ready.'); } } catch(err) { console.error("AI Error:", err); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setDebugInfo(`AI Error: ${err.message}`); } finally { setIsDetecting(false); } }; imageElement.onerror = () => { console.error("Image load error."); setDebugInfo('Error loading image.'); setStaticImageElement(null); setIsDetecting(false); }; imageElement.src = capturedSelfieDataUrl; return () => { imageElement.onload = null; imageElement.onerror = null; imageElement.src = ''; }; }, [capturedSelfieDataUrl, faceLandmarker, imageSegmenter]);
 
 
-  // --- Canvas Drawing Function for Static Selfie (Lipstick via Clipping) ---
+  // --- Canvas Drawing Function for Static Selfie (Lipstick via Clipping - Straight Inner Line) ---
   const drawStaticOverlay = useCallback(() => {
     const overlayCanvas = overlayCanvasRef.current; const image = staticImageElement; const landmarks = detectedLandmarkResults; if (!overlayCanvas || !image || !landmarks?.faceLandmarks?.[0] || !selfieDimensions.width || !selfieDimensions.height) { if(overlayCanvas) { const ctx = overlayCanvas.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height); } return; } const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = selfieDimensions.width; const canvasHeight = selfieDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-    // No context mirroring needed
     try {
         const facePoints = landmarks.faceLandmarks[0];
         if (facePoints.length > 0) {
              ctx.fillStyle = "#0000FF"; // Bright Blue
 
-             // --- Draw Outer Lip Path and Fill ---
+             // --- Draw Outer Lip Path (Smooth) and Fill ---
              ctx.beginPath();
              const outerPoints = DETAILED_LIP_OUTER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
              if (outerPoints.length > 2) {
-                drawSmoothPath(ctx, outerPoints, true);
+                drawSmoothPath(ctx, outerPoints, true); // Use smooth path for outer
                 ctx.fill(); // Fill outer shape
 
-                // --- Erase Inner Lip Area ---
+                // --- Erase Inner Lip Area using STRAIGHT LINES ---
                 ctx.save();
                 ctx.globalCompositeOperation = 'destination-out'; // Erase mode
                 ctx.beginPath();
-                const innerPoints = DETAILED_LIP_INNER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
-                if (innerPoints.length > 2) {
-                    drawSmoothPath(ctx, innerPoints, true);
-                    ctx.fill(); // Erase inner shape
-                }
+                // Loop through inner indices using lineTo
+                INNER_LIP_UPPER_INDICES.forEach((index, i) => { if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } });
+                INNER_LIP_LOWER_INDICES.slice().reverse().forEach((index, i) => { if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; ctx.lineTo(x, y); } });
+                ctx.closePath(); // Close the inner path
+                ctx.fill(); // Fill inner path (erases)
                 ctx.restore(); // Restore composite operation
+                // --- End Erase Inner Lip ---
              } // End outerPoints check
         } // End facePoints check
     } catch (error) { console.error("Error during static overlay drawing:", error); }
-  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]); // Removed effectIntensity dependency
+  }, [staticImageElement, detectedLandmarkResults, selfieDimensions]);
 
   // Effect to Trigger Static Drawing
   useEffect(() => { if (!isPreviewing && staticImageElement && detectedLandmarkResults) { drawStaticOverlay(); } else if (!isPreviewing && overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if (ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, [isPreviewing, staticImageElement, detectedLandmarkResults, drawStaticOverlay]);
@@ -75,11 +69,11 @@ const StaticSelfieTryOn = forwardRef(({
    // Retake Selfie
    const handleRetakeSelfie = useCallback(() => { setIsPreviewing(true); setCapturedSelfieDataUrl(null); setDetectedLandmarkResults(null); setDetectedSegmentationResults(null); setStaticImageElement(null); setSelfieDimensions({ width: 0, height: 0 }); setCameraError(null); setIsCameraLoading(true); setIsDetecting(false); setDebugInfo(''); if(overlayCanvasRef.current) { const ctx = overlayCanvasRef.current.getContext('2d'); if(ctx) ctx.clearRect(0, 0, overlayCanvasRef.current.width, overlayCanvasRef.current.height); } }, []);
 
-   // --- JSX --- (VERIFIED Preview UI is included) ---
+   // --- JSX --- (VERIFIED COMPLETE)
    return (
     <div className="border p-4 rounded bg-green-50">
       <h2 className="text-xl font-semibold mb-2 text-center">Try On Selfie Mode</h2>
-      {isPreviewing ? ( // *** Preview UI block ***
+      {isPreviewing ? ( // Preview UI block
          <>
             {isCameraLoading && <p className="text-center py-4">Starting camera...</p>}
             {cameraError && <p className="text-red-500 text-center py-4">{cameraError}</p>}
@@ -90,7 +84,7 @@ const StaticSelfieTryOn = forwardRef(({
             <div className="text-center mt-4">
                <button onClick={handleTakeSelfie} disabled={isCameraLoading || !!cameraError || !cameraStream} className="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 disabled:bg-gray-400 disabled:cursor-not-allowed"> Take Selfie </button>
             </div>
-         </> // *** End Preview block ***
+         </> // End Preview block
       ) : ( // Captured UI block
         <>
           {/* Container for Layered Canvases */}
@@ -104,7 +98,7 @@ const StaticSelfieTryOn = forwardRef(({
            {/* Debug Info & Retake Button */}
            <div className="mt-2 p-2 border bg-gray-100 text-xs overflow-auto max-h-20 max-w-md mx-auto rounded"><p className="font-semibold mb-1">Debug Info:</p><pre className="whitespace-pre-wrap break-words">{debugInfo || 'N/A'}</pre></div>
            <div className="text-center mt-4"><button onClick={handleRetakeSelfie} className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Retake Selfie</button></div>
-        </> // *** End Captured block ***
+        </> // End Captured block
       )}
       {(!faceLandmarker || !imageSegmenter) && <p className="text-red-500 mt-2 text-center">Initializing AI models...</p>}
     </div>

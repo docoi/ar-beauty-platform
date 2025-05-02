@@ -1,4 +1,4 @@
-// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick Effect via Clipping) - VERIFIED JSX
+// src/components/RealTimeMirror.jsx - Layered Canvas Approach (Lipstick via Clipping - Straight Inner Line - VERIFIED SYNTAX & JSX)
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef } from 'react';
 import TryOnRenderer from './TryOnRenderer'; // The simplified WebGL base renderer
@@ -9,16 +9,15 @@ const LIP_OUTLINE_LOWER_INDICES = [ 291, 375, 321, 405, 314, 17, 84, 181, 91, 14
 const INNER_LIP_UPPER_INDICES = [ 78, 191, 80, 81, 82, 13, 312, 311, 310, 415 ];
 const INNER_LIP_LOWER_INDICES = [ 308, 324, 318, 402, 317, 14, 87, 178, 88, 95 ];
 const DETAILED_LIP_OUTER_INDICES = [ ...LIP_OUTLINE_UPPER_INDICES, ...LIP_OUTLINE_LOWER_INDICES.slice().reverse() ];
-const DETAILED_LIP_INNER_INDICES = [ ...INNER_LIP_UPPER_INDICES, ...INNER_LIP_LOWER_INDICES.slice().reverse() ];
+// Inner indices used directly now for lineTo
 
-// Helper function to draw a smooth path using quadratic curves
+// Helper function to draw a smooth path using quadratic curves (for outer lips)
 const drawSmoothPath = (ctx, points, isClosed = true) => {
     if (!points || points.length < 2) return;
     ctx.moveTo(points[0].x, points[0].y);
     for (let i = 0; i < points.length; i++) { const p0 = points[i]; const p1 = points[(i + 1) % points.length]; const midPointX = (p0.x + p1.x) / 2; const midPointY = (p0.y + p1.y) / 2; ctx.quadraticCurveTo(p0.x, p0.y, midPointX, midPointY); }
     if (isClosed) ctx.closePath();
 };
-
 
 const RealTimeMirror = forwardRef(({
   faceLandmarker, imageSegmenter, effectIntensity // Unused for now
@@ -33,7 +32,7 @@ const RealTimeMirror = forwardRef(({
   const [cameraError, setCameraError] = useState(null);
   const [videoDimensions, setVideoDimensions] = useState({ width: 0, height: 0 });
 
-  // --- Canvas Drawing Function (Lipstick via Clipping) ---
+  // --- Canvas Drawing Function (Lipstick via Clipping, Straight Inner Line) ---
   const drawOverlay = useCallback((landmarks, segmentationMask) => {
     const overlayCanvas = overlayCanvasRef.current; const video = videoRef.current; if (!overlayCanvas || !video || !videoDimensions.width || !videoDimensions.height) return; const ctx = overlayCanvas.getContext('2d'); if (!ctx) return; const canvasWidth = videoDimensions.width; const canvasHeight = videoDimensions.height; if (overlayCanvas.width !== canvasWidth || overlayCanvas.height !== canvasHeight) { overlayCanvas.width = canvasWidth; overlayCanvas.height = canvasHeight; } ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
@@ -45,22 +44,27 @@ const RealTimeMirror = forwardRef(({
         if (facePoints && facePoints.length > 0) {
             ctx.fillStyle = "#0000FF"; // Bright Blue
 
-            // --- Draw Outer Lip Path and Fill ---
+            // --- Draw Outer Lip Path (Smooth) and Fill ---
             ctx.beginPath();
             const outerPoints = DETAILED_LIP_OUTER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
             if (outerPoints.length > 2) {
-                drawSmoothPath(ctx, outerPoints, true);
+                drawSmoothPath(ctx, outerPoints, true); // Use smooth path for outer
                 ctx.fill(); // Fill the outer shape first
 
-                // --- Erase Inner Lip Area using Clipping ---
-                ctx.save(); // Save state before changing composite operation
-                ctx.globalCompositeOperation = 'destination-out'; // Set erase mode
+                // --- Erase Inner Lip Area using STRAIGHT LINES ---
+                ctx.save(); // Save before changing composite operation
+                ctx.globalCompositeOperation = 'destination-out'; // Erase mode
                 ctx.beginPath();
-                const innerPoints = DETAILED_LIP_INNER_INDICES.map(index => { if (index < facePoints.length) { const p = facePoints[index]; return { x: p.x * canvasWidth, y: p.y * canvasHeight }; } return null; }).filter(p => p !== null);
-                if (innerPoints.length > 2) {
-                    drawSmoothPath(ctx, innerPoints, true);
-                    ctx.fill(); // Fill the inner shape (which erases it due to composite op)
-                }
+                // Loop through upper inner indices using lineTo
+                INNER_LIP_UPPER_INDICES.forEach((index, i) => {
+                     if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+                });
+                // Loop through lower inner indices (reversed) using lineTo
+                INNER_LIP_LOWER_INDICES.slice().reverse().forEach((index, i) => { // Make sure to reverse lower list
+                    if (index < facePoints.length) { const p = facePoints[index]; const x = p.x * canvasWidth; const y = p.y * canvasHeight; ctx.lineTo(x, y); } // Just lineTo
+                });
+                ctx.closePath(); // Close the inner path
+                ctx.fill(); // Fill inner path (erases)
                 ctx.restore(); // Restore composite operation to default ('source-over')
                 // --- End Erase Inner Lip ---
             } // End outerPoints check
@@ -82,7 +86,7 @@ const RealTimeMirror = forwardRef(({
   // --- Determine if base WebGL renderer should be shown ---
   const shouldRenderTryOnBase = !isCameraLoading && !cameraError;
 
-  // --- JSX --- (VERIFIED)
+  // --- JSX --- (VERIFIED COMPLETE)
   return (
     <div className="border p-4 rounded bg-blue-50 relative">
        <h2 className="text-xl font-semibold mb-2 text-center">Real-Time Mirror Mode</h2>
@@ -100,8 +104,7 @@ const RealTimeMirror = forwardRef(({
       </div>
       {/* AI Model Status */}
     </div>
-  );
-  // ******************
-});
+  ); // Closing parenthesis for return
+}); // Closing brace and parenthesis for forwardRef
 RealTimeMirror.displayName = 'RealTimeMirror';
 export default RealTimeMirror;
