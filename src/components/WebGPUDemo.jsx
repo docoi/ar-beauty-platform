@@ -1,4 +1,4 @@
-// ✅ WebGPUDemo.jsx (Stage 3: Animated Shader Gradient)
+// ✅ WebGPUDemo.jsx (Stage 4: Mouse Reactive Shader Gradient)
 import { useEffect, useRef } from 'react';
 import initWebGPU from '@utils/initWebGPU.js';
 import createPipeline from '@utils/createPipeline.js';
@@ -9,6 +9,15 @@ export default function WebGPUDemo() {
   useEffect(() => {
     const canvas = canvasRef.current;
     let animationFrameId;
+    let mouse = { x: 0.5, y: 0.5 };
+
+    function updateMouse(e) {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = (e.clientX - rect.left) / rect.width;
+      mouse.y = (e.clientY - rect.top) / rect.height;
+    }
+
+    canvas.addEventListener('mousemove', updateMouse);
 
     async function run() {
       if (!navigator.gpu) {
@@ -21,35 +30,32 @@ export default function WebGPUDemo() {
         const pipeline = await createPipeline(device, format);
 
         const uniformBuffer = device.createBuffer({
-          size: 4, // 1 float = 4 bytes
+          size: 12, // 3 floats (time, mouseX, mouseY)
           usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
 
         const bindGroup = device.createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            {
-              binding: 0,
-              resource: { buffer: uniformBuffer },
-            },
-          ],
+          entries: [{
+            binding: 0,
+            resource: { buffer: uniformBuffer },
+          }],
         });
 
         function frame(time) {
+          const seconds = time * 0.001;
+          const data = new Float32Array([seconds, mouse.x, mouse.y]);
+          device.queue.writeBuffer(uniformBuffer, 0, data.buffer);
+
           const encoder = device.createCommandEncoder();
           const pass = encoder.beginRenderPass({
-            colorAttachments: [
-              {
-                view: context.getCurrentTexture().createView(),
-                loadOp: 'clear',
-                clearValue: { r: 0, g: 0, b: 0, a: 1 },
-                storeOp: 'store',
-              },
-            ],
+            colorAttachments: [{
+              view: context.getCurrentTexture().createView(),
+              loadOp: 'clear',
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              storeOp: 'store',
+            }],
           });
-
-          const seconds = time * 0.001;
-          device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([seconds]));
 
           pass.setPipeline(pipeline);
           pass.setBindGroup(0, bindGroup);
@@ -67,7 +73,10 @@ export default function WebGPUDemo() {
     }
 
     run();
-    return () => cancelAnimationFrame(animationFrameId);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      canvas.removeEventListener('mousemove', updateMouse);
+    };
   }, []);
 
   return (
