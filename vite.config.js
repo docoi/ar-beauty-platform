@@ -11,7 +11,4 @@ export default defineConfig({
   },
   assetsInclude: ['**/*.wgsl'],
   plugins: [react()],
-  build: {
-    outDir: 'dist',
-  },
 });
