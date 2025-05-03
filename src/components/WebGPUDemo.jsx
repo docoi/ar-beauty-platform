@@ -1,4 +1,4 @@
-// ✅ WebGPUDemo.jsx (Mobile-Optimised WebGPU Demo)
+// ✅ WebGPUDemo.jsx (Stage 2: Full-Screen Shader Gradient)
 import { useEffect, useRef } from 'react';
 import initWebGPU from '@utils/initWebGPU.js';
 import createPipeline from '@utils/createPipeline.js';
@@ -25,7 +25,7 @@ export default function WebGPUDemo() {
             {
               view: context.getCurrentTexture().createView(),
               loadOp: 'clear',
-              clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1.0 },
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
               storeOp: 'store',
             },
           ],
