@@ -1,4 +1,3 @@
-// vite.config.js
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
@@ -9,9 +8,11 @@ export default defineConfig({
     alias: {
       '@utils': path.resolve(__dirname, 'src/utils'),
       '@shaders': path.resolve(__dirname, 'src/shaders'),
+      '@effects': path.resolve(__dirname, 'src/effects'),
     },
   },
   build: {
-    target: 'esnext', // Ensures compatibility with WebGPU
+    target: 'esnext', // Required for WebGPU
   },
+  assetsInclude: ['**/*.wgsl'], // Tell Vite to include .wgsl files
 });

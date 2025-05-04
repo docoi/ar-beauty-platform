@@ -1,5 +1,3 @@
-// src/effects/lipstickEffect.js
-
 import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
 
 export const lipstickEffect = {
