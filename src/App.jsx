@@ -17,7 +17,7 @@ import HydrationSerumPage from './pages/hydration_serum';
 import VirtualTryOnPage from './pages/VirtualTryOnPage';
 import WebGPUDemo from './components/WebGPUDemo.jsx';
 import LipstickMirror from './components/LipstickMirror';
-import Mirror from './pages/mirror.jsx';
+import Mirror from './pages/mirror';
 
 
 
