@@ -1,3 +1,4 @@
+// src/utils/initWebGPU.js
 export default async function initWebGPU(canvas) {
   if (!navigator.gpu) {
     throw new Error('WebGPU not supported in this browser.');
@@ -15,7 +16,7 @@ export default async function initWebGPU(canvas) {
   context.configure({
     device,
     format,
-    alphaMode: 'premultiplied', // 'opaque' also valid
+    alphaMode: 'premultiplied', // or 'opaque'
   });
 
   return { device, context, format };
