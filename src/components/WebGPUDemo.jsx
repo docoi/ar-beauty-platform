@@ -10,28 +10,27 @@ export default function WebGPUDemo() {
     let animationFrameId;
 
     async function run() {
-      if (!navigator.gpu) {
-        console.error('WebGPU not supported');
-        return;
-      }
-
       const { device, context, format } = await initWebGPU(canvas);
-      const pipeline = await createPipeline(device, format);
+      const { pipeline, uniformBuffer, bindGroup } = await createPipeline(device, format);
 
-      function frame() {
+      function frame(time) {
+        const timeInSeconds = time * 0.001;
+        device.queue.writeBuffer(uniformBuffer, 0, new Float32Array([timeInSeconds]));
+
         const commandEncoder = device.createCommandEncoder();
         const passEncoder = commandEncoder.beginRenderPass({
           colorAttachments: [
             {
               view: context.getCurrentTexture().createView(),
               loadOp: 'clear',
-              clearValue: { r: 1.0, g: 0.0, b: 1.0, a: 1.0 }, // Magenta
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
               storeOp: 'store',
             },
           ],
         });
 
         passEncoder.setPipeline(pipeline);
+        passEncoder.setBindGroup(0, bindGroup);
         passEncoder.draw(6, 1, 0, 0);
         passEncoder.end();
 
