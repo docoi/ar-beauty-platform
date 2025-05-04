@@ -4,7 +4,8 @@ export default async function createPipeline(device) {
   const shaderCode = `
     struct Uniforms {
       time: f32,
-      mouse: vec2<f32>,
+      pointer: vec2<f32>,
+      resolution: vec2<f32>,
     };
 
     @group(0) @binding(0)
@@ -24,10 +25,11 @@ export default async function createPipeline(device) {
     }
 
     @fragment
-    fn fs_main(@builtin(position) FragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-      let uv = FragCoord.xy / vec2<f32>(640.0, 480.0);
-      let dx = uv.x - uniforms.mouse.x;
-      let dy = uv.y - uniforms.mouse.y;
+    fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+      let uv = fragCoord.xy / uniforms.resolution;
+
+      let dx = uv.x - uniforms.pointer.x;
+      let dy = uv.y - uniforms.pointer.y;
       let dist = sqrt(dx * dx + dy * dy);
 
       let t = uniforms.time;
@@ -44,9 +46,9 @@ export default async function createPipeline(device) {
   const shaderModule = device.createShaderModule({ code: shaderCode });
   const format = navigator.gpu.getPreferredCanvasFormat();
 
-  // ✅ Create a uniform buffer (12 bytes: 1 float time + 2 float mouse)
+  // ✅ Allocate 24 bytes = 1 (time) + 2 (pointer) + 2 (resolution) floats
   const uniformBuffer = device.createBuffer({
-    size: 12,
+    size: 24,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -66,5 +68,5 @@ export default async function createPipeline(device) {
     },
   });
 
-  return { pipeline, uniformBuffer }; // ✅ Return both
+  return { pipeline, uniformBuffer };
 }

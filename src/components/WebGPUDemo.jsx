@@ -5,22 +5,19 @@ import createPipeline from '../utils/createPipeline';
 
 export default function WebGPUDemo() {
   const canvasRef = useRef(null);
-  const pointerRef = useRef({ x: 0.5, y: 0.5 }); // Normalised pointer position
+  const pointerRef = useRef({ x: 0.5, y: 0.5 });
 
   useEffect(() => {
     let animationFrameId;
-    let device, context, pipeline, uniformBuffer;
+    let device, context, pipeline, uniformBuffer, canvas;
 
     const init = async () => {
-      const canvas = canvasRef.current;
+      canvas = canvasRef.current;
       const webgpu = await initWebGPU(canvas);
       if (!webgpu) return;
 
       ({ device, context } = webgpu);
-
-      // No need to pass shader code – it's included inside createPipeline now
-      const { pipeline: newPipeline, uniformBuffer: newUniformBuffer } =
-        await createPipeline(device);
+      const { pipeline: newPipeline, uniformBuffer: newUniformBuffer } = await createPipeline(device);
 
       pipeline = newPipeline;
       uniformBuffer = newUniformBuffer;
@@ -29,7 +26,12 @@ export default function WebGPUDemo() {
         const t = time * 0.001;
         const { x, y } = pointerRef.current;
 
-        const uniformData = new Float32Array([t, x, y]);
+        const resolution = new Float32Array([
+          canvas.width,
+          canvas.height
+        ]);
+
+        const uniformData = new Float32Array([t, x, y, resolution[0], resolution[1]]);
         device.queue.writeBuffer(uniformBuffer, 0, uniformData.buffer);
 
         const encoder = device.createCommandEncoder();
@@ -47,12 +49,7 @@ export default function WebGPUDemo() {
         pass.setPipeline(pipeline);
         const bindGroup = device.createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
-          entries: [
-            {
-              binding: 0,
-              resource: { buffer: uniformBuffer },
-            },
-          ],
+          entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
         });
         pass.setBindGroup(0, bindGroup);
         pass.draw(6, 1, 0, 0);
@@ -68,7 +65,7 @@ export default function WebGPUDemo() {
     const updatePointer = (e) => {
       const rect = canvasRef.current.getBoundingClientRect();
       let clientX, clientY;
-      if (e.touches && e.touches.length > 0) {
+      if (e.touches?.length > 0) {
         clientX = e.touches[0].clientX;
         clientY = e.touches[0].clientY;
       } else {
