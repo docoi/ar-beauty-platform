@@ -4,6 +4,7 @@ export default async function createPipeline(device) {
   const shaderCode = `
     struct Uniforms {
       time: f32,
+      padding1: f32,
       pointer: vec2<f32>,
       resolution: vec2<f32>,
     };
@@ -25,15 +26,15 @@ export default async function createPipeline(device) {
     }
 
     @fragment
-fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-  return vec4<f32>(1.0, 0.0, 1.0, 1.0); // bright pink test
+    fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+      return vec4<f32>(1.0, 0.0, 1.0, 1.0); // bright pink test
     }
   `;
 
   const shaderModule = device.createShaderModule({ code: shaderCode });
   const format = navigator.gpu.getPreferredCanvasFormat();
 
-  // ✅ Allocate 24 bytes = 1 (time) + 2 (pointer) + 2 (resolution) floats
+  // ✅ Aligned correctly for 6 floats (time, padding, 2x vec2)
   const uniformBuffer = device.createBuffer({
     size: 24,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,

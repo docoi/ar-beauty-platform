@@ -28,14 +28,14 @@ export default function WebGPUDemo() {
 
         const resolution = [canvas.width, canvas.height];
 
-        // ✅ Fixed: 6 floats (t, x, y, resX, resY, padding)
+        // ✅ Updated: 6 floats = time, padding, pointer x/y, resolution x/y
         const uniformData = new Float32Array([
           t,
+          0.0, // padding1
           x,
           y,
           resolution[0],
           resolution[1],
-          0.0, // Padding float (WebGPU buffers must align to 16 bytes)
         ]);
 
         device.queue.writeBuffer(uniformBuffer, 0, uniformData.buffer);
