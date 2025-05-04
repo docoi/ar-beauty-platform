@@ -23,27 +23,27 @@ export default function WebGPUDemo() {
         const data = new Float32Array([t, x, y]);
         device.queue.writeBuffer(uniformBuffer, 0, data);
 
-        const commandEncoder = device.createCommandEncoder();
-        const passEncoder = commandEncoder.beginRenderPass({
-          colorAttachments: [
-            {
-              view: context.getCurrentTexture().createView(),
-              loadOp: 'clear',
-              clearValue: { r: 0, g: 0, b: 0, a: 1 },
-              storeOp: 'store',
-            },
-          ],
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [{
+            view: context.getCurrentTexture().createView(),
+            loadOp: 'clear',
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            storeOp: 'store',
+          }],
         });
 
-        passEncoder.setPipeline(pipeline);
         const bindGroup = device.createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
           entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
         });
-        passEncoder.setBindGroup(0, bindGroup);
-        passEncoder.draw(6, 1, 0, 0);
-        passEncoder.end();
-        device.queue.submit([commandEncoder.finish()]);
+
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.draw(6, 1, 0, 0);
+        pass.end();
+
+        device.queue.submit([encoder.finish()]);
         animationFrameId = requestAnimationFrame(render);
       };
 

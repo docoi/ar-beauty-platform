@@ -4,7 +4,7 @@ export default function createPipeline(device, format) {
   const shaderModule = device.createShaderModule({ code: shaderCode });
 
   const uniformBuffer = device.createBuffer({
-    size: 12, // 3 floats: time, x, y
+    size: 12, // 3 floats (time, pointer.x, pointer.y)
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
