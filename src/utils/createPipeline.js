@@ -1,52 +1,32 @@
-// src/utils/createPipeline.js
-
-export default async function createPipeline(device) {
+// utils/createPipeline.js
+export default async function createPipeline(device, format) {
   const shaderCode = `
-    struct Uniforms {
-      time: f32,
-      padding1: f32,
-      pointer: vec2<f32>,
-      resolution: vec2<f32>,
-    };
-
-    @group(0) @binding(0)
-    var<uniform> uniforms: Uniforms;
-
     @vertex
-    fn vs_main(@builtin(vertex_index) VertexIndex: u32) -> @builtin(position) vec4<f32> {
-      var pos = array<vec2<f32>, 6>(
-        vec2<f32>(-1.0, -1.0),
-        vec2<f32>( 1.0, -1.0),
-        vec2<f32>(-1.0,  1.0),
-        vec2<f32>(-1.0,  1.0),
-        vec2<f32>( 1.0, -1.0),
-        vec2<f32>( 1.0,  1.0),
+    fn vs_main(@builtin(vertex_index) VertexIndex: u32) -> @builtin(position) vec4f {
+      var pos = array<vec2f, 6>(
+        vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+        vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0)
       );
-      return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+      return vec4f(pos[VertexIndex], 0.0, 1.0);
     }
 
     @fragment
-    fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-      return vec4<f32>(1.0, 0.0, 1.0, 1.0); // Bright pink
+    fn fs_main(@builtin(position) FragCoord: vec4f) -> @location(0) vec4f {
+      let uv = FragCoord.xy / vec2f(640.0, 480.0); // Can adjust for dynamic size later
+      return vec4f(uv.x, uv.y, 1.0 - uv.x, 1.0);
     }
   `;
 
-  const shaderModule = device.createShaderModule({ code: shaderCode });
-  const format = navigator.gpu.getPreferredCanvasFormat();
+  const module = device.createShaderModule({ code: shaderCode });
 
-  const uniformBuffer = device.createBuffer({
-    size: 32, // 4 bytes * 8 floats for safety (aligned to 16 byte blocks)
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-
-  const pipeline = device.createRenderPipeline({
+  return device.createRenderPipeline({
     layout: 'auto',
     vertex: {
-      module: shaderModule,
+      module,
       entryPoint: 'vs_main',
     },
     fragment: {
-      module: shaderModule,
+      module,
       entryPoint: 'fs_main',
       targets: [{ format }],
     },
@@ -54,6 +34,4 @@ export default async function createPipeline(device) {
       topology: 'triangle-list',
     },
   });
-
-  return { pipeline, uniformBuffer };
 }
