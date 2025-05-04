@@ -1,3 +1,4 @@
+// File: src/utils/initWebGPU.js
 export default async function initWebGPU(canvas) {
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();

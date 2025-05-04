@@ -1,3 +1,4 @@
+// File: src/utils/createPipeline.js
 import shaderCode from '@shaders/basicEffect.wgsl?raw';
 
 export default function createPipeline(device, format) {
