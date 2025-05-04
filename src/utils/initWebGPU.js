@@ -2,24 +2,25 @@
 
 export default async function initWebGPU(canvas) {
   if (!navigator.gpu) {
-    alert("WebGPU not supported in this browser.");
+    alert("WebGPU not supported.");
     return null;
   }
 
   const adapter = await navigator.gpu.requestAdapter();
   const device = await adapter.requestDevice();
-  const context = canvas.getContext('webgpu');
+  const context = canvas.getContext("webgpu");
+
   const format = navigator.gpu.getPreferredCanvasFormat();
 
-  // ✅ Match physical pixels
-  const devicePixelRatio = window.devicePixelRatio || 1;
-  canvas.width = canvas.clientWidth * devicePixelRatio;
-  canvas.height = canvas.clientHeight * devicePixelRatio;
+  // Resize canvas to physical pixels
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * dpr;
+  canvas.height = canvas.clientHeight * dpr;
 
   context.configure({
     device,
     format,
-    alphaMode: 'opaque',
+    alphaMode: "opaque",
   });
 
   return { device, context, format, canvas };

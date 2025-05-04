@@ -17,7 +17,8 @@ export default function WebGPUDemo() {
       if (!webgpu) return;
 
       ({ device, context } = webgpu);
-      const { pipeline: newPipeline, uniformBuffer: newUniformBuffer } = await createPipeline(device);
+      const { pipeline: newPipeline, uniformBuffer: newUniformBuffer } =
+        await createPipeline(device);
 
       pipeline = newPipeline;
       uniformBuffer = newUniformBuffer;
@@ -28,14 +29,14 @@ export default function WebGPUDemo() {
 
         const resolution = [canvas.width, canvas.height];
 
-        // ✅ Updated: 6 floats = time, padding, pointer x/y, resolution x/y
         const uniformData = new Float32Array([
           t,
-          0.0, // padding1
+          0.0,     // padding1
           x,
           y,
           resolution[0],
           resolution[1],
+          0.0, 0.0 // padding for 32 byte alignment
         ]);
 
         device.queue.writeBuffer(uniformBuffer, 0, uniformData.buffer);
@@ -52,11 +53,12 @@ export default function WebGPUDemo() {
           ],
         });
 
-        pass.setPipeline(pipeline);
         const bindGroup = device.createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
           entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
         });
+
+        pass.setPipeline(pipeline);
         pass.setBindGroup(0, bindGroup);
         pass.draw(6, 1, 0, 0);
         pass.end();

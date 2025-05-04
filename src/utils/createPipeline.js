@@ -27,16 +27,15 @@ export default async function createPipeline(device) {
 
     @fragment
     fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-      return vec4<f32>(1.0, 0.0, 1.0, 1.0); // bright pink test
+      return vec4<f32>(1.0, 0.0, 1.0, 1.0); // Bright pink
     }
   `;
 
   const shaderModule = device.createShaderModule({ code: shaderCode });
   const format = navigator.gpu.getPreferredCanvasFormat();
 
-  // ✅ Aligned correctly for 6 floats (time, padding, 2x vec2)
   const uniformBuffer = device.createBuffer({
-    size: 24,
+    size: 32, // 4 bytes * 8 floats for safety (aligned to 16 byte blocks)
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
