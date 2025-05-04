@@ -26,12 +26,18 @@ export default function WebGPUDemo() {
         const t = time * 0.001;
         const { x, y } = pointerRef.current;
 
-        const resolution = new Float32Array([
-          canvas.width,
-          canvas.height
+        const resolution = [canvas.width, canvas.height];
+
+        // ✅ Fixed: 6 floats (t, x, y, resX, resY, padding)
+        const uniformData = new Float32Array([
+          t,
+          x,
+          y,
+          resolution[0],
+          resolution[1],
+          0.0, // Padding float (WebGPU buffers must align to 16 bytes)
         ]);
 
-        const uniformData = new Float32Array([t, x, y, resolution[0], resolution[1]]);
         device.queue.writeBuffer(uniformBuffer, 0, uniformData.buffer);
 
         const encoder = device.createCommandEncoder();
