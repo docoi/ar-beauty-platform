@@ -1,4 +1,4 @@
-// ✅ Updated WebGPUDemo.jsx with Debugging Output
+// File: src/components/WebGPUDemo.jsx
 import { useEffect, useRef } from 'react';
 import initWebGPU from '@utils/initWebGPU';
 import createPipeline from '@utils/createPipeline';
@@ -22,7 +22,6 @@ export default function WebGPUDemo() {
       const render = (time) => {
         const t = time * 0.001;
         const { x, y } = pointerRef.current;
-
         console.log(`[WebGPU] Time: ${t.toFixed(2)}, Pointer: (${x.toFixed(2)}, ${y.toFixed(2)})`);
 
         const data = new Float32Array([t, x, y]);
