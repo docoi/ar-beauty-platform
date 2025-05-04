@@ -25,7 +25,7 @@ export default async function createPipeline(device) {
 
     @fragment
     fn fs_main(@builtin(position) FragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-      let uv = FragCoord.xy / vec2<f32>(640.0, 480.0); // ✅ Consider replacing with uniform for dynamic sizing
+      let uv = FragCoord.xy / vec2<f32>(640.0, 480.0);
       let dx = uv.x - uniforms.mouse.x;
       let dy = uv.y - uniforms.mouse.y;
       let dist = sqrt(dx * dx + dy * dy);
@@ -42,11 +42,15 @@ export default async function createPipeline(device) {
   `;
 
   const shaderModule = device.createShaderModule({ code: shaderCode });
-
-  // ✅ Fix: Dynamically get canvas format
   const format = navigator.gpu.getPreferredCanvasFormat();
 
-  return device.createRenderPipeline({
+  // ✅ Create a uniform buffer (12 bytes: 1 float time + 2 float mouse)
+  const uniformBuffer = device.createBuffer({
+    size: 12,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const pipeline = device.createRenderPipeline({
     layout: 'auto',
     vertex: {
       module: shaderModule,
@@ -55,14 +59,12 @@ export default async function createPipeline(device) {
     fragment: {
       module: shaderModule,
       entryPoint: 'fs_main',
-      targets: [
-        {
-          format: format,
-        },
-      ],
+      targets: [{ format }],
     },
     primitive: {
       topology: 'triangle-list',
     },
   });
+
+  return { pipeline, uniformBuffer }; // ✅ Return both
 }
