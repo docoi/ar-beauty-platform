@@ -4,6 +4,7 @@ import createPipeline from '@utils/createPipeline.js';
 
 export default function WebGPUDemo() {
   const canvasRef = useRef(null);
+  const pointerRef = useRef({ x: 0.5, y: 0.5 }); // Normalised pointer
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -17,8 +18,10 @@ export default function WebGPUDemo() {
 
       function frame() {
         const now = performance.now();
-        const elapsed = (now - startTime) / 1000; // seconds
-        const uniformData = new Float32Array([elapsed]);
+        const elapsed = (now - startTime) / 1000;
+        const { x, y } = pointerRef.current;
+
+        const uniformData = new Float32Array([elapsed, x, y]);
         device.queue.writeBuffer(uniformBuffer, 0, uniformData.buffer);
 
         const encoder = device.createCommandEncoder();
@@ -49,8 +52,33 @@ export default function WebGPUDemo() {
       animationFrameId = requestAnimationFrame(frame);
     }
 
+    const updatePointer = (e) => {
+      const rect = canvasRef.current.getBoundingClientRect();
+      let clientX, clientY;
+
+      if (e.touches?.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      }
+
+      pointerRef.current = {
+        x: (clientX - rect.left) / rect.width,
+        y: (clientY - rect.top) / rect.height,
+      };
+    };
+
+    canvas.addEventListener('mousemove', updatePointer);
+    canvas.addEventListener('touchmove', updatePointer, { passive: true });
+
     run();
-    return () => cancelAnimationFrame(animationFrameId);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      canvas.removeEventListener('mousemove', updatePointer);
+      canvas.removeEventListener('touchmove', updatePointer);
+    };
   }, []);
 
   return <canvas ref={canvasRef} className="w-full h-full block" />;
