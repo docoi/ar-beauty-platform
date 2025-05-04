@@ -1,3 +1,4 @@
+// src/shaders/basicEffect.wgsl
 struct Uniforms {
   time: f32,
   mouse: vec2<f32>,
@@ -21,7 +22,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f
 
 @fragment
 fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-  let uv = fragCoord.xy / vec2<f32>(600.0, 600.0); // adjust to match canvas size or use uniform if dynamic
+  let uv = fragCoord.xy / vec2<f32>(600.0, 600.0); // Update for responsive canvas
   let t = uniforms.time;
   let dx = uv.x - uniforms.mouse.x;
   let dy = uv.y - uniforms.mouse.y;

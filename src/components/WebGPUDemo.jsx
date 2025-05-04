@@ -1,90 +1,93 @@
-// ✅ WebGPUDemo.jsx (Stage 4: Mouse Reactive Shader Gradient)
+// src/components/WebGPUDemo.jsx
 import { useEffect, useRef } from 'react';
-import initWebGPU from '@utils/initWebGPU.js';
-import createPipeline from '@utils/createPipeline.js';
+import initWebGPU from '../utils/initWebGPU';
+import createPipeline from '../utils/createPipeline';
+import shaderCode from '../shaders/basicEffect.wgsl?raw';
 
 export default function WebGPUDemo() {
   const canvasRef = useRef(null);
+  const mouseRef = useRef({ x: 0.5, y: 0.5 }); // Normalised
 
   useEffect(() => {
-    const canvas = canvasRef.current;
     let animationFrameId;
-    let mouse = { x: 0.5, y: 0.5 };
+    let device, context, pipeline, uniformBuffer;
 
-    function updateMouse(e) {
-      const rect = canvas.getBoundingClientRect();
-      mouse.x = (e.clientX - rect.left) / rect.width;
-      mouse.y = (e.clientY - rect.top) / rect.height;
-    }
+    const init = async () => {
+      const canvas = canvasRef.current;
+      const webgpu = await initWebGPU(canvas);
+      if (!webgpu) return;
 
-    canvas.addEventListener('mousemove', updateMouse);
+      ({ device, context } = webgpu);
+      const { pipeline: newPipeline, uniformBuffer: newUniformBuffer } =
+        await createPipeline(device, shaderCode);
 
-    async function run() {
-      if (!navigator.gpu) {
-        console.error('WebGPU is not supported in this browser.');
-        return;
-      }
+      pipeline = newPipeline;
+      uniformBuffer = newUniformBuffer;
 
-      try {
-        const { device, context, format } = await initWebGPU(canvas);
-        const pipeline = await createPipeline(device, format);
+      const render = (time) => {
+        const t = time * 0.001;
+        const mouseX = mouseRef.current.x;
+        const mouseY = mouseRef.current.y;
 
-        const uniformBuffer = device.createBuffer({
-          size: 12, // 3 floats (time, mouseX, mouseY)
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
+        const uniformData = new Float32Array([t, mouseX, mouseY]);
+        device.queue.writeBuffer(uniformBuffer, 0, uniformData.buffer);
 
-        const bindGroup = device.createBindGroup({
-          layout: pipeline.getBindGroupLayout(0),
-          entries: [{
-            binding: 0,
-            resource: { buffer: uniformBuffer },
-          }],
-        });
-
-        function frame(time) {
-          const seconds = time * 0.001;
-          const data = new Float32Array([seconds, mouse.x, mouse.y]);
-          device.queue.writeBuffer(uniformBuffer, 0, data.buffer);
-
-          const encoder = device.createCommandEncoder();
-          const pass = encoder.beginRenderPass({
-            colorAttachments: [{
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [
+            {
               view: context.getCurrentTexture().createView(),
-              loadOp: 'clear',
               clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              loadOp: 'clear',
               storeOp: 'store',
-            }],
-          });
+            },
+          ],
+        });
 
-          pass.setPipeline(pipeline);
-          pass.setBindGroup(0, bindGroup);
-          pass.draw(6, 1, 0, 0);
-          pass.end();
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, device.createBindGroup({
+          layout: pipeline.getBindGroupLayout(0),
+          entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+        }));
+        pass.draw(6, 1, 0, 0);
+        pass.end();
 
-          device.queue.submit([encoder.finish()]);
-          animationFrameId = requestAnimationFrame(frame);
-        }
+        device.queue.submit([encoder.finish()]);
+        animationFrameId = requestAnimationFrame(render);
+      };
 
-        animationFrameId = requestAnimationFrame(frame);
-      } catch (err) {
-        console.error('WebGPU init failed:', err);
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    const updatePointer = (e) => {
+      const rect = canvasRef.current.getBoundingClientRect();
+      let clientX, clientY;
+      if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
       }
-    }
 
-    run();
+      mouseRef.current = {
+        x: (clientX - rect.left) / rect.width,
+        y: (clientY - rect.top) / rect.height,
+      };
+    };
+
+    const canvas = canvasRef.current;
+    canvas.addEventListener('mousemove', updatePointer);
+    canvas.addEventListener('touchmove', updatePointer, { passive: true });
+
+    init();
+
     return () => {
       cancelAnimationFrame(animationFrameId);
-      canvas.removeEventListener('mousemove', updateMouse);
+      canvas.removeEventListener('mousemove', updatePointer);
+      canvas.removeEventListener('touchmove', updatePointer);
     };
   }, []);
 
-  return (
-    <div className="w-full h-full flex items-center justify-center">
-      <canvas
-        ref={canvasRef}
-        className="w-[100vw] h-[100vh] max-w-full max-h-full"
-      />
-    </div>
-  );
+  return <canvas ref={canvasRef} className="w-full h-screen block" />;
 }
