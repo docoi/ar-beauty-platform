@@ -17,7 +17,7 @@ import HydrationSerumPage from './pages/hydration_serum';
 import VirtualTryOnPage from './pages/VirtualTryOnPage';
 import WebGPUDemo from './components/WebGPUDemo.jsx';
 import LipstickMirror from './components/LipstickMirror';
-import MirrorPage from './pages/mirror';
+import Mirror from './pages/mirror.jsx';
 
 
 
@@ -43,7 +43,7 @@ function App() {
         <Route path="/try-on" element={<VirtualTryOnPage />} /> 
         <Route path="/webgpu-test" element={<WebGPUDemo />} />  
         <Route path="/lipstick-mirror" element={<LipstickMirror />} />    
-        <Route path="/mirror" element={<MirrorPage />} />
+        <Route path="/mirror" element={<Mirror />} />
 
       </Routes>
     </Router>

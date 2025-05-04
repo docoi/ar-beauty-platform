@@ -1,29 +1,29 @@
 // src/pages/mirror.jsx
 
-import { useEffect, useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
-import lipstickEffect from '../effects/lipstickEffect';
+import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
 
-export default function MirrorPage() {
+const Mirror = () => {
   const canvasRef = useRef(null);
   const pointerRef = useRef({ x: 0.5, y: 0.5 });
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-
     const run = async () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
       const { device, context, format } = await initWebGPU(canvas);
-      const module = device.createShaderModule({
-        code: lipstickEffect.shaderCode,
+
+      const module = device.createShaderModule({ code: lipstickShader });
+
+      const uniformBuffer = device.createBuffer({
+        size: 2 * Float32Array.BYTES_PER_ELEMENT,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
 
       const pipeline = createPipeline(device, format, module);
-
-      const uniformBuffer = device.createBuffer({
-        size: 2 * 4,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
 
       const bindGroup = device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
@@ -31,20 +31,17 @@ export default function MirrorPage() {
       });
 
       const render = () => {
-        const { x, y } = pointerRef.current;
-        const data = new Float32Array([x, y]);
-        device.queue.writeBuffer(uniformBuffer, 0, data);
+        const data = new Float32Array([pointerRef.current.x, pointerRef.current.y]);
+        device.queue.writeBuffer(uniformBuffer, 0, data.buffer);
 
-        const encoder = device.createCommandEncoder();
-        const pass = encoder.beginRenderPass({
-          colorAttachments: [
-            {
-              view: context.getCurrentTexture().createView(),
-              loadOp: 'clear',
-              storeOp: 'store',
-              clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            },
-          ],
+        const commandEncoder = device.createCommandEncoder();
+        const pass = commandEncoder.beginRenderPass({
+          colorAttachments: [{
+            view: context.getCurrentTexture().createView(),
+            loadOp: 'clear',
+            storeOp: 'store',
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          }],
         });
 
         pass.setPipeline(pipeline);
@@ -52,7 +49,7 @@ export default function MirrorPage() {
         pass.draw(6);
         pass.end();
 
-        device.queue.submit([encoder.finish()]);
+        device.queue.submit([commandEncoder.finish()]);
         requestAnimationFrame(render);
       };
 
@@ -63,9 +60,15 @@ export default function MirrorPage() {
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width: '100vw', height: '100vh' }}
-    />
+    <div className="flex justify-center items-center w-full h-screen bg-black">
+      <canvas
+        ref={canvasRef}
+        width={640}
+        height={480}
+        className="rounded-lg border border-gray-700"
+      />
+    </div>
   );
-}
+};
+
+export default Mirror;
