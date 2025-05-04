@@ -8,10 +8,10 @@ export default defineConfig({
     alias: {
       '@utils': path.resolve(__dirname, 'src/utils'),
       '@shaders': path.resolve(__dirname, 'src/shaders'),
-      '@effects': path.resolve(__dirname, 'src/effects'), 
     },
   },
+  assetsInclude: ['**/*.wgsl'], // ✅ ensure shaders are included
   build: {
-    target: 'esnext', // Required for WebGPU
+    target: 'esnext',
   },
 });

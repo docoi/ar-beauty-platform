@@ -1,14 +1,18 @@
-export default function createPipeline(device, format, module) {
+export default function createPipeline(device, format, shaderModule) {
   return device.createRenderPipeline({
     layout: 'auto',
     vertex: {
-      module,
+      module: shaderModule,
       entryPoint: 'vs_main',
     },
     fragment: {
-      module,
+      module: shaderModule,
       entryPoint: 'fs_main',
-      targets: [{ format }],
+      targets: [
+        {
+          format,
+        },
+      ],
     },
     primitive: {
       topology: 'triangle-list',
