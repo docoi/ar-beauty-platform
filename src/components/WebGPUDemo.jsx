@@ -1,3 +1,4 @@
+// ✅ Updated WebGPUDemo.jsx with Debugging Output
 import { useEffect, useRef } from 'react';
 import initWebGPU from '@utils/initWebGPU';
 import createPipeline from '@utils/createPipeline';
@@ -11,6 +12,7 @@ export default function WebGPUDemo() {
     let animationFrameId, device, uniformBuffer;
 
     async function run() {
+      console.info('[WebGPU] Initializing...');
       const { device: dev, context, format } = await initWebGPU(canvas);
       device = dev;
 
@@ -20,6 +22,9 @@ export default function WebGPUDemo() {
       const render = (time) => {
         const t = time * 0.001;
         const { x, y } = pointerRef.current;
+
+        console.log(`[WebGPU] Time: ${t.toFixed(2)}, Pointer: (${x.toFixed(2)}, ${y.toFixed(2)})`);
+
         const data = new Float32Array([t, x, y]);
         device.queue.writeBuffer(uniformBuffer, 0, data);
 
