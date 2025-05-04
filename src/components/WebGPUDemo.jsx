@@ -9,21 +9,30 @@ export default function WebGPUDemo() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    let animationFrameId, device, uniformBuffer;
+    let animationFrameId, device, context, uniformBuffer, pipeline;
+
+    const updatePointer = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches?.[0] ?? e;
+      pointerRef.current = {
+        x: (touch.clientX - rect.left) / rect.width,
+        y: (touch.clientY - rect.top) / rect.height,
+      };
+    };
 
     async function run() {
       console.info('[WebGPU] Initializing...');
-      const { device: dev, context, format } = await initWebGPU(canvas);
-      device = dev;
+      const result = await initWebGPU(canvas);
+      device = result.device;
+      context = result.context;
 
-      const { pipeline, uniformBuffer: uBuffer } = await createPipeline(device, format);
-      uniformBuffer = uBuffer;
+      const pipelineResult = await createPipeline(device, result.format);
+      pipeline = pipelineResult.pipeline;
+      uniformBuffer = pipelineResult.uniformBuffer;
 
-      const render = (time) => {
+      function frame(time) {
         const t = time * 0.001;
         const { x, y } = pointerRef.current;
-        console.log(`[WebGPU] Time: ${t.toFixed(2)}, Pointer: (${x.toFixed(2)}, ${y.toFixed(2)})`);
-
         const data = new Float32Array([t, x, y]);
         device.queue.writeBuffer(uniformBuffer, 0, data);
 
@@ -34,7 +43,7 @@ export default function WebGPUDemo() {
             loadOp: 'clear',
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
             storeOp: 'store',
-          }],
+          }]
         });
 
         const bindGroup = device.createBindGroup({
@@ -48,20 +57,11 @@ export default function WebGPUDemo() {
         pass.end();
 
         device.queue.submit([encoder.finish()]);
-        animationFrameId = requestAnimationFrame(render);
-      };
+        animationFrameId = requestAnimationFrame(frame);
+      }
 
-      animationFrameId = requestAnimationFrame(render);
+      animationFrameId = requestAnimationFrame(frame);
     }
-
-    const updatePointer = (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const touch = e.touches?.[0] ?? e;
-      pointerRef.current = {
-        x: (touch.clientX - rect.left) / rect.width,
-        y: (touch.clientY - rect.top) / rect.height,
-      };
-    };
 
     canvas.addEventListener('mousemove', updatePointer);
     canvas.addEventListener('touchmove', updatePointer, { passive: true });

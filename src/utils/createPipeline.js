@@ -3,9 +3,8 @@ import shaderCode from '@shaders/basicEffect.wgsl?raw';
 
 export default function createPipeline(device, format) {
   const shaderModule = device.createShaderModule({ code: shaderCode });
-
   const uniformBuffer = device.createBuffer({
-    size: 12, // 1x float (time) + 2x float (pointer)
+    size: 3 * 4,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -20,9 +19,7 @@ export default function createPipeline(device, format) {
       entryPoint: 'fs_main',
       targets: [{ format }],
     },
-    primitive: {
-      topology: 'triangle-list',
-    },
+    primitive: { topology: 'triangle-list' },
   });
 
   return { pipeline, uniformBuffer };
