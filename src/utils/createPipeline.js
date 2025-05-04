@@ -25,21 +25,8 @@ export default async function createPipeline(device) {
     }
 
     @fragment
-    fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-      let uv = fragCoord.xy / uniforms.resolution;
-
-      let dx = uv.x - uniforms.pointer.x;
-      let dy = uv.y - uniforms.pointer.y;
-      let dist = sqrt(dx * dx + dy * dy);
-
-      let t = uniforms.time;
-      let color = vec3<f32>(
-        0.5 + 0.5 * cos(t + dist * 10.0),
-        0.5 + 0.5 * cos(t + dist * 10.0 + 2.0),
-        0.5 + 0.5 * cos(t + dist * 10.0 + 4.0)
-      );
-
-      return vec4<f32>(color, 1.0);
+fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+  return vec4<f32>(1.0, 0.0, 1.0, 1.0); // bright pink test
     }
   `;
 
