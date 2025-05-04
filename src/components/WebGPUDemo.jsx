@@ -2,11 +2,10 @@
 import { useEffect, useRef } from 'react';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
-import shaderCode from '../shaders/basicEffect.wgsl?raw';
 
 export default function WebGPUDemo() {
   const canvasRef = useRef(null);
-  const mouseRef = useRef({ x: 0.5, y: 0.5 }); // Normalised
+  const pointerRef = useRef({ x: 0.5, y: 0.5 }); // Normalised pointer position
 
   useEffect(() => {
     let animationFrameId;
@@ -18,18 +17,19 @@ export default function WebGPUDemo() {
       if (!webgpu) return;
 
       ({ device, context } = webgpu);
+
+      // No need to pass shader code – it's included inside createPipeline now
       const { pipeline: newPipeline, uniformBuffer: newUniformBuffer } =
-        await createPipeline(device, shaderCode);
+        await createPipeline(device);
 
       pipeline = newPipeline;
       uniformBuffer = newUniformBuffer;
 
       const render = (time) => {
         const t = time * 0.001;
-        const mouseX = mouseRef.current.x;
-        const mouseY = mouseRef.current.y;
+        const { x, y } = pointerRef.current;
 
-        const uniformData = new Float32Array([t, mouseX, mouseY]);
+        const uniformData = new Float32Array([t, x, y]);
         device.queue.writeBuffer(uniformBuffer, 0, uniformData.buffer);
 
         const encoder = device.createCommandEncoder();
@@ -45,10 +45,16 @@ export default function WebGPUDemo() {
         });
 
         pass.setPipeline(pipeline);
-        pass.setBindGroup(0, device.createBindGroup({
+        const bindGroup = device.createBindGroup({
           layout: pipeline.getBindGroupLayout(0),
-          entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
-        }));
+          entries: [
+            {
+              binding: 0,
+              resource: { buffer: uniformBuffer },
+            },
+          ],
+        });
+        pass.setBindGroup(0, bindGroup);
         pass.draw(6, 1, 0, 0);
         pass.end();
 
@@ -70,7 +76,7 @@ export default function WebGPUDemo() {
         clientY = e.clientY;
       }
 
-      mouseRef.current = {
+      pointerRef.current = {
         x: (clientX - rect.left) / rect.width,
         y: (clientY - rect.top) / rect.height,
       };
