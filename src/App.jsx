@@ -16,6 +16,9 @@ import AvatarSwitcher from './pages/AvatarSwitcher.jsx';
 import HydrationSerumPage from './pages/hydration_serum';
 import VirtualTryOnPage from './pages/VirtualTryOnPage';
 import WebGPUDemo from './components/WebGPUDemo.jsx';
+import LipstickMirror from './components/LipstickMirror';
+import MirrorPage from './pages/mirror';
+
 
 
 
@@ -38,7 +41,10 @@ function App() {
         <Route path="/AvatarSwitcher" element={<AvatarSwitcher />} />  
         <Route path="/hydration_serum" element={<HydrationSerumPage />} /> 
         <Route path="/try-on" element={<VirtualTryOnPage />} /> 
-        <Route path="/webgpu-test" element={<WebGPUDemo />} />      
+        <Route path="/webgpu-test" element={<WebGPUDemo />} />  
+        <Route path="/lipstick-mirror" element={<LipstickMirror />} />    
+        <Route path="/mirror" element={<MirrorPage />} />
+
       </Routes>
     </Router>
   );
