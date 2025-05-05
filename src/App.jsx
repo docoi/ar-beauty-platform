@@ -18,7 +18,7 @@ import VirtualTryOnPage from './pages/VirtualTryOnPage';
 import WebGPUDemo from './components/WebGPUDemo.jsx';
 import LipstickMirror from './components/LipstickMirror';
 import MirrorPage from './pages/mirror';
-import LipstickMirrorLive from './pages/LipstickMirrorLive.jsx';
+import LipstickMirrorLive from './pages/LipstickMirrorLive';
 
 
 
