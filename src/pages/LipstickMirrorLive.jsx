@@ -48,7 +48,7 @@ const MirrorLive = () => {
 
   return (
     <div className="w-full h-screen flex flex-col items-center justify-center">
-      <video ref={videoRef} autoPlay playsInline muted className="rounded-xl shadow-lg mb-4" />
+      <video ref={videoRef} className="hidden" autoPlay playsInline muted />
       <canvas ref={canvasRef} className="w-full h-full" />
     </div>
   );
