@@ -1,32 +1,20 @@
-// src/utils/faceTracking.js
-import * as tf from '@tensorflow/tfjs';
-import '@tensorflow/tfjs-backend-webgl';
 import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
+import '@tensorflow/tfjs-backend-webgl'; // or webgpu if supported
+import '@tensorflow/tfjs-core';
+
+let model;
 
 export async function loadFaceModel() {
-  await tf.setBackend('webgl');
-  await tf.ready();
-
-  const model = await faceLandmarksDetection.load(
-    faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-    {
-      maxFaces: 1,
-      refineLandmarks: true,
-    }
-  );
-
+  if (!model) {
+    model = await faceLandmarksDetection.load(
+      faceLandmarksDetection.SupportedPackages.mediapipeFacemesh
+    );
+  }
   return model;
 }
 
-export async function detectFaceLandmarks(model, videoElement) {
-  if (!model || !videoElement) return [];
-
-  const predictions = await model.estimateFaces({
-    input: videoElement,
-    returnTensors: false,
-    flipHorizontal: true,
-    predictIrises: false,
-  });
-
+export async function detectFaceLandmarks(model, video) {
+  if (!model || !video) return null;
+  const predictions = await model.estimateFaces({ input: video });
   return predictions;
 }

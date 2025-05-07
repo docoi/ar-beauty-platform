@@ -56,7 +56,7 @@ export default function LipstickMirrorLive() {
       const camera = new Camera(video, {
         onFrame: async () => {
           const landmarks = await detectFaceLandmarks(model, video);
-          console.log('Landmarks:', landmarks);
+          console.log('Detected landmarks:', landmarks);
           // TODO: Apply lipstick effect here
         },
         width: 640,
