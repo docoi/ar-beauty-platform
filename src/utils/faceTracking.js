@@ -5,8 +5,7 @@ import { Camera } from '@mediapipe/camera_utils';
 
 export async function loadFaceModel(videoElement) {
   const faceMesh = new FaceMesh({
-    locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
   });
 
   faceMesh.setOptions({
