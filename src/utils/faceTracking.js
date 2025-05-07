@@ -1,29 +1,28 @@
-// src/utils/faceTracking.js
-import * as tf from '@tensorflow/tfjs'; // ✅ Fixed: frontend-safe full tfjs bundle
-import { load, SupportedModels } from '@tensorflow-models/face-landmarks-detection';
+import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
+import '@tensorflow/tfjs-backend-webgl';
 
-// Load face landmark model
 export async function loadFaceModel() {
   await tf.setBackend('webgl');
   await tf.ready();
-  return await load(SupportedModels.MediaPipeFaceMesh, {
-    maxFaces: 1,
-    refineLandmarks: true,
-  });
+
+  const model = await faceLandmarksDetection.load(
+    faceLandmarksDetection.SupportedPackages.mediapipeFacemesh,
+    {
+      maxFaces: 1,
+      shouldLoadIrisModel: false,
+    }
+  );
+
+  return model;
 }
 
-// Detect landmarks from video input
-export async function detectFaceLandmarks(model, video) {
+export async function detectFaceLandmarks(model, videoElement) {
   const predictions = await model.estimateFaces({
-    input: video,
+    input: videoElement,
     returnTensors: false,
-    flipHorizontal: true,
-    predictIrises: true,
+    flipHorizontal: false,
+    predictIrises: false,
   });
 
-  if (predictions.length > 0) {
-    return predictions[0].annotations;
-  }
-
-  return null;
+  return predictions;
 }
