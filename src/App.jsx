@@ -7,7 +7,6 @@ import Login from "./pages/login.jsx";
 import Dashboard from "./pages/dashboard.jsx";
 import Profile from "./pages/profile.jsx";
 import Support from "./pages/support.jsx";
-import Studio from "./pages/studio.jsx";
 import Pricing from "./pages/pricing.jsx";
 import Contact from "./pages/contact.jsx";
 import Author from "./pages/author.jsx";
@@ -37,13 +36,11 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/support" element={<Support />} />
-        <Route path="/studio" element={<Studio />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/author" element={<Author />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfService />} />
-
         <Route path="/avatar-switcher" element={<AvatarSwitcher />} />
         <Route path="/hydration_serum" element={<HydrationSerumPage />} />
         <Route path="/try-on" element={<VirtualTryOnPage />} />
