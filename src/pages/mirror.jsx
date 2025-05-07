@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
-import initWebGPU from '../utils/initWebGPU';
-import createPipeline from '../utils/createPipeline';
-import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
+import initWebGPU from '@/utils/initWebGPU';
+import createPipeline from '@/utils/createPipeline';
+import lipstickShader from '@/shaders/lipstickEffect.wgsl?raw';
 
 export default function Mirror() {
   const canvasRef = useRef(null);

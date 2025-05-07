@@ -1,4 +1,4 @@
-import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
+import lipstickShader from '@/shaders/lipstickEffect.wgsl?raw';
 
 export const lipstickEffect = {
   name: 'Lipstick',

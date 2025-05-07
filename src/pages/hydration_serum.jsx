@@ -1,6 +1,6 @@
 // src/pages/hydration_serum.jsx
 import React from 'react';
-import FaceEffect from '../components/FaceEffect';
+import FaceEffect from '@/components/FaceEffect';
 
 const HydrationSerumPage = () => {
   return (

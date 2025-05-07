@@ -1,7 +1,7 @@
 // Filename: AuthForm.jsx
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from "react-router-dom";
-import supabase from '@utils/supabaseClient';
+import supabase from '@/utils/supabaseClient';
 import { Camera } from '@mediapipe/camera_utils'; // ✅ Make sure this is installed
 
 const AuthForm = () => {

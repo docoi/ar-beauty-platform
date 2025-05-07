@@ -2,10 +2,10 @@
 // Passes results down to children
 
 import React, { useState, useEffect, useRef } from 'react';
-import useFaceLandmarker from '../hooks/useFaceLandmarker'; // Import the hook
-import useImageSegmenter from '../hooks/useImageSegmenter'; // Import the NEW hook
-import RealTimeMirror from '../components/RealTimeMirror';
-import StaticSelfieTryOn from '../components/StaticSelfieTryOn';
+import useFaceLandmarker from '@/hooks/useFaceLandmarker'; // Import the hook
+import useImageSegmenter from '@/hooks/useImageSegmenter'; // Import the NEW hook
+import RealTimeMirror from '@/components/RealTimeMirror';
+import StaticSelfieTryOn from '@/components/StaticSelfieTryOn';
 
 const VirtualTryOnPage = () => {
   console.log("VirtualTryOnPage rendering (Passing AI Data)...");
