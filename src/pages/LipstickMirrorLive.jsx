@@ -18,41 +18,47 @@ export default function LipstickMirrorLive() {
 
   useEffect(() => {
     async function setupWebGPU() {
-      try {
-        const canvas = canvasRef.current;
-        const { device, context, format } = await initWebGPU(canvas);
-        deviceRef.current = device;
-        contextRef.current = context;
-
-        const module = device.createShaderModule({ code: lipstickShader });
-        pipelineRef.current = createPipeline(device, format, module);
-
-        const uniformBuffer = device.createBuffer({
-          size: 2 * 4 * 100, // 100 vec2 floats
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-        uniformBufferRef.current = uniformBuffer;
-
-        bindGroupRef.current = device.createBindGroup({
-          layout: pipelineRef.current.getBindGroupLayout(0),
-          entries: [
-            {
-              binding: 0,
-              resource: { buffer: uniformBuffer },
-            },
-          ],
-        });
-
-        console.log("✅ WebGPU initialized");
-      } catch (err) {
-        console.error("❌ WebGPU setup failed:", err);
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        console.error("❌ Canvas not found");
+        return;
       }
+
+      const { device, context, format } = await initWebGPU(canvas);
+      deviceRef.current = device;
+      contextRef.current = context;
+
+      const module = device.createShaderModule({ code: lipstickShader });
+      pipelineRef.current = createPipeline(device, format, module);
+
+      const uniformBuffer = device.createBuffer({
+        size: 2 * 4 * 100,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      });
+      uniformBufferRef.current = uniformBuffer;
+
+      bindGroupRef.current = device.createBindGroup({
+        layout: pipelineRef.current.getBindGroupLayout(0),
+        entries: [
+          {
+            binding: 0,
+            resource: { buffer: uniformBuffer },
+          },
+        ],
+      });
+
+      console.log("✅ WebGPU initialized");
     }
 
     function render(landmarks) {
       const device = deviceRef.current;
       const context = contextRef.current;
       const pipeline = pipelineRef.current;
+
+      if (!device || !context || !pipeline) {
+        console.warn("⚠️ Skipping render - GPU not ready");
+        return;
+      }
 
       const bufferData = new Float32Array(landmarks.flat());
       device.queue.writeBuffer(uniformBufferRef.current, 0, bufferData.buffer);
@@ -62,7 +68,7 @@ export default function LipstickMirrorLive() {
         colorAttachments: [
           {
             view: context.getCurrentTexture().createView(),
-            clearValue: { r: 1, g: 0, b: 0, a: 1 },
+            clearValue: { r: 1, g: 0, b: 0, a: 1 }, // Red fallback
             loadOp: 'clear',
             storeOp: 'store',
           },
@@ -80,7 +86,6 @@ export default function LipstickMirrorLive() {
       const faceMesh = new FaceMesh({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
       });
-
       faceMesh.setOptions({
         maxNumFaces: 1,
         refineLandmarks: true,
@@ -89,52 +94,52 @@ export default function LipstickMirrorLive() {
       });
 
       faceMesh.onResults((results) => {
-        console.log("📸 FaceMesh results:", results);
-        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        if (
+          results.multiFaceLandmarks &&
+          results.multiFaceLandmarks.length > 0
+        ) {
           const landmarks = results.multiFaceLandmarks[0]
             .filter((_, i) => [61, 291, 78, 308, 13, 14, 17, 0].includes(i))
             .map((pt) => [
               pt.x * canvasRef.current.width,
               pt.y * canvasRef.current.height,
             ]);
+          console.log("🟢 Landmarks detected:", landmarks.length);
           render(landmarks);
+        } else {
+          console.log("🔴 No face detected");
         }
       });
 
-      if (!videoRef.current) {
-        console.error("🚫 Video ref not found!");
+      const videoEl = videoRef.current;
+      if (!videoEl) {
+        console.error("❌ Video element not found");
         return;
       }
 
-      const camera = new Camera(videoRef.current, {
+      const camera = new Camera(videoEl, {
         onFrame: async () => {
-          await faceMesh.send({ image: videoRef.current });
+          await faceMesh.send({ image: videoEl });
         },
         width: 640,
         height: 480,
       });
 
+      camera.start();
+      console.log("📷 Camera started");
+    }
+
+    async function startVideo() {
       try {
-        camera.start();
-        console.log("📷 Camera started successfully:", videoRef.current);
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        videoRef.current.srcObject = stream;
+        console.log("🎥 Video stream acquired");
       } catch (err) {
-        console.error("❌ Camera failed to start:", err);
+        console.error("❌ Failed to access camera", err);
       }
     }
 
-    // Check for media permissions
-    navigator.mediaDevices
-      .getUserMedia({ video: true })
-      .then((stream) => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          console.log("🎥 Live video stream attached:", stream);
-        }
-      })
-      .catch((err) => {
-        console.error("🚫 Camera access denied or not available:", err);
-      });
-
+    startVideo();
     setupWebGPU();
     setupFaceMesh();
   }, []);
