@@ -1,17 +1,14 @@
 // src/pages/LipstickMirrorLive.jsx
-
 import React, { useEffect, useRef } from 'react';
 import { Camera } from '@mediapipe/camera_utils';
 import { FaceMesh } from '@mediapipe/face_mesh';
-
-import initWebGPU from '@/utils/initWebGPU.js';
-import createPipeline from '@/utils/createPipeline.js';
-import lipstickShader from '@/shaders/lipstickEffect.wgsl?raw';
+import initWebGPU from '@utils/initWebGPU';
+import createPipeline from '@utils/createPipeline';
+import lipstickShader from '@shaders/lipstickEffect.wgsl?raw';
 
 export default function LipstickMirrorLive() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const deviceRef = useRef(null);
   const contextRef = useRef(null);
 
   useEffect(() => {
@@ -20,13 +17,18 @@ export default function LipstickMirrorLive() {
       const video = videoRef.current;
 
       if (!canvas || !video) {
-        console.error("Canvas or video not found");
+        console.error('Canvas or video not found');
         return;
       }
 
       const { device, context, format } = await initWebGPU(canvas);
-      deviceRef.current = device;
       contextRef.current = context;
+
+      const shaderModule = device.createShaderModule({
+        code: lipstickShader,
+      });
+
+      const pipeline = createPipeline(device, format, shaderModule);
 
       const faceMesh = new FaceMesh({
         locateFile: (file) =>
@@ -41,8 +43,26 @@ export default function LipstickMirrorLive() {
       });
 
       faceMesh.onResults((results) => {
-        // Draw lipstick here
-        console.log("Face landmarks:", results.multiFaceLandmarks);
+        // We'll draw lipstick using landmarks here in future steps
+        console.log('face landmarks:', results.multiFaceLandmarks);
+
+        const commandEncoder = device.createCommandEncoder();
+        const renderPass = commandEncoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: context.getCurrentTexture().createView(),
+              loadOp: 'clear',
+              storeOp: 'store',
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            },
+          ],
+        });
+
+        renderPass.setPipeline(pipeline);
+        renderPass.draw(6, 1, 0, 0);
+        renderPass.end();
+
+        device.queue.submit([commandEncoder.finish()]);
       });
 
       const camera = new Camera(video, {
@@ -52,6 +72,7 @@ export default function LipstickMirrorLive() {
         width: 640,
         height: 480,
       });
+
       camera.start();
     };
 
@@ -59,9 +80,9 @@ export default function LipstickMirrorLive() {
   }, []);
 
   return (
-    <div className="w-full h-screen flex flex-col items-center justify-center">
-      <video ref={videoRef} className="hidden" playsInline />
-      <canvas ref={canvasRef} width="640" height="480" />
+    <div className="w-full h-full flex justify-center items-center">
+      <video ref={videoRef} className="hidden" autoPlay playsInline muted width="640" height="480" />
+      <canvas ref={canvasRef} width="640" height="480" className="border" />
     </div>
   );
 }
