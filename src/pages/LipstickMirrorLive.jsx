@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { Camera } from '@mediapipe/camera_utils';
 import { FaceMesh } from '@mediapipe/face_mesh';
-import initWebGPU from '@utils/initWebGPU';
-import createPipeline from '@utils/createPipeline';
-import lipstickShader from '@shaders/lipstickEffect.wgsl?raw';
+import initWebGPU from '../utils/initWebGPU';
+import createPipeline from '../utils/createPipeline';
+import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
+
 
 export default function LipstickMirrorLive() {
   const videoRef = useRef(null);
