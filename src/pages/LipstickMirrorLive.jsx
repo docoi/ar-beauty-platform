@@ -19,59 +19,71 @@ export default function LipstickMirrorLive() {
         return;
       }
 
-      // Initialize WebGPU
+      // Step 1: Init WebGPU
       const { device, context, format } = await initWebGPU(canvas);
       contextRef.current = context;
 
-      // Create render pipeline
       const shaderModule = device.createShaderModule({
         code: lipstickShader,
       });
+
       const pipeline = createPipeline(device, format, shaderModule);
 
-      // Load face model
+      // Red test
+      const renderPassDescriptor = {
+        colorAttachments: [
+          {
+            view: context.getCurrentTexture().createView(),
+            clearValue: { r: 1, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+        ],
+      };
+
+      const commandEncoder = device.createCommandEncoder();
+      const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+      passEncoder.setPipeline(pipeline);
+      passEncoder.draw(6, 1, 0, 0);
+      passEncoder.end();
+      device.queue.submit([commandEncoder.finish()]);
+      console.log('✅ Red screen test draw submitted');
+
+      // Step 2: Load face detection model
       const model = await loadFaceModel();
 
-      // Start MediaPipe camera
+      // Step 3: Start webcam with MediaPipe
       const camera = new Camera(video, {
         onFrame: async () => {
-          await camera.send({ image: video });
-
-          const landmarks = await detectFaceLandmarks(video);
-          console.log('LIP landmarks:', landmarks);
-
-          const commandEncoder = device.createCommandEncoder();
-          const textureView = context.getCurrentTexture().createView();
-          const renderPass = commandEncoder.beginRenderPass({
-            colorAttachments: [
-              {
-                view: textureView,
-                loadOp: 'clear',
-                storeOp: 'store',
-                clearValue: { r: 1, g: 0, b: 0, a: 1 }, // red canvas for test
-              },
-            ],
-          });
-
-          renderPass.setPipeline(pipeline);
-          renderPass.draw(6, 1, 0, 0);
-          renderPass.end();
-          device.queue.submit([commandEncoder.finish()]);
+          const landmarks = await detectFaceLandmarks(model, video);
+          console.log('Landmarks:', landmarks);
+          // TODO: Apply lipstick effect here
         },
         width: 640,
         height: 480,
       });
 
-      camera.start();
+      await camera.start();
     };
 
     setup();
   }, []);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <video ref={videoRef} style={{ display: 'none' }} autoPlay playsInline muted />
-      <canvas ref={canvasRef} width="640" height="480" style={{ border: '1px solid black' }} />
+    <div className="w-full h-[100dvh] bg-black flex flex-col items-center justify-center">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="w-0 h-0 absolute"
+      />
+      <canvas
+        ref={canvasRef}
+        width={640}
+        height={480}
+        className="w-full h-auto rounded-xl"
+      />
     </div>
   );
 }

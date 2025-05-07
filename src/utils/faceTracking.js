@@ -1,11 +1,11 @@
 // src/utils/faceTracking.js
-import * as tf from '@tensorflow/tfjs'; // TensorFlow.js core
-import '@tensorflow/tfjs-backend-webgl'; // WebGL backend
+import * as tf from '@tensorflow/tfjs';
+import '@tensorflow/tfjs-backend-webgl';
 import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
 
 export async function loadFaceModel() {
-  await tf.setBackend('webgl');   // set backend before ready
-  await tf.ready();               // ensure TensorFlow is ready
+  await tf.setBackend('webgl');
+  await tf.ready();
 
   const model = await faceLandmarksDetection.load(
     faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
