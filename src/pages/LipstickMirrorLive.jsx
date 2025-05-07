@@ -1,6 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Camera } from '@mediapipe/camera_utils';
-import { loadFaceModel, detectFaceLandmarks } from '../utils/faceTracking';
+import { FaceMesh } from '@mediapipe/face_mesh';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
 import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
@@ -19,14 +19,13 @@ export default function LipstickMirrorLive() {
         return;
       }
 
-      // Step 1: Init WebGPU
+      // Init WebGPU
       const { device, context, format } = await initWebGPU(canvas);
       contextRef.current = context;
 
       const shaderModule = device.createShaderModule({
         code: lipstickShader,
       });
-
       const pipeline = createPipeline(device, format, shaderModule);
 
       // Red screen test
@@ -40,31 +39,54 @@ export default function LipstickMirrorLive() {
           },
         ],
       };
-
       const commandEncoder = device.createCommandEncoder();
       const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
       passEncoder.setPipeline(pipeline);
-      passEncoder.draw(3, 1, 0, 0); // triangle
+      passEncoder.draw(6, 1, 0, 0);
       passEncoder.end();
       device.queue.submit([commandEncoder.finish()]);
-
       console.log('Red screen test draw submitted');
 
-      // Step 2: Load FaceMesh and detect
-      const { faceMesh, videoElement } = await loadFaceModel(video);
-      const landmarks = await detectFaceLandmarks({ faceMesh, videoElement });
-      console.log('Face landmarks:', landmarks);
+      // Init FaceMesh
+      const faceMesh = new FaceMesh({
+        locateFile: (file) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+      });
 
-      // Future: Add draw effects here using landmarks
+      faceMesh.setOptions({
+        maxNumFaces: 1,
+        refineLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
+      faceMesh.onResults((results) => {
+        if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+          console.log('Detected landmarks:', results.multiFaceLandmarks[0]);
+          // TODO: update WebGPU based on landmarks
+        }
+      });
+
+      const camera = new Camera(video, {
+        onFrame: async () => {
+          await faceMesh.send({ image: video });
+        },
+        width: 640,
+        height: 480,
+      });
+      camera.start();
     };
 
     setup();
   }, []);
 
   return (
-    <div className="w-full h-full flex justify-center items-center bg-black">
+    <div className="w-full h-screen flex flex-col items-center justify-center bg-black">
       <video ref={videoRef} autoPlay playsInline className="hidden" />
-      <canvas ref={canvasRef} width="640" height="480" className="rounded-xl" />
+      <canvas
+        ref={canvasRef}
+        className="w-full aspect-[9/16] rounded-xl"
+      ></canvas>
     </div>
   );
 }
