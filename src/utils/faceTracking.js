@@ -1,6 +1,7 @@
 // src/utils/faceTracking.js
-import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
+import * as tf from '@tensorflow/tfjs'; // ✅ This was missing
 import '@tensorflow/tfjs-backend-webgl';
+import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
 
 export async function loadFaceModel() {
   await tf.setBackend('webgl');
