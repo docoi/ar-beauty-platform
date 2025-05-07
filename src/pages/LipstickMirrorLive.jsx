@@ -27,14 +27,19 @@ export default function LipstickMirrorLive() {
       pipelineRef.current = createPipeline(device, format, module);
 
       const uniformBuffer = device.createBuffer({
-        size: 2 * 4 * 100, // 100 vec2<f32> points
+        size: 2 * 4 * 100, // 100 vec2 floats
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       uniformBufferRef.current = uniformBuffer;
 
       bindGroupRef.current = device.createBindGroup({
         layout: pipelineRef.current.getBindGroupLayout(0),
-        entries: [{ binding: 0, resource: { buffer: uniformBuffer } }],
+        entries: [
+          {
+            binding: 0,
+            resource: { buffer: uniformBuffer },
+          },
+        ],
       });
     }
 
@@ -51,7 +56,7 @@ export default function LipstickMirrorLive() {
         colorAttachments: [
           {
             view: context.getCurrentTexture().createView(),
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            clearValue: { r: 1, g: 0, b: 0, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',
           },
@@ -93,9 +98,7 @@ export default function LipstickMirrorLive() {
         height: 480,
       });
       camera.start();
-
-      // ✅ Confirm video stream is live
-      console.log("Camera started:", videoRef.current);
+      console.log("📷 Camera initialized:", videoRef.current);
     }
 
     setupWebGPU();
@@ -103,25 +106,26 @@ export default function LipstickMirrorLive() {
   }, []);
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center">
-      {/* ✅ No longer hidden */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        width={640}
-        height={480}
-        className="rounded-xl shadow-lg absolute"
-        style={{ zIndex: 1 }}
-      />
-      <canvas
-        ref={canvasRef}
-        width={640}
-        height={480}
-        className="rounded-xl shadow-lg absolute"
-        style={{ zIndex: 2, pointerEvents: 'none' }}
-      />
+    <div className="relative w-full h-full flex items-center justify-center bg-black">
+      <div className="relative" style={{ width: 640, height: 480 }}>
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          width={640}
+          height={480}
+          className="rounded-xl shadow-lg absolute"
+          style={{ zIndex: 1, objectFit: 'cover', background: '#000' }}
+        />
+        <canvas
+          ref={canvasRef}
+          width={640}
+          height={480}
+          className="rounded-xl shadow-lg absolute"
+          style={{ zIndex: 2, pointerEvents: 'none' }}
+        />
+      </div>
     </div>
   );
 }
