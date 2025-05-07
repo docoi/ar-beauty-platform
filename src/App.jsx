@@ -1,27 +1,28 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
-import Home from "./pages/home.jsx";
-import Login from "./pages/login.jsx";
-import Dashboard from "./pages/dashboard.jsx";
-import Profile from "./pages/profile.jsx";
-import Support from "./pages/support.jsx";
-import Pricing from "./pages/pricing.jsx";
-import Contact from "./pages/contact.jsx";
-import PrivacyPolicy from "./pages/privacy.jsx";
-import TermsOfService from "./pages/TermsOfService.jsx";
+import Home from "@/pages/home.jsx";
+import Login from "@/pages/login.jsx";
+import Dashboard from "@/pages/dashboard.jsx";
+import Profile from "@/pages/profile.jsx";
+import Support from "@/pages/support.jsx";
+import Pricing from "@/pages/pricing.jsx";
+import Contact from "@/pages/contact.jsx";
+import PrivacyPolicy from "@/pages/privacy.jsx";
+import TermsOfService from "@/pages/TermsOfService.jsx";
 
-import AvatarSwitcher from "./pages/AvatarSwitcher.jsx";
-import ComingSoonPage from "./pages/ComingSoon.jsx";
-import HydrationSerumPage from "./pages/hydration_serum.jsx";
-import VirtualTryOnPage from "./pages/VirtualTryOnPage.jsx";
+import AvatarSwitcher from "@/pages/AvatarSwitcher.jsx";
+import ComingSoonPage from "@/pages/ComingSoon.jsx";
+import HydrationSerumPage from "@/pages/hydration_serum.jsx";
+import VirtualTryOnPage from "@/pages/VirtualTryOnPage.jsx";
 
 // ✅ FIXED: Use correct path to component
-import WebGPUDemo from "./components/WebGPUDemo.jsx";
-import StaticSafeTryOn from "./components/StaticSelfieTryOn.jsx";
-import TryOnRenderer from "./components/TryOnRenderer.jsx";
-import LipstickMirror from "./components/LipstickMirror.jsx";
-import LipstickMirrorLive from "./pages/LipstickMirrorLive.jsx";
-import MirrorPage from "./pages/mirror.jsx";
+import WebGPUDemo from "@/components/WebGPUDemo.jsx";
+import WebGPUTest from '@/pages/webgpu-test.jsx';
+import StaticSafeTryOn from "@/components/StaticSelfieTryOn.jsx";
+import TryOnRenderer from "@/components/TryOnRenderer.jsx";
+import LipstickMirror from "@/components/LipstickMirror.jsx";
+import LipstickMirrorLive from "@/pages/LipstickMirrorLive.jsx";
+import MirrorPage from "@/pages/mirror.jsx";
 
 function App() {
   return (
