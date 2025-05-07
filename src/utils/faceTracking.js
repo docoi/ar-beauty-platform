@@ -1,10 +1,8 @@
-// src/utils/faceTracking.js
-
-import * as mpFaceMesh from '@mediapipe/face_mesh';
+import { FaceMesh } from '@mediapipe/face_mesh';
 import { Camera } from '@mediapipe/camera_utils';
 
 export async function loadFaceModel(videoElement) {
-  const faceMesh = new mpFaceMesh.FaceMesh({
+  const faceMesh = new FaceMesh({
     locateFile: (file) =>
       `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
   });
