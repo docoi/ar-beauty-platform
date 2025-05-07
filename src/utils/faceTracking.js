@@ -1,28 +1,34 @@
-import { FaceMesh } from '@mediapipe/face_mesh';
+// src/utils/faceTracking.js
+
+import * as mpFaceMesh from '@mediapipe/face_mesh';
 import { Camera } from '@mediapipe/camera_utils';
 
-export async function loadFaceModel() {
-  return new FaceMesh({
-    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
+export async function loadFaceModel(videoElement) {
+  const faceMesh = new mpFaceMesh.FaceMesh({
+    locateFile: (file) =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
   });
+
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5,
+  });
+
+  return { faceMesh, videoElement };
 }
 
-export async function detectFaceLandmarks(model, video) {
+export async function detectFaceLandmarks({ faceMesh, videoElement }) {
   return new Promise((resolve) => {
-    model.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
+    faceMesh.onResults((results) => {
+      const landmarks = results.multiFaceLandmarks?.[0] || [];
+      resolve(landmarks);
     });
 
-    model.onResults((results) => {
-      resolve(results.multiFaceLandmarks?.[0] || []);
-    });
-
-    const camera = new Camera(video, {
+    const camera = new Camera(videoElement, {
       onFrame: async () => {
-        await model.send({ image: video });
+        await faceMesh.send({ image: videoElement });
       },
       width: 640,
       height: 480,

@@ -29,7 +29,7 @@ export default function LipstickMirrorLive() {
 
       const pipeline = createPipeline(device, format, shaderModule);
 
-      // Red test
+      // Red screen test
       const renderPassDescriptor = {
         colorAttachments: [
           {
@@ -44,46 +44,27 @@ export default function LipstickMirrorLive() {
       const commandEncoder = device.createCommandEncoder();
       const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
       passEncoder.setPipeline(pipeline);
-      passEncoder.draw(6, 1, 0, 0);
+      passEncoder.draw(3, 1, 0, 0); // triangle
       passEncoder.end();
       device.queue.submit([commandEncoder.finish()]);
-      console.log('✅ Red screen test draw submitted');
 
-      // Step 2: Load face detection model
-      const model = await loadFaceModel();
+      console.log('Red screen test draw submitted');
 
-      // Step 3: Start webcam with MediaPipe
-      const camera = new Camera(video, {
-        onFrame: async () => {
-          const landmarks = await detectFaceLandmarks(model, video);
-          console.log('Detected landmarks:', landmarks);
-          // TODO: Apply lipstick effect here
-        },
-        width: 640,
-        height: 480,
-      });
+      // Step 2: Load FaceMesh and detect
+      const { faceMesh, videoElement } = await loadFaceModel(video);
+      const landmarks = await detectFaceLandmarks({ faceMesh, videoElement });
+      console.log('Face landmarks:', landmarks);
 
-      await camera.start();
+      // Future: Add draw effects here using landmarks
     };
 
     setup();
   }, []);
 
   return (
-    <div className="w-full h-[100dvh] bg-black flex flex-col items-center justify-center">
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="w-0 h-0 absolute"
-      />
-      <canvas
-        ref={canvasRef}
-        width={640}
-        height={480}
-        className="w-full h-auto rounded-xl"
-      />
+    <div className="w-full h-full flex justify-center items-center bg-black">
+      <video ref={videoRef} autoPlay playsInline className="hidden" />
+      <canvas ref={canvasRef} width="640" height="480" className="rounded-xl" />
     </div>
   );
 }
