@@ -21,11 +21,8 @@ export default function LipstickMirrorLive() {
       video.srcObject = stream;
       await video.play();
 
-      // Load face landmark model from public folder
-      const fileset = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
-      );
-
+      // Load face landmark model (from local public path)
+      const fileset = await FilesetResolver.forVisionTasks('/models');
       const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: '/models/face_landmarker.task',
@@ -43,13 +40,9 @@ export default function LipstickMirrorLive() {
       const render = async () => {
         const results = await faceLandmarker.detectForVideo(video, Date.now());
 
-        if (!results?.faceLandmarks?.length) {
-          requestAnimationFrame(render);
-          return;
-        }
-
         const encoder = device.createCommandEncoder();
         const textureView = context.getCurrentTexture().createView();
+
         const pass = encoder.beginRenderPass({
           colorAttachments: [
             {
@@ -62,7 +55,7 @@ export default function LipstickMirrorLive() {
         });
 
         pass.setPipeline(pipeline);
-        pass.draw(6, 1, 0, 0);
+        pass.draw(6, 1, 0, 0); // Later we’ll clip this to lips only
         pass.end();
 
         device.queue.submit([encoder.finish()]);
@@ -77,7 +70,7 @@ export default function LipstickMirrorLive() {
 
   return (
     <div className="w-full h-full relative">
-      <video ref={videoRef} className="absolute top-0 left-0 w-full h-full object-cover" muted playsInline></video>
+      <video ref={videoRef} className="absolute top-0 left-0 w-full h-full object-cover" muted playsInline />
       <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
     </div>
   );
