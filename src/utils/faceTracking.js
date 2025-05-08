@@ -1,49 +1,24 @@
 // src/utils/faceTracking.js
 
-import {
-  FilesetResolver,
-  FaceLandmarker,
-} from '@mediapipe/tasks-vision';
-
-let faceLandmarker = null;
-let canvas = null;
-
-export async function loadFaceModel() {
-  if (faceLandmarker) return;
-
-  const vision = await FilesetResolver.forVisionTasks(
-    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
-  );
-
-  faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+export async function setupFaceLandmarker() {
+  const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision');
+  const fileset = await FilesetResolver.forVisionTasks('/models');
+  const landmarker = await FaceLandmarker.createFromOptions(fileset, {
     baseOptions: {
-      modelAssetPath: '/face_landmarker.task', // ✅ Served via /public
+      modelAssetPath: '/models/face_landmarker.task',
       delegate: 'GPU',
     },
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: false,
     runningMode: 'VIDEO',
     numFaces: 1,
   });
+  return landmarker;
 }
 
-export async function detectFacelandmarks(video) {
-  if (!faceLandmarker) {
-    throw new Error('FaceLandmarker not loaded. Call loadFaceModel() first.');
-  }
-
-  if (!canvas || canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-    canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-  }
-
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-  const result = faceLandmarker.detectForVideo(canvas, performance.now());
-
-  if (result && result.faceLandmarks && result.faceLandmarks.length > 0) {
-    return result.faceLandmarks[0];
-  }
-
-  return null;
-}
+// Full triangulation for accurate lipstick shape
+export const LIP_TRIANGLES = [
+  [61, 185, 40], [40, 39, 37], [37, 0, 267], [267, 269, 270], [270, 409, 291],
+  [375, 321, 405], [405, 314, 17], [17, 84, 181], [181, 91, 146], [146, 61, 185],
+  [78, 95, 88], [178, 87, 14], [317, 402, 318], [324, 318, 308], [291, 308, 375]
+];
