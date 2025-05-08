@@ -1,58 +1,49 @@
 // src/utils/faceTracking.js
 
-import * as mpFaceMesh from '@mediapipe/face_mesh';
-import { drawConnectors } from '@mediapipe/drawing_utils';
 import { FACEMESH_LIPS } from '@mediapipe/face_mesh';
+import { drawConnectors } from '@mediapipe/drawing_utils';
+import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 
-let faceMeshInstance = null;
+let faceLandmarker = null;
 
 export async function loadFaceModel() {
-  if (faceMeshInstance) return;
+  if (faceLandmarker) return;
 
-  return new Promise((resolve) => {
-    faceMeshInstance = new mpFaceMesh.FaceMesh({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
-    });
+  const vision = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
+  );
 
-    faceMeshInstance.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
-
-    faceMeshInstance.onResults(() => {
-      resolve();
-    });
-
-    const img = new Image();
-    img.src =
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wnmp3gAAAAASUVORK5CYII=';
-    img.onload = () => {
-      faceMeshInstance.send({ image: img });
-    };
+  faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/face_landmarker.task',
+      delegate: 'GPU',
+    },
+    outputFaceBlendshapes: false,
+    runningMode: 'IMAGE',
+    numFaces: 1,
   });
 }
 
 export async function detectFacelandmarks(videoElement) {
-  return new Promise((resolve, reject) => {
-    if (!faceMeshInstance) {
-      reject(new Error('FaceMesh not loaded. Call loadFaceModel() first.'));
-      return;
-    }
+  if (!faceLandmarker) {
+    throw new Error('Face model not loaded. Call loadFaceModel() first.');
+  }
 
-    faceMeshInstance.onResults((results) => {
-      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-        resolve(results.multiFaceLandmarks[0]);
-      } else {
-        resolve(null);
-      }
-    });
+  const canvas = document.createElement('canvas');
+  canvas.width = videoElement.videoWidth;
+  canvas.height = videoElement.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
 
-    faceMeshInstance.send({ image: videoElement }).catch((err) => {
-      reject(err);
-    });
-  });
+  const imageBitmap = await createImageBitmap(canvas);
+  const result = faceLandmarker.detect(imageBitmap);
+
+  if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+    return result.faceLandmarks[0];
+  }
+
+  return null;
 }
 
 export { drawConnectors, FACEMESH_LIPS };
