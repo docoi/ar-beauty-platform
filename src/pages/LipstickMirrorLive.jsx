@@ -13,23 +13,22 @@ export default function LipstickMirrorLive() {
   useEffect(() => {
     const start = async () => {
       console.log('Initializing Lipstick Mirror');
+
       const canvas = canvasRef.current;
       const video = videoRef.current;
 
-      // Setup camera
+      // Start webcam
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await video.play();
 
-      // Load face landmark model (from local public path)
-      const fileset = await FilesetResolver.forVisionTasks('/models');
+      // Load face landmark model
+      const fileset = await FilesetResolver.forVisionTasks('/models/');
       const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: '/models/face_landmarker.task',
           delegate: 'GPU',
         },
-        outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: false,
         runningMode: 'VIDEO',
         numFaces: 1,
       });
@@ -42,7 +41,6 @@ export default function LipstickMirrorLive() {
 
         const encoder = device.createCommandEncoder();
         const textureView = context.getCurrentTexture().createView();
-
         const pass = encoder.beginRenderPass({
           colorAttachments: [
             {
@@ -55,9 +53,33 @@ export default function LipstickMirrorLive() {
         });
 
         pass.setPipeline(pipeline);
-        pass.draw(6, 1, 0, 0); // Later we’ll clip this to lips only
-        pass.end();
 
+        if (results?.faceLandmarks?.length > 0) {
+          const landmarks = results.faceLandmarks[0];
+
+          // Extract upper + lower lip landmarks (indices from MediaPipe spec)
+          const lipIndices = [
+            61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 61, // outer lip loop
+          ];
+          const lipPoints = lipIndices.map(i => {
+            const pt = landmarks[i];
+            return [pt.x * 2 - 1, -(pt.y * 2 - 1)]; // Normalize to WebGPU [-1, 1] range
+          });
+
+          const flat = new Float32Array(lipPoints.flat());
+          const buffer = device.createBuffer({
+            size: flat.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+            mappedAtCreation: true,
+          });
+          new Float32Array(buffer.getMappedRange()).set(flat);
+          buffer.unmap();
+
+          pass.setVertexBuffer(0, buffer);
+          pass.draw(lipPoints.length, 1, 0, 0);
+        }
+
+        pass.end();
         device.queue.submit([encoder.finish()]);
         requestAnimationFrame(render);
       };
@@ -70,7 +92,12 @@ export default function LipstickMirrorLive() {
 
   return (
     <div className="w-full h-full relative">
-      <video ref={videoRef} className="absolute top-0 left-0 w-full h-full object-cover" muted playsInline />
+      <video
+        ref={videoRef}
+        className="absolute top-0 left-0 w-full h-full object-cover"
+        muted
+        playsInline
+      ></video>
       <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
     </div>
   );

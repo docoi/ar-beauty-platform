@@ -13,7 +13,7 @@ export default async function initWebGPU(canvas) {
   context.configure({
     device,
     format,
-    alphaMode: 'opaque',
+    alphaMode: 'premultiplied',
   });
 
   return { device, context, format };
