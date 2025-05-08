@@ -21,14 +21,14 @@ export default function LipstickMirrorLive() {
       video.srcObject = stream;
       await video.play();
 
-      // Load face landmark model
+      // Load face landmark model from Google-hosted source
       const fileset = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
       );
       const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath:
-            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/face_landmarker.task',
+            'https://storage.googleapis.com/mediapipe-assets/face_landmarker.task',
           delegate: 'GPU',
         },
         outputFaceBlendshapes: false,
@@ -57,7 +57,7 @@ export default function LipstickMirrorLive() {
         });
 
         pass.setPipeline(pipeline);
-        pass.draw(6, 1, 0, 0); // This should later be clipped to the lip region only
+        pass.draw(6, 1, 0, 0); // Replace this with lip-clipped rendering later
         pass.end();
 
         device.queue.submit([encoder.finish()]);
@@ -72,8 +72,16 @@ export default function LipstickMirrorLive() {
 
   return (
     <div className="w-full h-full relative">
-      <video ref={videoRef} className="absolute top-0 left-0 w-full h-full object-cover" muted playsInline></video>
-      <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
+      <video
+        ref={videoRef}
+        className="absolute top-0 left-0 w-full h-full object-cover"
+        muted
+        playsInline
+      ></video>
+      <canvas
+        ref={canvasRef}
+        className="absolute top-0 left-0 w-full h-full"
+      />
     </div>
   );
 }
