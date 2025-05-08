@@ -11,74 +11,77 @@ export default function LipstickMirrorLive() {
 
   useEffect(() => {
     const setup = async () => {
+      console.log('🔁 Initializing Lipstick Mirror');
+
       const canvas = canvasRef.current;
       const video = videoRef.current;
-
       if (!canvas || !video) {
-        console.error('Canvas or video element is missing.');
+        console.error('Canvas or video not found');
         return;
       }
 
-      // Set video dimensions
-      video.width = 640;
-      video.height = 480;
-
-      // Get camera stream
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        await loadFaceModel();
+        console.log('✅ Face model loaded');
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' },
+        });
+
         video.srcObject = stream;
         await video.play();
+
         console.log('📷 Camera started');
-      } catch (err) {
-        console.error('Camera access failed:', err);
-        return;
+
+        const { device, context, format } = await initWebGPU(canvas);
+        contextRef.current = context;
+
+        const shaderModule = device.createShaderModule({
+          code: lipstickShader,
+        });
+
+        const pipeline = createPipeline(device, format, shaderModule);
+
+        const render = async () => {
+          const landmarks = await detectFacelandmarks(video);
+          if (landmarks) {
+            // Your future rendering logic here with landmarks
+          }
+
+          const renderPassDescriptor = {
+            colorAttachments: [
+              {
+                view: context.getCurrentTexture().createView(),
+                clearValue: { r: 0, g: 0, b: 0, a: 1 },
+                loadOp: 'clear',
+                storeOp: 'store',
+              },
+            ],
+          };
+
+          const commandEncoder = device.createCommandEncoder();
+          const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+          passEncoder.setPipeline(pipeline);
+          passEncoder.draw(3, 1, 0, 0);
+          passEncoder.end();
+
+          device.queue.submit([commandEncoder.finish()]);
+          requestAnimationFrame(render);
+        };
+
+        requestAnimationFrame(render);
+      } catch (error) {
+        console.error('❌ Error during setup:', error);
       }
-
-      // Load face model
-      await loadFaceModel();
-      console.log('✅ Face model loaded');
-
-      // Detect landmarks
-      const landmarks = await detectFacelandmarks(video);
-      console.log('🔍 Detected landmarks:', landmarks);
-
-      // Initialize WebGPU
-      const { device, context, format } = await initWebGPU(canvas);
-      contextRef.current = context;
-
-      const shaderModule = device.createShaderModule({ code: lipstickShader });
-      const pipeline = createPipeline(device, format, shaderModule);
-
-      // Render to canvas
-      const renderPassDescriptor = {
-        colorAttachments: [{
-          view: context.getCurrentTexture().createView(),
-          clearValue: { r: 1, g: 0, b: 0, a: 1 }, // Red for debug
-          loadOp: 'clear',
-          storeOp: 'store',
-        }],
-      };
-
-      const commandEncoder = device.createCommandEncoder();
-      const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-      passEncoder.setPipeline(pipeline);
-      passEncoder.draw(3, 1, 0, 0);
-      passEncoder.end();
-
-      device.queue.submit([commandEncoder.finish()]);
-      console.log('🖼️ Frame rendered');
     };
 
     setup();
   }, []);
 
   return (
-    <div className="w-full h-screen flex flex-col items-center justify-center bg-black">
-      <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full rounded-lg"
-      />
+    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
+      <video ref={videoRef} className="hidden" playsInline muted></video>
+      <canvas ref={canvasRef} className="w-full h-auto aspect-[3/4]" />
     </div>
   );
 }

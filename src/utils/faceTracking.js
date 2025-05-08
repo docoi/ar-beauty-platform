@@ -1,8 +1,12 @@
 // src/utils/faceTracking.js
 
-import { FilesetResolver, FaceLandmarker, DrawingUtils } from '@mediapipe/tasks-vision';
+import {
+  FilesetResolver,
+  FaceLandmarker,
+} from '@mediapipe/tasks-vision';
 
 let faceLandmarker = null;
+let canvas = null;
 
 export async function loadFaceModel() {
   if (faceLandmarker) return;
@@ -13,34 +17,33 @@ export async function loadFaceModel() {
 
   faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
     baseOptions: {
-      modelAssetPath:
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/face_landmarker.task',
+      modelAssetPath: '/face_landmarker.task', // ✅ Served via /public
+      delegate: 'GPU',
     },
-    outputFaceBlendshapes: false,
-    runningMode: 'IMAGE',
+    runningMode: 'VIDEO',
     numFaces: 1,
   });
 }
 
-export async function detectFacelandmarks(videoElement) {
+export async function detectFacelandmarks(video) {
   if (!faceLandmarker) {
-    throw new Error('Face model not loaded. Call loadFaceModel() first.');
+    throw new Error('FaceLandmarker not loaded. Call loadFaceModel() first.');
   }
 
-  const canvas = document.createElement('canvas');
-  canvas.width = videoElement.videoWidth;
-  canvas.height = videoElement.videoHeight;
+  if (!canvas || canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+    canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+  }
+
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  const imageBitmap = await createImageBitmap(canvas);
-  const result = faceLandmarker.detect(imageBitmap);
+  const result = faceLandmarker.detectForVideo(canvas, performance.now());
 
-  if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+  if (result && result.faceLandmarks && result.faceLandmarks.length > 0) {
     return result.faceLandmarks[0];
   }
 
   return null;
 }
-
-export { DrawingUtils };
