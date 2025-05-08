@@ -1,28 +1,52 @@
 import { FaceMesh } from '@mediapipe/face_mesh';
-import { Camera } from '@mediapipe/camera_utils';
+import { drawConnectors } from '@mediapipe/drawing_utils';
+import { FACEMESH_LIPS } from '@mediapipe/face_mesh';
 
-export async function detectFaceLandmarks(videoElement, onResultsCallback) {
-  const faceMesh = new FaceMesh({
+let faceMeshInstance = null;
+
+export async function loadFaceModel() {
+  if (faceMeshInstance) return; // Already loaded
+
+  faceMeshInstance = new FaceMesh({
     locateFile: (file) =>
       `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
   });
 
-  faceMesh.setOptions({
+  faceMeshInstance.setOptions({
     maxNumFaces: 1,
     refineLandmarks: true,
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5,
   });
 
-  faceMesh.onResults(onResultsCallback);
-
-  const camera = new Camera(videoElement, {
-    onFrame: async () => {
-      await faceMesh.send({ image: videoElement });
-    },
-    width: 640,
-    height: 480,
+  await new Promise((resolve) => {
+    faceMeshInstance.onResults(() => {
+      resolve();
+    });
+    // Dummy trigger for onResults to fire
+    faceMeshInstance.send({ image: new Image() }).catch(() => resolve());
   });
-
-  camera.start();
 }
+
+export async function detectFacelandmarks(videoElement) {
+  return new Promise((resolve, reject) => {
+    if (!faceMeshInstance) {
+      reject(new Error('FaceMesh not loaded. Call loadFaceModel() first.'));
+      return;
+    }
+
+    faceMeshInstance.onResults((results) => {
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        resolve(results.multiFaceLandmarks[0]);
+      } else {
+        resolve(null);
+      }
+    });
+
+    faceMeshInstance.send({ image: videoElement }).catch((err) => {
+      reject(err);
+    });
+  });
+}
+
+export { drawConnectors, FACEMESH_LIPS };

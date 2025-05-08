@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
-import { detectFaceLandmarks } from '../utils/faceTracking';
+import React, { useRef, useEffect } from 'react';
+import * as mpCamera from '@mediapipe/camera_utils';
+import { loadFaceModel, detectFacelandmarks } from '../utils/faceTracking';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
 import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
@@ -19,17 +20,14 @@ export default function LipstickMirrorLive() {
         return;
       }
 
-      // Init WebGPU
+      // Initialize WebGPU
       const { device, context, format } = await initWebGPU(canvas);
       contextRef.current = context;
 
-      const shaderModule = device.createShaderModule({
-        code: lipstickShader,
-      });
-
+      const shaderModule = device.createShaderModule({ code: lipstickShader });
       const pipeline = createPipeline(device, format, shaderModule);
 
-      // Red fill test
+      // Red screen test
       const renderPassDescriptor = {
         colorAttachments: [
           {
@@ -48,28 +46,38 @@ export default function LipstickMirrorLive() {
       passEncoder.end();
       device.queue.submit([commandEncoder.finish()]);
 
-      // Start Mediapipe
-      detectFaceLandmarks(video, (results) => {
-        console.log('Face landmarks:', results.multiFaceLandmarks);
-        // You can add your lipstick drawing logic here
+      // Load face model
+      await loadFaceModel();
+
+      // Start camera
+      const camera = new mpCamera.Camera(video, {
+        onFrame: async () => {
+          const landmarks = await detectFacelandmarks(video);
+          console.log('Landmarks:', landmarks);
+          // Add your rendering logic here
+        },
+        width: 640,
+        height: 480,
       });
+
+      camera.start();
     };
 
     setup();
   }, []);
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-black">
+    <div className="w-full h-full flex justify-center items-center bg-black">
       <video
         ref={videoRef}
+        className="hidden"
         autoPlay
         playsInline
-        className="absolute w-full h-full object-cover"
+        muted
+        width="640"
+        height="480"
       />
-      <canvas
-        ref={canvasRef}
-        className="absolute w-full h-full pointer-events-none"
-      />
+      <canvas ref={canvasRef} className="rounded-xl w-full h-full" />
     </div>
   );
 }
