@@ -1,13 +1,15 @@
+// src/utils/createPipeline.js
+
 export default function createPipeline(device, format, shaderModule) {
   return device.createRenderPipeline({
     layout: 'auto',
     vertex: {
       module: shaderModule,
-      entryPoint: 'vs_main',
+      entryPoint: 'vertexMain',
     },
     fragment: {
       module: shaderModule,
-      entryPoint: 'fs_main',
+      entryPoint: 'fragmentMain',
       targets: [
         {
           format,
