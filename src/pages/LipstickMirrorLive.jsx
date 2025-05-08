@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Camera } from '@mediapipe/camera_utils';
+import * as mpCamera from '@mediapipe/camera_utils';
 import { loadFaceModel } from '../utils/faceTracking';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
@@ -20,15 +20,12 @@ export default function LipstickMirrorLive() {
         return;
       }
 
-      // Init WebGPU
       const { device, context, format } = await initWebGPU(canvas);
       contextRef.current = context;
 
-      // Load WebGPU pipeline
       const shaderModule = device.createShaderModule({ code: lipstickShader });
       const pipeline = createPipeline(device, format, shaderModule);
 
-      // Red test draw
       const renderPassDescriptor = {
         colorAttachments: [
           {
@@ -48,21 +45,19 @@ export default function LipstickMirrorLive() {
       device.queue.submit([commandEncoder.finish()]);
       console.log('Red screen test draw submitted');
 
-      // Load MediaPipe face model
+      // Load model
       await loadFaceModel();
 
-      // Check if Camera is valid
-      if (typeof Camera !== 'function') {
-        console.error('Camera is not a constructor. Check @mediapipe/camera_utils import.');
-        console.log('Camera import:', Camera);
+      // Check Camera is defined
+      if (typeof mpCamera.Camera !== 'function') {
+        console.error('mpCamera.Camera is not a constructor. Import issue.');
+        console.log('mpCamera:', mpCamera);
         return;
       }
 
-      // Start MediaPipe camera
-      const camera = new Camera(video, {
+      const camera = new mpCamera.Camera(video, {
         onFrame: async () => {
           console.log('Frame received');
-          // Here you'd call detectFaceLandmarks(video) or similar
         },
         width: 640,
         height: 480,
