@@ -1,18 +1,22 @@
 // src/utils/createPipeline.js
 
-export default function createPipeline(device, format, shaderModule) {
-  return device.createRenderPipeline({
+export default async function createPipeline(device, format, shaderCode) {
+  const shaderModule = device.createShaderModule({
+    code: shaderCode,
+  });
+
+  const pipeline = device.createRenderPipeline({
     layout: 'auto',
     vertex: {
       module: shaderModule,
-      entryPoint: 'vertexMain', // This must match your WGSL
+      entryPoint: 'vertex_main',
     },
     fragment: {
       module: shaderModule,
-      entryPoint: 'fragmentMain', // This must match your WGSL
+      entryPoint: 'fragment_main',
       targets: [
         {
-          format,
+          format: format,
         },
       ],
     },
@@ -20,4 +24,6 @@ export default function createPipeline(device, format, shaderModule) {
       topology: 'triangle-list',
     },
   });
+
+  return pipeline;
 }
