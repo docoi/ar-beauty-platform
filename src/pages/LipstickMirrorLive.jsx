@@ -21,10 +21,11 @@ export default function LipstickMirrorLive() {
       video.srcObject = stream;
       await video.play();
 
-      // Load face landmark model from local public folder
+      // Load face landmark model from public folder
       const fileset = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
       );
+
       const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: '/models/face_landmarker.task',
@@ -42,6 +43,11 @@ export default function LipstickMirrorLive() {
       const render = async () => {
         const results = await faceLandmarker.detectForVideo(video, Date.now());
 
+        if (!results?.faceLandmarks?.length) {
+          requestAnimationFrame(render);
+          return;
+        }
+
         const encoder = device.createCommandEncoder();
         const textureView = context.getCurrentTexture().createView();
         const pass = encoder.beginRenderPass({
@@ -56,7 +62,7 @@ export default function LipstickMirrorLive() {
         });
 
         pass.setPipeline(pipeline);
-        pass.draw(6, 1, 0, 0); // Replace this with lip region later
+        pass.draw(6, 1, 0, 0);
         pass.end();
 
         device.queue.submit([encoder.finish()]);
