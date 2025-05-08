@@ -20,14 +20,12 @@ export default function LipstickMirrorLive() {
         return;
       }
 
-      // Initialize WebGPU
+      // Init WebGPU
       const { device, context, format } = await initWebGPU(canvas);
       contextRef.current = context;
 
-      const shaderModule = device.createShaderModule({
-        code: lipstickShader,
-      });
-
+      // Load WebGPU pipeline
+      const shaderModule = device.createShaderModule({ code: lipstickShader });
       const pipeline = createPipeline(device, format, shaderModule);
 
       // Red test draw
@@ -48,20 +46,23 @@ export default function LipstickMirrorLive() {
       passEncoder.draw(3, 1, 0, 0);
       passEncoder.end();
       device.queue.submit([commandEncoder.finish()]);
-
       console.log('Red screen test draw submitted');
 
-      // Load FaceMesh model
-      const faceMesh = await loadFaceModel(video, (results) => {
-        const landmarks = results.multiFaceLandmarks?.[0] || [];
-        console.log('Detected landmarks:', landmarks);
-        // TODO: Add render logic using landmarks
-      });
+      // Load MediaPipe face model
+      await loadFaceModel();
 
-      // Start Mediapipe camera
+      // Check if Camera is valid
+      if (typeof Camera !== 'function') {
+        console.error('Camera is not a constructor. Check @mediapipe/camera_utils import.');
+        console.log('Camera import:', Camera);
+        return;
+      }
+
+      // Start MediaPipe camera
       const camera = new Camera(video, {
         onFrame: async () => {
-          await faceMesh.send({ image: video });
+          console.log('Frame received');
+          // Here you'd call detectFaceLandmarks(video) or similar
         },
         width: 640,
         height: 480,
@@ -74,20 +75,17 @@ export default function LipstickMirrorLive() {
   }, []);
 
   return (
-    <div className="w-full h-screen bg-black flex items-center justify-center">
-      <div className="relative w-full max-w-md h-full overflow-hidden border-4 border-gray-200 rounded-xl">
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover z-10"
-          autoPlay
-          muted
-          playsInline
-        />
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full z-20"
-        />
-      </div>
+    <div className="w-full h-full flex justify-center items-center bg-black">
+      <video
+        ref={videoRef}
+        className="hidden"
+        autoPlay
+        playsInline
+        muted
+        width="640"
+        height="480"
+      />
+      <canvas ref={canvasRef} className="rounded-xl w-full h-full" />
     </div>
   );
 }
