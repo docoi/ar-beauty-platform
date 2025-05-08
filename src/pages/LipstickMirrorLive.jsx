@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import Camera from '@mediapipe/camera_utils'; // ✅ default import – FIXED
+import * as mpCamera from '@mediapipe/camera_utils'; // ✅ Correct import
 import { loadFaceModel, detectFacelandmarks } from '../utils/faceTracking';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
@@ -14,10 +14,13 @@ export default function LipstickMirrorLive() {
     const setup = async () => {
       const canvas = canvasRef.current;
       const video = videoRef.current;
+
       if (!canvas || !video) {
         console.error('Canvas or video not found');
         return;
       }
+
+      console.log('🎥 Video and canvas elements ready');
 
       // Step 1: Init WebGPU
       const { device, context, format } = await initWebGPU(canvas);
@@ -29,12 +32,12 @@ export default function LipstickMirrorLive() {
 
       const pipeline = createPipeline(device, format, shaderModule);
 
-      // Step 2: Red test (confirm canvas renders)
+      // Red test background
       const renderPassDescriptor = {
         colorAttachments: [
           {
             view: context.getCurrentTexture().createView(),
-            clearValue: { r: 1, g: 0, b: 0, a: 1 }, // red
+            clearValue: { r: 1, g: 0, b: 0, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',
           },
@@ -47,33 +50,42 @@ export default function LipstickMirrorLive() {
       passEncoder.draw(3, 1, 0, 0);
       passEncoder.end();
       device.queue.submit([commandEncoder.finish()]);
-      console.log('Red screen test draw submitted');
 
-      // Step 3: Load face detection model
+      console.log('✅ Red screen test draw submitted');
+
+      // Step 2: Load face mesh model
       await loadFaceModel();
-      console.log('Face model loaded');
 
-      // Step 4: Start camera
-      const camera = new Camera(video, {
+      // Step 3: Start camera
+      const camera = new mpCamera.Camera(video, {
         onFrame: async () => {
           const landmarks = await detectFacelandmarks(video);
-          console.log('Landmarks:', landmarks);
+          console.log('📍 Face landmarks:', landmarks);
         },
         width: 640,
         height: 480,
       });
 
       await camera.start();
-      console.log('Camera started');
+      console.log('📹 MediaPipe camera started');
     };
 
     setup();
   }, []);
 
   return (
-    <div className="w-full h-screen bg-black flex flex-col items-center justify-center">
-      <video ref={videoRef} autoPlay playsInline className="hidden" />
-      <canvas ref={canvasRef} className="w-full h-full rounded-md" />
+    <div className="w-full h-screen flex flex-col items-center justify-center bg-black">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="absolute w-full h-full object-cover z-0"
+      />
+      <canvas
+        ref={canvasRef}
+        className="absolute w-full h-full z-10 rounded-xl"
+      />
     </div>
   );
 }
