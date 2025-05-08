@@ -13,22 +13,24 @@ export default function LipstickMirrorLive() {
   useEffect(() => {
     const start = async () => {
       console.log('Initializing Lipstick Mirror');
+
       const canvas = canvasRef.current;
       const video = videoRef.current;
 
-      // Setup camera
+      // Start camera
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await video.play();
 
-      // Load face landmark model
+      // Load FaceLandmarker
       const fileset = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
       );
+
       const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath:
-            '/face_landmarker.task', // Local path assumed now — already working
+            'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/face_landmarker.task',
           delegate: 'GPU',
         },
         outputFaceBlendshapes: false,
@@ -37,15 +39,21 @@ export default function LipstickMirrorLive() {
         numFaces: 1,
       });
 
+      // Init WebGPU
       const { device, context, format } = await initWebGPU(canvas);
       const pipeline = await createPipeline(device, format, lipstickShader);
 
       const render = async () => {
-        const now = Date.now();
-        const results = await faceLandmarker.detectForVideo(video, now);
+        const results = await faceLandmarker.detectForVideo(video, Date.now());
+
+        if (results.faceLandmarks?.length > 0) {
+          const lips = results.faceLandmarks[0].slice(61, 88); // lower + upper lips
+          console.log('Lip landmarks:', lips);
+        }
 
         const encoder = device.createCommandEncoder();
         const textureView = context.getCurrentTexture().createView();
+
         const pass = encoder.beginRenderPass({
           colorAttachments: [
             {
@@ -58,9 +66,7 @@ export default function LipstickMirrorLive() {
         });
 
         pass.setPipeline(pipeline);
-
-        // Optional: Pass in uniforms for lip detection later here
-        pass.draw(6, 1, 0, 0); // We will soon limit this to lip region
+        pass.draw(6, 1, 0, 0); // Draw fullscreen triangle pair
         pass.end();
 
         device.queue.submit([encoder.finish()]);
@@ -80,11 +86,8 @@ export default function LipstickMirrorLive() {
         className="absolute top-0 left-0 w-full h-full object-cover"
         muted
         playsInline
-      ></video>
-      <canvas
-        ref={canvasRef}
-        className="absolute top-0 left-0 w-full h-full"
       />
+      <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
     </div>
   );
 }

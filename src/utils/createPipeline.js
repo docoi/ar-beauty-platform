@@ -5,20 +5,16 @@ export default async function createPipeline(device, format, shaderCode) {
     code: shaderCode,
   });
 
-  const pipeline = device.createRenderPipeline({
+  const pipeline = await device.createRenderPipelineAsync({
     layout: 'auto',
     vertex: {
       module: shaderModule,
-      entryPoint: 'vertex_main',
+      entryPoint: 'vertexMain',
     },
     fragment: {
       module: shaderModule,
-      entryPoint: 'fragment_main',
-      targets: [
-        {
-          format: format,
-        },
-      ],
+      entryPoint: 'fragmentMain',
+      targets: [{ format }],
     },
     primitive: {
       topology: 'triangle-list',
