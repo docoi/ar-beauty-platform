@@ -1,14 +1,8 @@
-export async function loadFaceModel(videoElement, onResultsCallback) {
-  const script = document.createElement('script');
-  script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js';
-  script.async = true;
+import { FaceMesh } from '@mediapipe/face_mesh';
+import { Camera } from '@mediapipe/camera_utils';
 
-  await new Promise((resolve) => {
-    script.onload = resolve;
-    document.body.appendChild(script);
-  });
-
-  const faceMesh = new window.FaceMesh({
+export async function detectFaceLandmarks(videoElement, onResultsCallback) {
+  const faceMesh = new FaceMesh({
     locateFile: (file) =>
       `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`,
   });
@@ -22,5 +16,13 @@ export async function loadFaceModel(videoElement, onResultsCallback) {
 
   faceMesh.onResults(onResultsCallback);
 
-  return faceMesh;
+  const camera = new Camera(videoElement, {
+    onFrame: async () => {
+      await faceMesh.send({ image: videoElement });
+    },
+    width: 640,
+    height: 480,
+  });
+
+  camera.start();
 }
