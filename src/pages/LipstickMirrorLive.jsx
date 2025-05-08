@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { loadFaceModel, detectFacelandmarks, drawConnectors, FACEMESH_LIPS } from '../utils/faceTracking';
+import { loadFaceModel, detectFacelandmarks } from '../utils/faceTracking';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
 import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
@@ -11,8 +11,6 @@ export default function LipstickMirrorLive() {
 
   useEffect(() => {
     const setup = async () => {
-      console.log('🔧 Initializing Lipstick Mirror');
-
       const canvas = canvasRef.current;
       const video = videoRef.current;
 
@@ -69,9 +67,6 @@ export default function LipstickMirrorLive() {
 
       device.queue.submit([commandEncoder.finish()]);
       console.log('🖼️ Frame rendered');
-
-      // Optional: Draw landmarks on top using 2D overlay if needed
-      // drawConnectors(canvas.getContext('2d'), landmarks, FACEMESH_LIPS, { color: 'white' });
     };
 
     setup();

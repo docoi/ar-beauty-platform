@@ -1,8 +1,6 @@
 // src/utils/faceTracking.js
 
-import { FACEMESH_LIPS } from '@mediapipe/face_mesh';
-import { drawConnectors } from '@mediapipe/drawing_utils';
-import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
+import { FilesetResolver, FaceLandmarker, DrawingUtils } from '@mediapipe/tasks-vision';
 
 let faceLandmarker = null;
 
@@ -17,7 +15,6 @@ export async function loadFaceModel() {
     baseOptions: {
       modelAssetPath:
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/face_landmarker.task',
-      delegate: 'GPU',
     },
     outputFaceBlendshapes: false,
     runningMode: 'IMAGE',
@@ -46,4 +43,4 @@ export async function detectFacelandmarks(videoElement) {
   return null;
 }
 
-export { drawConnectors, FACEMESH_LIPS };
+export { DrawingUtils };
