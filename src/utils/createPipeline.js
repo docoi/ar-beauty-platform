@@ -5,11 +5,11 @@ export default function createPipeline(device, format, shaderModule) {
     layout: 'auto',
     vertex: {
       module: shaderModule,
-      entryPoint: 'vertexMain',
+      entryPoint: 'vertexMain', // This must match your WGSL
     },
     fragment: {
       module: shaderModule,
-      entryPoint: 'fragmentMain',
+      entryPoint: 'fragmentMain', // This must match your WGSL
       targets: [
         {
           format,
