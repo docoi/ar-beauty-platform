@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import * as mpCamera from '@mediapipe/camera_utils';
+import Camera from '@mediapipe/camera_utils';
 import { loadFaceModel } from '../utils/faceTracking';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
@@ -45,17 +45,9 @@ export default function LipstickMirrorLive() {
       device.queue.submit([commandEncoder.finish()]);
       console.log('Red screen test draw submitted');
 
-      // Load model
       await loadFaceModel();
 
-      // Check Camera is defined
-      if (typeof mpCamera.Camera !== 'function') {
-        console.error('mpCamera.Camera is not a constructor. Import issue.');
-        console.log('mpCamera:', mpCamera);
-        return;
-      }
-
-      const camera = new mpCamera.Camera(video, {
+      const camera = new Camera(video, {
         onFrame: async () => {
           console.log('Frame received');
         },
