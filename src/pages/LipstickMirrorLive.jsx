@@ -21,14 +21,14 @@ export default function LipstickMirrorLive() {
       video.srcObject = stream;
       await video.play();
 
-      // Load face landmark model from Google-hosted source
+      // Load face landmark model
       const fileset = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
       );
       const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath:
-            'https://storage.googleapis.com/mediapipe-assets/face_landmarker.task',
+            '/face_landmarker.task', // Local path assumed now — already working
           delegate: 'GPU',
         },
         outputFaceBlendshapes: false,
@@ -41,7 +41,8 @@ export default function LipstickMirrorLive() {
       const pipeline = await createPipeline(device, format, lipstickShader);
 
       const render = async () => {
-        const results = await faceLandmarker.detectForVideo(video, Date.now());
+        const now = Date.now();
+        const results = await faceLandmarker.detectForVideo(video, now);
 
         const encoder = device.createCommandEncoder();
         const textureView = context.getCurrentTexture().createView();
@@ -57,7 +58,9 @@ export default function LipstickMirrorLive() {
         });
 
         pass.setPipeline(pipeline);
-        pass.draw(6, 1, 0, 0); // Replace this with lip-clipped rendering later
+
+        // Optional: Pass in uniforms for lip detection later here
+        pass.draw(6, 1, 0, 0); // We will soon limit this to lip region
         pass.end();
 
         device.queue.submit([encoder.finish()]);
