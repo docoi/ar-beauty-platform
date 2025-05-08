@@ -1,11 +1,9 @@
 // src/utils/createPipeline.js
 
 export default async function createPipeline(device, format, shaderCode) {
-  const shaderModule = device.createShaderModule({
-    code: shaderCode,
-  });
+  const shaderModule = device.createShaderModule({ code: shaderCode });
 
-  return await device.createRenderPipelineAsync({
+  const pipeline = await device.createRenderPipelineAsync({
     layout: 'auto',
     vertex: {
       module: shaderModule,
@@ -23,7 +21,9 @@ export default async function createPipeline(device, format, shaderCode) {
       targets: [{ format }],
     },
     primitive: {
-      topology: 'triangleFan',
+      topology: 'triangle-list',
     },
   });
+
+  return pipeline;
 }
