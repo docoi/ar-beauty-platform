@@ -1,22 +1,14 @@
-// src/utils/createPipeline.js
-
 export default async function createPipeline(device, format, shaderCode) {
-  const shaderModule = device.createShaderModule({ code: shaderCode });
+  const module = device.createShaderModule({ code: shaderCode });
 
   const pipeline = await device.createRenderPipelineAsync({
     layout: 'auto',
     vertex: {
-      module: shaderModule,
+      module,
       entryPoint: 'vert_main',
-      buffers: [
-        {
-          arrayStride: 8, // 2 floats per vertex (x, y)
-          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }],
-        },
-      ],
     },
     fragment: {
-      module: shaderModule,
+      module,
       entryPoint: 'frag_main',
       targets: [{ format }],
     },
