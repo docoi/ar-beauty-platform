@@ -1,5 +1,3 @@
-import shader from '../shaders/lipstickEffect.wgsl?raw';
-
 export default async function createPipeline(device, format) {
   const module = device.createShaderModule({ code: shader });
 
@@ -7,7 +5,7 @@ export default async function createPipeline(device, format) {
     layout: 'auto',
     vertex: {
       module,
-      entryPoint: 'main',
+      entryPoint: 'vert_main', // updated
       buffers: [{
         arrayStride: 8,
         attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }],
@@ -15,7 +13,7 @@ export default async function createPipeline(device, format) {
     },
     fragment: {
       module,
-      entryPoint: 'main',
+      entryPoint: 'frag_main', // updated
       targets: [{ format }],
     },
     primitive: {
