@@ -1,18 +1,30 @@
-import shader from '../shaders/lipstickShader.wgsl?raw';
+// src/utils/createPipeline.js
 
-export default async function createPipeline(device, format) {
-  const pipeline = await device.createRenderPipelineAsync({
+export default async function createPipeline(device, format, shaderCode) {
+  const shaderModule = device.createShaderModule({
+    code: shaderCode,
+  });
+
+  return await device.createRenderPipelineAsync({
     layout: 'auto',
     vertex: {
-      module: device.createShaderModule({ code: shader }),
+      module: shaderModule,
       entryPoint: 'vert_main',
-      buffers: [{
-        arrayStride: 8,
-        attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }],
-      }],
+      buffers: [
+        {
+          arrayStride: 8,
+          attributes: [
+            {
+              shaderLocation: 0,
+              offset: 0,
+              format: 'float32x2',
+            },
+          ],
+        },
+      ],
     },
     fragment: {
-      module: device.createShaderModule({ code: shader }),
+      module: shaderModule,
       entryPoint: 'frag_main',
       targets: [{ format }],
     },
@@ -20,6 +32,4 @@ export default async function createPipeline(device, format) {
       topology: 'triangle-list',
     },
   });
-
-  return pipeline;
 }
