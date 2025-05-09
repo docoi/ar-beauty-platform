@@ -1,8 +1,9 @@
+// src/components/LipstickMirrorLive.jsx
 import React, { useEffect, useRef } from 'react';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
-import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import lipTriangles from '../utils/lipTriangulation';
 
 export default function LipstickMirrorLive() {
   const canvasRef = useRef(null);
@@ -14,66 +15,72 @@ export default function LipstickMirrorLive() {
       const canvas = canvasRef.current;
       const video = videoRef.current;
 
+      // Start video stream
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await video.play();
 
+      // Load MediaPipe face landmark model
       const fileset = await FilesetResolver.forVisionTasks('/models');
       const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
         baseOptions: {
           modelAssetPath: '/models/face_landmarker.task',
-          delegate: 'GPU',
+          delegate: 'GPU'
         },
-        outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: false,
         runningMode: 'VIDEO',
         numFaces: 1,
       });
 
       const { device, context, format } = await initWebGPU(canvas);
-      const pipeline = await createPipeline(device, format, lipstickShader);
+      const pipeline = await createPipeline(device, format);
 
-      const drawFrame = async () => {
+      const render = async () => {
         const results = await faceLandmarker.detectForVideo(video, Date.now());
-        if (!results || results.faceLandmarks.length === 0) {
-          requestAnimationFrame(drawFrame);
-          return;
+        if (results?.faceLandmarks?.length > 0) {
+          const lips = results.faceLandmarks[0];
+          const vertices = new Float32Array(lipTriangles.flatMap(([a, b, c]) => [
+            lips[a].x * 2 - 1, -(lips[a].y * 2 - 1),
+            lips[b].x * 2 - 1, -(lips[b].y * 2 - 1),
+            lips[c].x * 2 - 1, -(lips[c].y * 2 - 1)
+          ]));
+
+          const vertexBuffer = device.createBuffer({
+            size: vertices.byteLength,
+            usage: GPUBufferUsage.VERTEX,
+            mappedAtCreation: true
+          });
+          new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
+          vertexBuffer.unmap();
+
+          const encoder = device.createCommandEncoder();
+          const pass = encoder.beginRenderPass({
+            colorAttachments: [{
+              view: context.getCurrentTexture().createView(),
+              loadOp: 'clear',
+              storeOp: 'store',
+              clearValue: { r: 0, g: 0, b: 0, a: 1 }
+            }]
+          });
+
+          pass.setPipeline(pipeline);
+          pass.setVertexBuffer(0, vertexBuffer);
+          pass.draw(vertices.length / 2, 1, 0, 0);
+          pass.end();
+          device.queue.submit([encoder.finish()]);
         }
-
-        const lips = results.faceLandmarks[0].filter((_, i) =>
-          // Outer lips: 61–80, Inner lips: 81–100 in FaceMesh
-          (i >= 61 && i <= 80) || (i >= 81 && i <= 100)
-        );
-
-        const encoder = device.createCommandEncoder();
-        const textureView = context.getCurrentTexture().createView();
-        const pass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: textureView,
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: 'clear',
-            storeOp: 'store',
-          }],
-        });
-
-        pass.setPipeline(pipeline);
-        pass.draw(lips.length, 1, 0, 0); // crude render; will update to indexed triangles
-        pass.end();
-
-        device.queue.submit([encoder.finish()]);
-        requestAnimationFrame(drawFrame);
+        requestAnimationFrame(render);
       };
 
-      drawFrame();
+      render();
     };
 
     start();
   }, []);
 
   return (
-    <div className="w-full h-full relative">
-      <video ref={videoRef} className="absolute top-0 left-0 w-full h-full object-cover" muted playsInline />
-      <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
+    <div className="relative w-full h-full">
+      <video ref={videoRef} className="absolute w-full h-full object-cover" muted autoPlay playsInline />
+      <canvas ref={canvasRef} className="absolute w-full h-full" />
     </div>
   );
 }
