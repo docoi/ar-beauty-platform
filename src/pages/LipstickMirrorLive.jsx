@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
 import lipTriangles from '../utils/lipTriangles';
@@ -10,15 +10,14 @@ export default function LipstickMirrorLive() {
 
   useEffect(() => {
     const start = async () => {
+      console.log('Initializing Lipstick Mirror');
       const canvas = canvasRef.current;
       const video = videoRef.current;
 
-      // Setup camera
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await video.play();
 
-      // Load face landmark model
       const fileset = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
       );
@@ -27,50 +26,48 @@ export default function LipstickMirrorLive() {
           modelAssetPath: '/models/face_landmarker.task',
           delegate: 'GPU',
         },
-        outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: false,
         runningMode: 'VIDEO',
         numFaces: 1,
       });
 
-      const { device, context, format, videoTexture, uploadVideoFrame } = await initWebGPU(video, canvas);
+      const { device, context, format } = await initWebGPU(canvas);
       const pipeline = await createPipeline(device, format);
 
       const render = async () => {
-        uploadVideoFrame();
-
         const results = await faceLandmarker.detectForVideo(video, Date.now());
-        const landmarks = results?.faceLandmarks?.[0];
-
         const encoder = device.createCommandEncoder();
         const textureView = context.getCurrentTexture().createView();
 
         const pass = encoder.beginRenderPass({
-          colorAttachments: [
-            {
-              view: textureView,
-              clearValue: { r: 0, g: 0, b: 0, a: 1 },
-              loadOp: 'clear',
-              storeOp: 'store',
-            },
-          ],
+          colorAttachments: [{
+            view: textureView,
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          }],
         });
 
         pass.setPipeline(pipeline);
-        pass.setBindGroup(0, pipeline.bindGroup);
-        pass.setVertexBuffer(0, pipeline.vertexBuffer);
-        pass.setFragmentTexture(0, videoTexture);
 
-        if (landmarks) {
-          const lipVerts = [];
-          for (let tri of lipTriangles) {
-            for (let i = 0; i < 3; i++) {
-              const pt = landmarks[tri[i]];
-              lipVerts.push(pt.x * 2 - 1, -(pt.y * 2 - 1)); // NDC
-            }
-          }
-          device.queue.writeBuffer(pipeline.vertexBuffer, 0, new Float32Array(lipVerts));
-          pass.draw(lipVerts.length / 2, 1, 0, 0);
+        if (results.faceLandmarks.length > 0) {
+          const face = results.faceLandmarks[0];
+          const vertexData = new Float32Array(lipTriangles.flatMap(([a, b, c]) => [
+            face[a].x * 2 - 1, -(face[a].y * 2 - 1),
+            face[b].x * 2 - 1, -(face[b].y * 2 - 1),
+            face[c].x * 2 - 1, -(face[c].y * 2 - 1),
+          ]));
+
+          const vertexBuffer = device.createBuffer({
+            size: vertexData.byteLength,
+            usage: GPUBufferUsage.VERTEX,
+            mappedAtCreation: true,
+          });
+
+          new Float32Array(vertexBuffer.getMappedRange()).set(vertexData);
+          vertexBuffer.unmap();
+
+          pass.setVertexBuffer(0, vertexBuffer);
+          pass.draw(vertexData.length / 2, 1, 0, 0);
         }
 
         pass.end();
@@ -86,7 +83,13 @@ export default function LipstickMirrorLive() {
 
   return (
     <div className="w-full h-full relative">
-      <video ref={videoRef} className="hidden" muted playsInline />
+      <video
+        ref={videoRef}
+        className="absolute top-0 left-0 w-full h-full object-cover"
+        muted
+        playsInline
+        autoPlay
+      />
       <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
     </div>
   );
