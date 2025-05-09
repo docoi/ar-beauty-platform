@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import initWebGPU from '@/utils/initWebGPU';
-import createPipeline from '@/utils/createPipeline';
-import lipTriangles from '@/utils/lipTriangles';
-import lipstickShader from '@/shaders/lipstickEffect.wgsl?raw';
+import initWebGPU from '../utils/initWebGPU';
+import createPipeline from '../utils/createPipeline';
+import lipTriangles from '../utils/lipTriangles';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export default function LipstickMirrorLive() {
@@ -10,17 +9,16 @@ export default function LipstickMirrorLive() {
   const videoRef = useRef(null);
 
   useEffect(() => {
-    let animationId;
-
-    const setup = async () => {
-      const video = videoRef.current;
+    const start = async () => {
       const canvas = canvasRef.current;
+      const video = videoRef.current;
 
-      // Start camera
+      // Setup camera
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await video.play();
 
+      // Load face landmark model
       const fileset = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
       );
@@ -29,80 +27,67 @@ export default function LipstickMirrorLive() {
           modelAssetPath: '/models/face_landmarker.task',
           delegate: 'GPU',
         },
+        outputFaceBlendshapes: false,
+        outputFacialTransformationMatrixes: false,
         runningMode: 'VIDEO',
         numFaces: 1,
       });
 
-      const { device, context, format } = await initWebGPU(canvas);
-      const pipeline = await createPipeline(device, format, lipstickShader);
-
-      const colorUniform = device.createBuffer({
-        size: 16,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
-      device.queue.writeBuffer(colorUniform, 0, new Float32Array([1.0, 1.0, 0.0, 1.0])); // Yellow
-
-      const vertexBuffer = device.createBuffer({
-        size: 65536,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-      });
+      const { device, context, format, videoTexture, uploadVideoFrame } = await initWebGPU(video, canvas);
+      const pipeline = await createPipeline(device, format);
 
       const render = async () => {
-        const results = await faceLandmarker.detectForVideo(video, performance.now());
+        uploadVideoFrame();
 
-        if (results.faceLandmarks.length > 0) {
-          const landmarks = results.faceLandmarks[0];
-          const width = canvas.width;
-          const height = canvas.height;
+        const results = await faceLandmarker.detectForVideo(video, Date.now());
+        const landmarks = results?.faceLandmarks?.[0];
 
-          const triangles = lipTriangles.flatMap(([a, b, c]) => {
-            return [
-              (landmarks[a].x * 2 - 1), -(landmarks[a].y * 2 - 1),
-              (landmarks[b].x * 2 - 1), -(landmarks[b].y * 2 - 1),
-              (landmarks[c].x * 2 - 1), -(landmarks[c].y * 2 - 1),
-            ];
-          });
+        const encoder = device.createCommandEncoder();
+        const textureView = context.getCurrentTexture().createView();
 
-          const vertices = new Float32Array(triangles);
-          device.queue.writeBuffer(vertexBuffer, 0, vertices);
-
-          const encoder = device.createCommandEncoder();
-          const pass = encoder.beginRenderPass({
-            colorAttachments: [{
-              view: context.getCurrentTexture().createView(),
-              clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        const pass = encoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: textureView,
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
               loadOp: 'clear',
               storeOp: 'store',
-            }],
-          });
+            },
+          ],
+        });
 
-          pass.setPipeline(pipeline);
-          pass.setVertexBuffer(0, vertexBuffer);
-          pass.setBindGroup(0, device.createBindGroup({
-            layout: pipeline.getBindGroupLayout(0),
-            entries: [{ binding: 0, resource: { buffer: colorUniform } }],
-          }));
-          pass.draw(vertices.length / 2, 1, 0, 0);
-          pass.end();
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, pipeline.bindGroup);
+        pass.setVertexBuffer(0, pipeline.vertexBuffer);
+        pass.setFragmentTexture(0, videoTexture);
 
-          device.queue.submit([encoder.finish()]);
+        if (landmarks) {
+          const lipVerts = [];
+          for (let tri of lipTriangles) {
+            for (let i = 0; i < 3; i++) {
+              const pt = landmarks[tri[i]];
+              lipVerts.push(pt.x * 2 - 1, -(pt.y * 2 - 1)); // NDC
+            }
+          }
+          device.queue.writeBuffer(pipeline.vertexBuffer, 0, new Float32Array(lipVerts));
+          pass.draw(lipVerts.length / 2, 1, 0, 0);
         }
 
-        animationId = requestAnimationFrame(render);
+        pass.end();
+        device.queue.submit([encoder.finish()]);
+        requestAnimationFrame(render);
       };
 
       render();
     };
 
-    setup();
-
-    return () => cancelAnimationFrame(animationId);
+    start();
   }, []);
 
   return (
-    <div className="relative w-full h-full">
-      <video ref={videoRef} className="absolute w-full h-full object-cover" autoPlay playsInline muted />
-      <canvas ref={canvasRef} className="absolute w-full h-full" />
+    <div className="w-full h-full relative">
+      <video ref={videoRef} className="hidden" muted playsInline />
+      <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
     </div>
   );
 }
