@@ -1,8 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
-import lipTriangles from '../utils/lipTriangles';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import lipTriangles from '../utils/lipTriangles';
 
 export default function LipstickMirrorLive() {
   const canvasRef = useRef(null);
@@ -10,14 +10,15 @@ export default function LipstickMirrorLive() {
 
   useEffect(() => {
     const start = async () => {
-      console.log('Initializing Lipstick Mirror');
       const canvas = canvasRef.current;
       const video = videoRef.current;
 
+      // Setup camera
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await video.play();
 
+      // Load face landmark model
       const fileset = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
       );
@@ -30,44 +31,46 @@ export default function LipstickMirrorLive() {
         numFaces: 1,
       });
 
+      // WebGPU
       const { device, context, format } = await initWebGPU(canvas);
       const pipeline = await createPipeline(device, format);
 
       const render = async () => {
         const results = await faceLandmarker.detectForVideo(video, Date.now());
+
         const encoder = device.createCommandEncoder();
         const textureView = context.getCurrentTexture().createView();
-
         const pass = encoder.beginRenderPass({
-          colorAttachments: [{
-            view: textureView,
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
-            loadOp: 'clear',
-            storeOp: 'store',
-          }],
+          colorAttachments: [
+            {
+              view: textureView,
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              loadOp: 'clear',
+              storeOp: 'store',
+            },
+          ],
         });
 
-        pass.setPipeline(pipeline);
-
         if (results.faceLandmarks.length > 0) {
-          const face = results.faceLandmarks[0];
-          const vertexData = new Float32Array(lipTriangles.flatMap(([a, b, c]) => [
-            face[a].x * 2 - 1, -(face[a].y * 2 - 1),
-            face[b].x * 2 - 1, -(face[b].y * 2 - 1),
-            face[c].x * 2 - 1, -(face[c].y * 2 - 1),
-          ]));
+          const landmarks = results.faceLandmarks[0];
+          const vertices = lipTriangles.flatMap(([a, b, c]) => [
+            landmarks[a].x * 2 - 1, -(landmarks[a].y * 2 - 1),
+            landmarks[b].x * 2 - 1, -(landmarks[b].y * 2 - 1),
+            landmarks[c].x * 2 - 1, -(landmarks[c].y * 2 - 1),
+          ]);
 
           const vertexBuffer = device.createBuffer({
-            size: vertexData.byteLength,
+            size: vertices.length * 4,
             usage: GPUBufferUsage.VERTEX,
             mappedAtCreation: true,
           });
 
-          new Float32Array(vertexBuffer.getMappedRange()).set(vertexData);
+          new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
           vertexBuffer.unmap();
 
+          pass.setPipeline(pipeline);
           pass.setVertexBuffer(0, vertexBuffer);
-          pass.draw(vertexData.length / 2, 1, 0, 0);
+          pass.draw(vertices.length / 2, 1, 0, 0);
         }
 
         pass.end();
@@ -83,13 +86,7 @@ export default function LipstickMirrorLive() {
 
   return (
     <div className="w-full h-full relative">
-      <video
-        ref={videoRef}
-        className="absolute top-0 left-0 w-full h-full object-cover"
-        muted
-        playsInline
-        autoPlay
-      />
+      <video ref={videoRef} className="absolute top-0 left-0 w-full h-full object-cover" muted playsInline />
       <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
     </div>
   );
