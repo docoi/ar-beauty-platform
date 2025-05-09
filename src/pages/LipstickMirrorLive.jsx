@@ -4,8 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import initWebGPU from '../utils/initWebGPU';
 import createPipeline from '../utils/createPipeline';
 import lipstickShader from '../shaders/lipstickEffect.wgsl?raw';
-import { LIP_INDICES, LIP_TRIANGLES } from '../utils/lipsTriangles';
-import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { setupFaceLandmarker, LIP_INDICES, LIP_TRIANGLES } from '../utils/faceTracking';
 
 export default function LipstickMirrorLive() {
   const canvasRef = useRef(null);
@@ -13,28 +12,20 @@ export default function LipstickMirrorLive() {
 
   useEffect(() => {
     const start = async () => {
-      console.log('Initializing Lipstick Mirror');
       const canvas = canvasRef.current;
       const video = videoRef.current;
 
+      // Start webcam
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
       await video.play();
 
-      const fileset = await FilesetResolver.forVisionTasks('/models');
-      const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
-        baseOptions: {
-          modelAssetPath: '/models/face_landmarker.task',
-          delegate: 'GPU',
-        },
-        outputFaceBlendshapes: false,
-        outputFacialTransformationMatrixes: false,
-        runningMode: 'VIDEO',
-        numFaces: 1,
-      });
+      // Load face landmark model
+      const faceLandmarker = await setupFaceLandmarker();
 
       const { device, context, format } = await initWebGPU(canvas);
       const pipeline = await createPipeline(device, format, lipstickShader);
+
       const vertexBuffer = device.createBuffer({
         size: 1024,
         usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
@@ -89,7 +80,12 @@ export default function LipstickMirrorLive() {
 
   return (
     <div className="w-full h-full relative">
-      <video ref={videoRef} className="absolute top-0 left-0 w-full h-full object-cover" muted playsInline></video>
+      <video
+        ref={videoRef}
+        className="absolute top-0 left-0 w-full h-full object-cover"
+        muted
+        playsInline
+      ></video>
       <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
     </div>
   );
