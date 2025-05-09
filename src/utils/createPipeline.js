@@ -9,21 +9,19 @@ export default async function createPipeline(device, format) {
     layout: 'auto',
     vertex: {
       module: shaderModule,
-      entryPoint: 'main_vertex',
-      buffers: [
-        {
-          arrayStride: 2 * 4,
-          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }],
-        },
-        {
-          arrayStride: 4 * 4,
-          attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x4' }],
-        },
-      ],
+      entryPoint: 'vs_main',
+      buffers: [{
+        arrayStride: 8,
+        attributes: [{
+          shaderLocation: 0,
+          offset: 0,
+          format: 'float32x2',
+        }],
+      }],
     },
     fragment: {
       module: shaderModule,
-      entryPoint: 'main_fragment',
+      entryPoint: 'fs_main',
       targets: [{ format }],
     },
     primitive: {

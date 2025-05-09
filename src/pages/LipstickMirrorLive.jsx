@@ -1,120 +1,92 @@
-import React, { useEffect, useRef } from 'react';
-import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
-import initWebGPU from '@/utils/initWebGPU'; // ✅ default import
+import React, { useEffect, useRef, useState } from 'react';
+import initWebGPU from '@/utils/initWebGPU';
 import createPipeline from '@/utils/createPipeline';
 import lipTriangles from '@/utils/lipTriangles';
+import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export default function LipstickMirrorLive() {
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
+  const [landmarker, setLandmarker] = useState(null);
 
   useEffect(() => {
-    let animationFrameId;
-    let faceLandmarker;
-    let device, context, format, pipeline;
-
-    const render = async () => {
-      if (!videoRef.current || videoRef.current.readyState < 2) {
-        animationFrameId = requestAnimationFrame(render);
-        return;
-      }
-
-      const faces = faceLandmarker.detect(videoRef.current);
-      const landmarks = faces?.landmarks?.[0];
-      if (!landmarks) {
-        animationFrameId = requestAnimationFrame(render);
-        return;
-      }
-
-      const vertices = [];
-      const colors = [];
-
-      lipTriangles.forEach(([a, b, c]) => {
-        [a, b, c].forEach((index) => {
-          const { x, y } = landmarks[index];
-          vertices.push((x - 0.5) * 2, (0.5 - y) * 2);
-          colors.push(1.0, 1.0, 0.0, 1.0); // yellow
-        });
-      });
-
-      const vertexBuffer = device.createBuffer({
-        size: vertices.length * 4,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-      });
-      device.queue.writeBuffer(vertexBuffer, 0, new Float32Array(vertices));
-
-      const colorBuffer = device.createBuffer({
-        size: colors.length * 4,
-        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-      });
-      device.queue.writeBuffer(colorBuffer, 0, new Float32Array(colors));
-
-      const encoder = device.createCommandEncoder();
-      const pass = encoder.beginRenderPass({
-        colorAttachments: [{
-          view: context.getCurrentTexture().createView(),
-          loadOp: 'clear',
-          storeOp: 'store',
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-        }],
-      });
-
-      pass.setPipeline(pipeline);
-      pass.setVertexBuffer(0, vertexBuffer);
-      pass.setVertexBuffer(1, colorBuffer);
-      pass.draw(vertices.length / 2);
-      pass.end();
-
-      device.queue.submit([encoder.finish()]);
-      animationFrameId = requestAnimationFrame(render);
-    };
-
-    const start = async () => {
-      const video = videoRef.current;
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      await video.play();
-
-      const fileset = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+    const init = async () => {
+      const vision = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
       );
-      faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+      const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: '/models/face_landmarker.task',
           delegate: 'GPU',
         },
+        outputFaceBlendshapes: false,
         runningMode: 'VIDEO',
         numFaces: 1,
       });
+      setLandmarker(faceLandmarker);
 
-      const webgpu = await initWebGPU(canvasRef.current);
-      device = webgpu.device;
-      context = webgpu.context;
-      format = webgpu.format;
-      pipeline = await createPipeline(device, format);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+
+      const { device, context, format } = await initWebGPU(canvasRef.current);
+      const pipeline = await createPipeline(device, format);
+
+      const render = async () => {
+        const now = performance.now();
+        const results = faceLandmarker.detectForVideo(videoRef.current, now);
+        if (!results || results.faceLandmarks.length === 0) {
+          requestAnimationFrame(render);
+          return;
+        }
+
+        const landmarks = results.faceLandmarks[0];
+        const lips = lipTriangles.map(([a, b, c]) => [
+          landmarks[a],
+          landmarks[b],
+          landmarks[c],
+        ]);
+
+        const vertices = new Float32Array(
+          lips.flat().map(pt => [(pt.x - 0.5) * 2, (0.5 - pt.y) * 2]).flat()
+        );
+
+        const vertexBuffer = device.createBuffer({
+          size: vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+          mappedAtCreation: true,
+        });
+        new Float32Array(vertexBuffer.getMappedRange()).set(vertices);
+        vertexBuffer.unmap();
+
+        const commandEncoder = device.createCommandEncoder();
+        const pass = commandEncoder.beginRenderPass({
+          colorAttachments: [{
+            view: context.getCurrentTexture().createView(),
+            loadOp: 'clear',
+            storeOp: 'store',
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          }],
+        });
+
+        pass.setPipeline(pipeline);
+        pass.setVertexBuffer(0, vertexBuffer);
+        pass.draw(vertices.length / 2, 1, 0, 0);
+        pass.end();
+        device.queue.submit([commandEncoder.finish()]);
+
+        requestAnimationFrame(render);
+      };
 
       render();
     };
-
-    start();
-    return () => cancelAnimationFrame(animationFrameId);
+    init();
   }, []);
 
   return (
-    <div className="w-full h-screen relative">
-      <video
-        ref={videoRef}
-        className="absolute top-0 left-0 w-full h-full object-cover"
-        playsInline
-        muted
-        autoPlay
-      />
-      <canvas
-        ref={canvasRef}
-        width={720}
-        height={1280}
-        className="absolute top-0 left-0 w-full h-full"
-      />
+    <div>
+      <video ref={videoRef} style={{ display: 'none' }} />
+      <canvas ref={canvasRef} width={640} height={480} />
     </div>
   );
 }
