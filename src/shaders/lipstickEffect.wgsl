@@ -11,5 +11,5 @@ fn vert_main(@location(0) pos: vec2f) -> VertexOut {
 
 @fragment
 fn frag_main() -> @location(0) vec4f {
-  return vec4f(1.0, 1.0, 0.0, 1.0); // Yellow
+  return vec4f(1.0, 1.0, 0.0, 1.0); // yellow
 }

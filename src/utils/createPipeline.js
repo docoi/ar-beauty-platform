@@ -11,13 +11,7 @@ export default async function createPipeline(device, format) {
       buffers: [
         {
           arrayStride: 2 * 4,
-          attributes: [
-            {
-              shaderLocation: 0,
-              offset: 0,
-              format: 'float32x2',
-            },
-          ],
+          attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }],
         },
       ],
     },

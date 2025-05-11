@@ -65,7 +65,7 @@ export default function LipstickMirrorLive() {
             view: context.getCurrentTexture().createView(),
             loadOp: 'clear',
             storeOp: 'store',
-            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            clearValue: { r: 0.95, g: 0.95, b: 0.95, a: 1.0 }, // light bg to see yellow
           }],
         });
 
@@ -73,13 +73,14 @@ export default function LipstickMirrorLive() {
         pass.setVertexBuffer(0, vertexBuffer);
         pass.draw(vertices.length / 2, 1, 0, 0);
         pass.end();
-        device.queue.submit([commandEncoder.finish()]);
 
+        device.queue.submit([commandEncoder.finish()]);
         requestAnimationFrame(render);
       };
 
       render();
     };
+
     init();
   }, []);
 
