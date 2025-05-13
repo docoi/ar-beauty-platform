@@ -1,7 +1,7 @@
 // File: src/components/WebGPUDemo.jsx
 import { useEffect, useRef } from 'react';
 import initWebGPU from '@/utils/initWebGPU';
-import createPipeline from '@/utils/createPipeline';
+import createPipeline from '@/utils/createPipelines';
 
 export default function WebGPUDemo() {
   const canvasRef = useRef(null);

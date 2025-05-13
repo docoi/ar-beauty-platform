@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import initWebGPU from '@/utils/initWebGPU';
-import createPipeline from '@/utils/createPipeline';
+import createPipeline from '@/utils/createPipelines';
 import lipstickShader from '@/shaders/lipstickEffect.wgsl?raw';
 
 export default function LipstickMirror() {
