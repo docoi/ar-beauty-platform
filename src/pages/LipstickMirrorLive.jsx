@@ -216,7 +216,7 @@ export default function LipstickMirrorLive() {
           // if (frameCounter.current % 120 === 1) { console.log(`[RENDER] Viewport&Scissor: 0,0,${canvasPhysicalWidth},${canvasPhysicalHeight}`); }
           
           if (pState.videoPipeline && frameBindGroup) {
-            passEnc.setPipeline(pState.videoPipeline); passEnc.setBindGroup(0,frameBindGrup); passEnc.draw(6);
+            passEnc.setPipeline(pState.videoPipeline); passEnc.setBindGroup(0,frameBindGroup); passEnc.draw(6);
           }
           if(numLipVertices>0 && pState.lipstickPipeline && pState.vertexBuffer){
             passEnc.setPipeline(pState.lipstickPipeline); passEnc.setVertexBuffer(0,pState.vertexBuffer); passEnc.draw(numLipVertices);
