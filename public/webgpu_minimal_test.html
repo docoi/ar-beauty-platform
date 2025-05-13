@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebGPU Full-Canvas Clear</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gpuCanvas"></canvas>
+  <script type="module">
+    async function initWebGPU() {
+      if (!navigator.gpu) {
+        console.error("WebGPU not supported on this browser.");
+        return;
+      }
+
+      const canvas = document.getElementById("gpuCanvas");
+      const context = canvas.getContext("webgpu");
+
+      const adapter = await navigator.gpu.requestAdapter();
+      if (!adapter) {
+        console.error("Failed to get GPU adapter.");
+        return;
+      }
+
+      const device = await adapter.requestDevice();
+      const format = navigator.gpu.getPreferredCanvasFormat();
+
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const displayWidth = Math.floor(canvas.clientWidth * dpr);
+        const displayHeight = Math.floor(canvas.clientHeight * dpr);
+
+        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+          canvas.width = displayWidth;
+          canvas.height = displayHeight;
+          context.configure({
+            device,
+            format,
+            alphaMode: 'opaque',
+            size: [displayWidth, displayHeight],
+          });
+        }
+      }
+
+      // Initial resize
+      resizeCanvas();
+
+      // Resize on window resize
+      window.addEventListener('resize', () => {
+        resizeCanvas();
+        render();
+      });
+
+      function render() {
+        const commandEncoder = device.createCommandEncoder();
+        const textureView = context.getCurrentTexture().createView();
+        const renderPassDescriptor = {
+          colorAttachments: [{
+            view: textureView,
+            clearValue: { r: 0, g: 1, b: 0, a: 1 }, // Bright green
+            loadOp: 'clear',
+            storeOp: 'store',
+          }],
+        };
+
+        const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+        passEncoder.end();
+
+        device.queue.submit([commandEncoder.finish()]);
+      }
+
+      render();
+    }
+
+    initWebGPU();
+  </script>
+</body>
+</html>
