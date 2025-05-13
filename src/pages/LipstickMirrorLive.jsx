@@ -1,7 +1,7 @@
-// src/pages/LipstickMirrorLive.jsx (Use logical dims for viewport after initWebGPU simplification)
+// src/pages/LipstickMirrorLive.jsx (Explicit viewport and scissorRect, corrected log)
 
 import React, { useEffect, useRef, useState } from 'react';
-import initWebGPU from '@/utils/initWebGPU'; // This will be the SIMPLIFIED version
+import initWebGPU from '@/utils/initWebGPU';
 import createPipelines from '@/utils/createPipelines';
 import lipTriangles from '@/utils/lipTriangles';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
@@ -54,7 +54,7 @@ export default function LipstickMirrorLive() {
         await videoRef.current.play();
         console.log("[INIT_EFFECT] Video playback started.");
         if (!navigator.gpu) throw new Error("WebGPU not supported.");
-        const { device, context, format } = await initWebGPU(canvasRef.current); // Will call SIMPLIFIED initWebGPU
+        const { device, context, format } = await initWebGPU(canvasRef.current); // Calls updated initWebGPU
         renderState.device = device; renderState.context = context;
         console.log("[INIT_EFFECT] WebGPU device and context obtained.");
         device.lost.then((info) => {
@@ -145,17 +145,19 @@ export default function LipstickMirrorLive() {
       const cmdEnc = renderState.device.createCommandEncoder();
       const texView = renderState.context.getCurrentTexture().createView();
       
-      // These will now get the LOGICAL dimensions (e.g., 638x478) from the simplified initWebGPU
-      const canvasCurrentWidth = renderState.context.canvas.width;
-      const canvasCurrentHeight = renderState.context.canvas.height;
+      const canvasPhysicalWidth = renderState.context.canvas.width;
+      const canvasPhysicalHeight = renderState.context.canvas.height;
 
       const passEnc = cmdEnc.beginRenderPass({
         colorAttachments: [{ view: texView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.1, g: 0.1, b: 0.15, a: 1.0 } }]
       });
 
-      passEnc.setViewport(0, 0, canvasCurrentWidth, canvasCurrentHeight, 0, 1);
-      if (frameCounter.current % 60 === 1) { // Log viewport once every 60 frames
-        console.log(`[RENDER ${frameCounter.current}] Viewport set to: 0, 0, ${canvasCurrentWidth}, ${canvasCurrentHeight} (using logical dims from canvas attributes)`);
+      passEnc.setViewport(0, 0, canvasPhysicalWidth, canvasPhysicalHeight, 0, 1);
+      // **** NEW: Explicitly set the scissor rectangle ****
+      passEnc.setScissorRect(0, 0, canvasPhysicalWidth, canvasPhysicalHeight);
+
+      if (frameCounter.current % 60 === 1) {
+        console.log(`[RENDER ${frameCounter.current}] Viewport & ScissorRect set to: 0,0,${canvasPhysicalWidth},${canvasPhysicalHeight} (physical canvas dims)`);
       }
 
       passEnc.setPipeline(renderState.videoPipeline); passEnc.setBindGroup(0, frameBindGroup); passEnc.draw(6);

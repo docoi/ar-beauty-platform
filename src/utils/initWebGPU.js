@@ -1,4 +1,4 @@
-// src/utils/initWebGPU.js (Adopt working pattern from minimal example)
+// src/utils/initWebGPU.js (Use DPR, explicit size, and alphaMode: 'opaque')
 
 export default async function initWebGPU(canvas) {
   if (!navigator.gpu) {
@@ -28,17 +28,17 @@ export default async function initWebGPU(canvas) {
   const dpr = window.devicePixelRatio || 1;
   console.log(`[initWebGPU] Device Pixel Ratio: ${dpr}`);
 
-  // Use clientWidth/clientHeight to get CSS display size, then scale by DPR
-  // This matches the logic from the successful minimal example.
-  const displayWidth = Math.floor(canvas.clientWidth * dpr);
-  const displayHeight = Math.floor(canvas.clientHeight * dpr);
+  const presentationWidth = canvas.clientWidth;
+  const presentationHeight = canvas.clientHeight;
+  console.log(`[initWebGPU] Canvas clientWidth/Height (CSS display size): ${presentationWidth}x${presentationHeight}`);
 
-  console.log(`[initWebGPU] Canvas clientWidth/Height (CSS display size): ${canvas.clientWidth}x${canvas.clientHeight}`);
+  const physicalWidth = Math.round(presentationWidth * dpr);
+  const physicalHeight = Math.round(presentationHeight * dpr);
 
-  // Set canvas buffer size if it's different
-  if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-    canvas.width = displayWidth;
-    canvas.height = displayHeight;
+  // Set canvas buffer size if it's different or not yet set correctly
+  if (canvas.width !== physicalWidth || canvas.height !== physicalHeight) {
+    canvas.width = physicalWidth;
+    canvas.height = physicalHeight;
     console.log(`[initWebGPU] Canvas internal buffer dimensions UPDATED to (physical pixels): ${canvas.width}x${canvas.height}`);
   } else {
     console.log(`[initWebGPU] Canvas internal buffer dimensions ALREADY MATCH (physical pixels): ${canvas.width}x${canvas.height}`);
@@ -47,12 +47,11 @@ export default async function initWebGPU(canvas) {
   context.configure({
     device,
     format,
-    alphaMode: 'premultiplied', // Keep our original alphaMode
-    size: [displayWidth, displayHeight] // Use array form [width, height] or {width, height}
-    // size: { width: canvas.width, height: canvas.height } // This also works as canvas.width/height are now correct
+    alphaMode: 'opaque', // CHANGED from 'premultiplied' to match minimal example
+    size: [physicalWidth, physicalHeight] // Explicitly use array form matching minimal example
   });
 
-  console.log(`[initWebGPU] Context configured with format: ${format} for size ${canvas.width}x${canvas.height}`);
+  console.log(`[initWebGPU] Context configured with format: ${format} for explicit size ${physicalWidth}x${physicalHeight}, alphaMode: 'opaque'`);
 
   return { device, context, format };
 }
