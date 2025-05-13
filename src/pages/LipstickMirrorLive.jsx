@@ -1,9 +1,9 @@
-// src/pages/LipstickMirrorLive.jsx (Log video dimensions and landmark spread)
+// src/pages/LipstickMirrorLive.jsx (Explicitly set viewport)
 
 import React, { useEffect, useRef, useState } from 'react';
 import initWebGPU from '@/utils/initWebGPU';
 import createPipelines from '@/utils/createPipelines';
-import lipTriangles from '@/utils/lipTriangles'; // Ensure this file has correct indices
+import lipTriangles from '@/utils/lipTriangles';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export default function LipstickMirrorLive() {
@@ -48,13 +48,13 @@ export default function LipstickMirrorLive() {
         if (isCleanup) { stream.getTracks().forEach(t => t.stop()); return; }
         videoRef.current.srcObject = stream;
         await new Promise((res, rej) => {
-          videoRef.current.onloadedmetadata = () => { console.log(`[INIT_EFFECT] Video metadata loaded: ${videoRef.current.videoWidth}x${videoRef.current.videoHeight}`); res(); }; // Log actual video dimensions
+          videoRef.current.onloadedmetadata = () => { console.log(`[INIT_EFFECT] Video metadata loaded: ${videoRef.current.videoWidth}x${videoRef.current.videoHeight}`); res(); };
           videoRef.current.onerror = () => rej(new Error("Video load error."));
         });
         await videoRef.current.play();
         console.log("[INIT_EFFECT] Video playback started.");
         if (!navigator.gpu) throw new Error("WebGPU not supported.");
-        const { device, context, format } = await initWebGPU(canvasRef.current);
+        const { device, context, format } = await initWebGPU(canvasRef.current); // Uses updated initWebGPU
         renderState.device = device; renderState.context = context;
         console.log("[INIT_EFFECT] WebGPU device and context obtained.");
         device.lost.then((info) => {
@@ -94,44 +94,38 @@ export default function LipstickMirrorLive() {
 
   useEffect(() => {
     if (!allResourcesReady) {
-      console.log("[RENDER_LOOP_EFFECT] Conditions NOT YET MET for starting render loop (allResourcesReady is false).");
+      console.log("[RENDER_LOOP_EFFECT] Conditions NOT YET MET (allResourcesReady is false).");
       if (renderState.renderRequestId) { console.log("[RENDER_LOOP_EFFECT] Resources no longer ready, stopping previous loop."); cancelAnimationFrame(renderState.renderRequestId); renderState.renderRequestId = null; }
       return;
     }
-    if (!renderState.device) { console.error("[RENDER_LOOP_EFFECT] CRITICAL: allResourcesReady is true but renderState.device is null. Aborting loop start."); setError("GPU Device unavailable for render loop."); return; }
+    if (!renderState.device || !renderState.context?.canvas) { // Added check for context.canvas
+        console.error("[RENDER_LOOP_EFFECT] CRITICAL: Device or context.canvas is null. Aborting loop start.", {device: !!renderState.device, contextCanvas: !!renderState.context?.canvas});
+        setError("GPU Device/Canvas unavailable for render loop.");
+        return;
+    }
     console.log("[RENDER_LOOP_EFFECT] All resources ready. Starting render loop mechanism.");
     const render = async () => {
       if (!renderState.device) { console.warn(`[RENDER ${frameCounter.current}] Loop aborted: Device lost.`); renderState.renderRequestId = null; return; }
       frameCounter.current++;
-      // console.log(`[RENDER ${frameCounter.current}] Frame Start. Device: ${!!renderState.device}`); // Already have this from previous step
+      // console.log(`[RENDER ${frameCounter.current}] Frame Start. Device: ${!!renderState.device}`); // Log from previous step is sufficient
 
-      if (!videoRef.current || videoRef.current.readyState < videoRef.current.HAVE_ENOUGH_DATA || videoRef.current.videoWidth === 0) { // Added videoWidth check
+      if (!videoRef.current || videoRef.current.readyState < videoRef.current.HAVE_ENOUGH_DATA || videoRef.current.videoWidth === 0) {
         renderState.renderRequestId = requestAnimationFrame(render); return;
       }
       const videoFrame = videoRef.current;
-      
-      // NEW LOG 1: Log actual video dimensions being used by MediaPipe
-      if (frameCounter.current % 60 === 1) { // Log every 60 frames to avoid flooding
-        console.log(`[RENDER ${frameCounter.current}] Video dims for MediaPipe: ${videoFrame.videoWidth}x${videoFrame.videoHeight}`);
-      }
+      if (frameCounter.current % 60 === 1) { console.log(`[RENDER ${frameCounter.current}] Video dims for MediaPipe: ${videoFrame.videoWidth}x${videoFrame.videoHeight}`); }
 
       let numLipVertices = 0;
       try {
         const now = performance.now();
         const results = landmarker.detectForVideo(videoFrame, now);
         if (results?.faceLandmarks?.length > 0) {
-          const allFaceLandmarks = results.faceLandmarks[0]; // Array of {x,y,z}
-
-          // NEW LOG 2: Calculate and log landmark spread
-          if (allFaceLandmarks && frameCounter.current % 60 === 1) { // Log every 60 frames
+          const allFaceLandmarks = results.faceLandmarks[0];
+          if (allFaceLandmarks && frameCounter.current % 60 === 1) {
             let minX = 1.0, maxX = 0.0, minY = 1.0, maxY = 0.0;
-            allFaceLandmarks.forEach(lm => {
-              if (lm.x < minX) minX = lm.x; if (lm.x > maxX) maxX = lm.x;
-              if (lm.y < minY) minY = lm.y; if (lm.y > maxY) maxY = lm.y;
-            });
+            allFaceLandmarks.forEach(lm => { minX = Math.min(minX, lm.x); maxX = Math.max(maxX, lm.x); minY = Math.min(minY, lm.y); maxY = Math.max(maxY, lm.y); });
             console.log(`[RENDER ${frameCounter.current}] Landmark Spread: X[${minX.toFixed(3)}-${maxX.toFixed(3)}] (span ${ (maxX-minX).toFixed(3) }), Y[${minY.toFixed(3)}-${maxY.toFixed(3)}] (span ${ (maxY-minY).toFixed(3) })`);
           }
-
           const lips = lipTriangles.map(([a, b, c]) => [allFaceLandmarks[a], allFaceLandmarks[b], allFaceLandmarks[c]]);
           const v = new Float32Array(lips.flat().map(pt => [(0.5 - pt.x) * 2, (0.5 - pt.y) * 2]).flat());
           numLipVertices = v.length / 2;
@@ -150,7 +144,21 @@ export default function LipstickMirrorLive() {
 
       const cmdEnc = renderState.device.createCommandEncoder();
       const texView = renderState.context.getCurrentTexture().createView();
-      const passEnc = cmdEnc.beginRenderPass({ colorAttachments: [{ view: texView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.1, g: 0.1, b: 0.15, a: 1.0 } }] });
+      
+      // Get the physical canvas dimensions from the configured context
+      const physicalCanvasWidth = renderState.context.canvas.width;
+      const physicalCanvasHeight = renderState.context.canvas.height;
+
+      const passEnc = cmdEnc.beginRenderPass({
+        colorAttachments: [{ view: texView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.1, g: 0.1, b: 0.15, a: 1.0 } }]
+      });
+
+      // **** NEW: Explicitly set the viewport ****
+      passEnc.setViewport(0, 0, physicalCanvasWidth, physicalCanvasHeight, 0, 1);
+      if (frameCounter.current % 60 === 1) { // Log viewport once every 60 frames
+        console.log(`[RENDER ${frameCounter.current}] Viewport set to: 0, 0, ${physicalCanvasWidth}, ${physicalCanvasHeight}`);
+      }
+
       passEnc.setPipeline(renderState.videoPipeline); passEnc.setBindGroup(0, frameBindGroup); passEnc.draw(6);
       if (numLipVertices > 0) { passEnc.setPipeline(renderState.lipstickPipeline); passEnc.setVertexBuffer(0, renderState.vertexBuffer); passEnc.draw(numLipVertices); }
       passEnc.end();
