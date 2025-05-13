@@ -1,55 +1,43 @@
-// src/utils/initWebGPU.js (Explicitly set size in context.configure)
+// src/utils/initWebGPU.js (SIMPLIFIED - NO DPR HANDLING)
 
 export default async function initWebGPU(canvas) {
   if (!navigator.gpu) {
-    console.error("WebGPU not supported. Please use a browser that supports WebGPU.");
+    console.error("WebGPU not supported.");
     throw new Error('WebGPU not supported');
   }
-
   const adapter = await navigator.gpu.requestAdapter();
   if (!adapter) {
-    console.error("Failed to get GPU adapter. WebGPU might be disabled or unavailable.");
+    console.error("Failed to get GPU adapter.");
     throw new Error('No GPU adapter found');
   }
-
   const device = await adapter.requestDevice();
   if (!device) {
     console.error("Failed to get GPU device.");
     throw new Error('No GPU device found');
   }
-
   const context = canvas.getContext('webgpu');
   if (!context) {
-    console.error("Failed to get WebGPU context from canvas.");
+    console.error("Failed to get WebGPU context.");
     throw new Error('Could not get WebGPU context');
   }
 
   const format = navigator.gpu.getPreferredCanvasFormat();
-  const dpr = window.devicePixelRatio || 1;
-  console.log(`[initWebGPU] Device Pixel Ratio: ${dpr}`);
 
-  const presentationWidth = canvas.clientWidth;
-  const presentationHeight = canvas.clientHeight;
-  console.log(`[initWebGPU] Canvas clientWidth/Height (CSS display size): ${presentationWidth}x${presentationHeight}`);
+  // Use logical dimensions directly from clientWidth/Height
+  const logicalWidth = canvas.clientWidth;
+  const logicalHeight = canvas.clientHeight;
 
-  // Set the canvas's internal drawing buffer size in PHYSICAL pixels.
-  const physicalWidth = Math.round(presentationWidth * dpr);
-  const physicalHeight = Math.round(presentationHeight * dpr);
-  canvas.width = physicalWidth;
-  canvas.height = physicalHeight;
-  console.log(`[initWebGPU] Canvas internal buffer dimensions SET TO (physical pixels): ${canvas.width}x${canvas.height}`);
+  canvas.width = logicalWidth;
+  canvas.height = logicalHeight;
+  console.log(`[initWebGPU - SIMPLIFIED] Canvas internal buffer dimensions SET TO (logical pixels): ${canvas.width}x${canvas.height}`);
 
   context.configure({
     device,
     format,
     alphaMode: 'premultiplied',
-    // Explicitly set the size for the presentation context to the physical pixel size.
-    size: { width: physicalWidth, height: physicalHeight }
-    // Usage can also be specified, though often defaults correctly:
-    // usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC, // Ensure RENDER_ATTACHMENT
+    size: { width: logicalWidth, height: logicalHeight } // Use logical size
   });
 
-  console.log(`[initWebGPU] Context configured with format: ${format} for explicit size ${physicalWidth}x${physicalHeight}`);
-
+  console.log(`[initWebGPU - SIMPLIFIED] Context configured with format: ${format} for explicit size ${logicalWidth}x${logicalHeight}`);
   return { device, context, format };
 }

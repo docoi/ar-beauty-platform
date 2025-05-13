@@ -1,7 +1,7 @@
-// src/pages/LipstickMirrorLive.jsx (Explicitly set viewport)
+// src/pages/LipstickMirrorLive.jsx (Use logical dims for viewport after initWebGPU simplification)
 
 import React, { useEffect, useRef, useState } from 'react';
-import initWebGPU from '@/utils/initWebGPU';
+import initWebGPU from '@/utils/initWebGPU'; // This will be the SIMPLIFIED version
 import createPipelines from '@/utils/createPipelines';
 import lipTriangles from '@/utils/lipTriangles';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
@@ -54,7 +54,7 @@ export default function LipstickMirrorLive() {
         await videoRef.current.play();
         console.log("[INIT_EFFECT] Video playback started.");
         if (!navigator.gpu) throw new Error("WebGPU not supported.");
-        const { device, context, format } = await initWebGPU(canvasRef.current); // Uses updated initWebGPU
+        const { device, context, format } = await initWebGPU(canvasRef.current); // Will call SIMPLIFIED initWebGPU
         renderState.device = device; renderState.context = context;
         console.log("[INIT_EFFECT] WebGPU device and context obtained.");
         device.lost.then((info) => {
@@ -98,7 +98,7 @@ export default function LipstickMirrorLive() {
       if (renderState.renderRequestId) { console.log("[RENDER_LOOP_EFFECT] Resources no longer ready, stopping previous loop."); cancelAnimationFrame(renderState.renderRequestId); renderState.renderRequestId = null; }
       return;
     }
-    if (!renderState.device || !renderState.context?.canvas) { // Added check for context.canvas
+    if (!renderState.device || !renderState.context?.canvas) {
         console.error("[RENDER_LOOP_EFFECT] CRITICAL: Device or context.canvas is null. Aborting loop start.", {device: !!renderState.device, contextCanvas: !!renderState.context?.canvas});
         setError("GPU Device/Canvas unavailable for render loop.");
         return;
@@ -107,7 +107,7 @@ export default function LipstickMirrorLive() {
     const render = async () => {
       if (!renderState.device) { console.warn(`[RENDER ${frameCounter.current}] Loop aborted: Device lost.`); renderState.renderRequestId = null; return; }
       frameCounter.current++;
-      // console.log(`[RENDER ${frameCounter.current}] Frame Start. Device: ${!!renderState.device}`); // Log from previous step is sufficient
+      // console.log(`[RENDER ${frameCounter.current}] Frame Start. Device: ${!!renderState.device}`);
 
       if (!videoRef.current || videoRef.current.readyState < videoRef.current.HAVE_ENOUGH_DATA || videoRef.current.videoWidth === 0) {
         renderState.renderRequestId = requestAnimationFrame(render); return;
@@ -145,18 +145,17 @@ export default function LipstickMirrorLive() {
       const cmdEnc = renderState.device.createCommandEncoder();
       const texView = renderState.context.getCurrentTexture().createView();
       
-      // Get the physical canvas dimensions from the configured context
-      const physicalCanvasWidth = renderState.context.canvas.width;
-      const physicalCanvasHeight = renderState.context.canvas.height;
+      // These will now get the LOGICAL dimensions (e.g., 638x478) from the simplified initWebGPU
+      const canvasCurrentWidth = renderState.context.canvas.width;
+      const canvasCurrentHeight = renderState.context.canvas.height;
 
       const passEnc = cmdEnc.beginRenderPass({
         colorAttachments: [{ view: texView, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0.1, g: 0.1, b: 0.15, a: 1.0 } }]
       });
 
-      // **** NEW: Explicitly set the viewport ****
-      passEnc.setViewport(0, 0, physicalCanvasWidth, physicalCanvasHeight, 0, 1);
+      passEnc.setViewport(0, 0, canvasCurrentWidth, canvasCurrentHeight, 0, 1);
       if (frameCounter.current % 60 === 1) { // Log viewport once every 60 frames
-        console.log(`[RENDER ${frameCounter.current}] Viewport set to: 0, 0, ${physicalCanvasWidth}, ${physicalCanvasHeight}`);
+        console.log(`[RENDER ${frameCounter.current}] Viewport set to: 0, 0, ${canvasCurrentWidth}, ${canvasCurrentHeight} (using logical dims from canvas attributes)`);
       }
 
       passEnc.setPipeline(renderState.videoPipeline); passEnc.setBindGroup(0, frameBindGroup); passEnc.draw(6);
