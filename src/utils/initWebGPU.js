@@ -1,4 +1,4 @@
-// src/utils/initWebGPU.js (Account for devicePixelRatio)
+// src/utils/initWebGPU.js (Explicitly set size in context.configure)
 
 export default async function initWebGPU(canvas) {
   if (!navigator.gpu) {
@@ -28,29 +28,28 @@ export default async function initWebGPU(canvas) {
   const dpr = window.devicePixelRatio || 1;
   console.log(`[initWebGPU] Device Pixel Ratio: ${dpr}`);
 
-  // Get the desired display size of the canvas from its CSS-rendered size
-  const presentationWidth = canvas.clientWidth;  // e.g., 638 CSS pixels
-  const presentationHeight = canvas.clientHeight; // e.g., 478 CSS pixels
+  const presentationWidth = canvas.clientWidth;
+  const presentationHeight = canvas.clientHeight;
   console.log(`[initWebGPU] Canvas clientWidth/Height (CSS display size): ${presentationWidth}x${presentationHeight}`);
 
   // Set the canvas's internal drawing buffer size in PHYSICAL pixels.
-  canvas.width = Math.round(presentationWidth * dpr);
-  canvas.height = Math.round(presentationHeight * dpr);
+  const physicalWidth = Math.round(presentationWidth * dpr);
+  const physicalHeight = Math.round(presentationHeight * dpr);
+  canvas.width = physicalWidth;
+  canvas.height = physicalHeight;
   console.log(`[initWebGPU] Canvas internal buffer dimensions SET TO (physical pixels): ${canvas.width}x${canvas.height}`);
-  // Note: The canvas's CSS style (e.g., width:100% or width:638px) should remain unchanged.
-  // The browser will scale the high-resolution rendering down to the CSS display size.
 
   context.configure({
     device,
     format,
-    alphaMode: 'premultiplied', // Or 'opaque'
-    // The size for configure should be the physical pixel size of the canvas drawing buffer.
-    // This is implicitly handled by canvas.width and canvas.height being set correctly.
-    // You could also explicitly set it:
-    // size: { width: canvas.width, height: canvas.height }
+    alphaMode: 'premultiplied',
+    // Explicitly set the size for the presentation context to the physical pixel size.
+    size: { width: physicalWidth, height: physicalHeight }
+    // Usage can also be specified, though often defaults correctly:
+    // usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC, // Ensure RENDER_ATTACHMENT
   });
 
-  console.log(`[initWebGPU] Context configured with format: ${format} for physical canvas size ${canvas.width}x${canvas.height}`);
+  console.log(`[initWebGPU] Context configured with format: ${format} for explicit size ${physicalWidth}x${physicalHeight}`);
 
   return { device, context, format };
 }
