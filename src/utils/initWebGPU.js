@@ -1,4 +1,4 @@
-// src/utils/initWebGPU.js
+// src/utils/initWebGPU.js (Account for devicePixelRatio)
 
 export default async function initWebGPU(canvas) {
   if (!navigator.gpu) {
@@ -25,28 +25,32 @@ export default async function initWebGPU(canvas) {
   }
 
   const format = navigator.gpu.getPreferredCanvasFormat();
+  const dpr = window.devicePixelRatio || 1;
+  console.log(`[initWebGPU] Device Pixel Ratio: ${dpr}`);
 
-  // Explicitly set canvas drawing buffer size to match its HTML attributes
-  // This can help with DPI scaling issues or if the canvas CSS size differs from its render size.
-  // We want the internal buffer to be 1:1 with the canvas width/height attributes.
-  canvas.width = canvas.clientWidth;   // Match CSS width if it's different, or just re-affirm
-  canvas.height = canvas.clientHeight; // Match CSS height if it's different, or just re-affirm
-  // For this project, clientWidth/Height should be 640/480 due to parent div styling.
-  // This ensures the internal GPU texture matches this.
+  // Get the desired display size of the canvas from its CSS-rendered size
+  const presentationWidth = canvas.clientWidth;  // e.g., 638 CSS pixels
+  const presentationHeight = canvas.clientHeight; // e.g., 478 CSS pixels
+  console.log(`[initWebGPU] Canvas clientWidth/Height (CSS display size): ${presentationWidth}x${presentationHeight}`);
 
-  console.log(`[initWebGPU] Canvas dimensions set to: ${canvas.width}x${canvas.height} (from clientWidth/clientHeight)`);
-  console.log(`[initWebGPU] Canvas HTML attributes: ${canvas.getAttribute('width')}x${canvas.getAttribute('height')}`);
-
+  // Set the canvas's internal drawing buffer size in PHYSICAL pixels.
+  canvas.width = Math.round(presentationWidth * dpr);
+  canvas.height = Math.round(presentationHeight * dpr);
+  console.log(`[initWebGPU] Canvas internal buffer dimensions SET TO (physical pixels): ${canvas.width}x${canvas.height}`);
+  // Note: The canvas's CSS style (e.g., width:100% or width:638px) should remain unchanged.
+  // The browser will scale the high-resolution rendering down to the CSS display size.
 
   context.configure({
     device,
     format,
-    alphaMode: 'premultiplied', // Or 'opaque' if no transparency needed from canvas itself
-    // Optional: Explicitly set the size for the presentation context
-    // size: { width: canvas.width, height: canvas.height } // This is often implicit
+    alphaMode: 'premultiplied', // Or 'opaque'
+    // The size for configure should be the physical pixel size of the canvas drawing buffer.
+    // This is implicitly handled by canvas.width and canvas.height being set correctly.
+    // You could also explicitly set it:
+    // size: { width: canvas.width, height: canvas.height }
   });
 
-  console.log(`[initWebGPU] Context configured with format: ${format}`);
+  console.log(`[initWebGPU] Context configured with format: ${format} for physical canvas size ${canvas.width}x${canvas.height}`);
 
   return { device, context, format };
 }
