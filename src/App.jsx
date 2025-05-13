@@ -9,11 +9,13 @@ import Pricing from "@/pages/pricing.jsx";
 import Contact from "@/pages/contact.jsx";
 import PrivacyPolicy from "@/pages/privacy.jsx";
 import TermsOfService from "@/pages/TermsOfService.jsx";
-
 import AvatarSwitcher from "@/pages/AvatarSwitcher.jsx";
 import ComingSoonPage from "@/pages/ComingSoon.jsx";
 import HydrationSerumPage from "@/pages/hydration_serum.jsx";
 import VirtualTryOnPage from "@/pages/VirtualTryOnPage.jsx";
+import TestWebGPUCanvas from './components/TestWebGPUCanvas'; // Import the new test component
+
+
 
 // ✅ FIXED: Use correct path to component
 import WebGPUDemo from "@/components/WebGPUDemo.jsx";
@@ -44,7 +46,8 @@ function App() {
         <Route path="/webgpu-test" element={<WebGPUDemo />} />
         <Route path="/lipstick-mirror" element={<LipstickMirror />} />
         <Route path="/mirror" element={<MirrorPage />} />
-        <Route path="/mirror-live" element={<LipstickMirrorLive />} />
+        <Route path="/mirror-live" element={<TestWebGPUCanvas />} />
+        <Route path="/test-webgpu" element={<TestWebGPUCanvas />} />
       </Routes>
     </Router>
   );
