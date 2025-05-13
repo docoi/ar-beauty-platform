@@ -1,4 +1,4 @@
-// src/pages/LipstickMirrorLive.jsx (Trigger re-render after GPU init)
+// src/pages/LipstickMirrorLive.jsx (Add per-frame log, trigger re-render after GPU init)
 
 import React, { useEffect, useRef, useState } from 'react';
 import initWebGPU from '@/utils/initWebGPU';
@@ -10,7 +10,7 @@ export default function LipstickMirrorLive() {
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
   const [landmarker, setLandmarker] = useState(null);
-  const [gpuResourcesReady, setGpuResourcesReady] = useState(false); // NEW STATE
+  const [gpuResourcesReady, setGpuResourcesReady] = useState(false);
   const [error, setError] = useState(null);
   const [debugMessage, setDebugMessage] = useState('Initializing...');
   const frameCounter = useRef(0);
@@ -31,7 +31,7 @@ export default function LipstickMirrorLive() {
           baseOptions: { modelAssetPath: '/models/face_landmarker.task', delegate: 'GPU' },
           outputFaceBlendshapes: false, runningMode: 'VIDEO', numFaces: 1,
         });
-        setLandmarker(lm); // Triggers re-render
+        setLandmarker(lm);
         console.log("[LM_EFFECT] FaceLandmarker ready.");
       } catch (err) {
         console.error("[LM_EFFECT] Error initializing FaceLandmarker:", err);
@@ -63,7 +63,7 @@ export default function LipstickMirrorLive() {
         console.log("[INIT_EFFECT] Video playback started.");
 
         if (!navigator.gpu) throw new Error("WebGPU not supported.");
-        const { device, context, format } = await initWebGPU(canvasRef.current);
+        const { device, context, format } = await initWebGPU(canvasRef.current); // Calls updated initWebGPU
         renderState.device = device; renderState.context = context;
         console.log("[INIT_EFFECT] WebGPU device and context obtained.");
         device.lost.then((info) => {
@@ -71,7 +71,7 @@ export default function LipstickMirrorLive() {
           setError(`Device lost: ${info.message}`); setDebugMessage("Error: Device Lost.");
           if (renderState.renderRequestId) cancelAnimationFrame(renderState.renderRequestId);
           renderState.renderRequestId = null; renderState.device = null;
-          setGpuResourcesReady(false); // Mark GPU as not ready on loss
+          setGpuResourcesReady(false);
         });
         const pipes = await createPipelines(device, format);
         renderState.videoPipeline = pipes.videoPipeline; renderState.lipstickPipeline = pipes.lipstickPipeline;
@@ -83,11 +83,11 @@ export default function LipstickMirrorLive() {
         renderState.vertexBuffer = device.createBuffer({ size: renderState.vertexBufferSize, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
         console.log("[INIT_EFFECT] WebGPU Vertex Buffer created.");
         console.log("[INIT_EFFECT] GPU/Video Initialization complete.");
-        setGpuResourcesReady(true); // <--- NEW: Force re-render after GPU init
+        setGpuResourcesReady(true);
       } catch (err) {
         console.error("[INIT_EFFECT] Initialization failed:", err);
         setError(`Setup failed: ${err.message}`); setDebugMessage("Error.");
-        setGpuResourcesReady(false); // Mark as not ready on error
+        setGpuResourcesReady(false);
       }
     };
     initGPUAndVideo();
@@ -97,19 +97,17 @@ export default function LipstickMirrorLive() {
       videoRef.current?.srcObject?.getTracks().forEach(t => t.stop());
       if(videoRef.current) videoRef.current.srcObject = null;
       renderState.vertexBuffer?.destroy(); renderState.device = null;
-      setGpuResourcesReady(false); // Reset on cleanup
+      setGpuResourcesReady(false);
       console.log("[INIT_EFFECT_CLEANUP] GPU/Video cleanup finished.");
     };
-  }, []); // Empty dependency array, runs once
+  }, []);
 
-  const allResourcesReady = !!(landmarker && gpuResourcesReady); // Simpler check now
+  const allResourcesReady = !!(landmarker && gpuResourcesReady);
 
   console.log('[COMPONENT_BODY_RENDER] allResourcesReady:', allResourcesReady, {
     landmarker: !!landmarker,
-    gpuResourcesReady: gpuResourcesReady, // Check the new state
-    // The individual renderState items are still important for the render loop itself
-    // but allResourcesReady now primarily depends on the two state flags.
-    device: !!renderState.device, // For verbose logging
+    gpuResourcesReady: gpuResourcesReady,
+    device: !!renderState.device,
   });
 
   // Effect 3: Update UI Message
@@ -117,11 +115,6 @@ export default function LipstickMirrorLive() {
     if (allResourcesReady) {
       setDebugMessage("Live Tracking Active!");
       console.log("[UI_MSG_EFFECT] Resources ready. UI message set.");
-    } else if (!landmarker || !gpuResourcesReady) {
-      // Optional: more granular initial message if desired
-      // if (!landmarker && !gpuResourcesReady) setDebugMessage("Initializing All...");
-      // else if (!landmarker) setDebugMessage("Initializing Landmarker...");
-      // else if (!gpuResourcesReady) setDebugMessage("Initializing GPU...");
     }
   }, [allResourcesReady]);
 
@@ -136,7 +129,6 @@ export default function LipstickMirrorLive() {
       }
       return;
     }
-    // Additional check for renderState.device just in case gpuResourcesReady was true but device got lost immediately
     if (!renderState.device) {
         console.error("[RENDER_LOOP_EFFECT] CRITICAL: allResourcesReady is true but renderState.device is null. Aborting loop start.");
         setError("GPU Device unavailable for render loop.");
@@ -146,12 +138,14 @@ export default function LipstickMirrorLive() {
     console.log("[RENDER_LOOP_EFFECT] All resources ready. Starting render loop mechanism.");
     
     const render = async () => {
-      // ... (rest of the render function remains identical to the previous version) ...
       if (!renderState.device) {
         console.warn(`[RENDER ${frameCounter.current}] Loop aborted: Device lost.`);
         renderState.renderRequestId = null; return;
       }
       frameCounter.current++;
+      // THIS IS THE NEWLY ADDED/ENSURED LOG LINE:
+      console.log(`[RENDER ${frameCounter.current}] Frame Start. Device: ${!!renderState.device}`); 
+
       if (!videoRef.current || videoRef.current.readyState < videoRef.current.HAVE_ENOUGH_DATA) {
         renderState.renderRequestId = requestAnimationFrame(render); return;
       }
@@ -186,8 +180,8 @@ export default function LipstickMirrorLive() {
       passEnc.end();
       renderState.device.queue.submit([cmdEnc.finish()]);
 
-      if (frameCounter.current === 1) {
-        console.log(`[RENDER 1] First frame drawn. Expect blue debug screen. Subsequent frames should follow.`);
+      if (frameCounter.current === 1) { // Only log this for the very first frame
+        console.log(`[RENDER 1] First frame drawn successfully. Expect blue debug screen. Subsequent frames should follow.`);
       }
       if (renderState.device) {
         renderState.renderRequestId = requestAnimationFrame(render);
@@ -195,7 +189,7 @@ export default function LipstickMirrorLive() {
         console.warn(`[RENDER ${frameCounter.current}] Device became null post-submit. Loop stopping.`);
         renderState.renderRequestId = null;
       }
-    }; // End of render function
+    };
     console.log("[RENDER_LOOP_EFFECT] Requesting first animation frame for the loop.");
     frameCounter.current = 0;
     renderState.renderRequestId = requestAnimationFrame(render);
@@ -204,7 +198,7 @@ export default function LipstickMirrorLive() {
       if (renderState.renderRequestId) cancelAnimationFrame(renderState.renderRequestId);
       renderState.renderRequestId = null;
     };
-  }, [allResourcesReady, landmarker]); // landmarker still here, as render() uses it.
+  }, [allResourcesReady, landmarker]);
 
   return (
     <div style={{ width: '640px', height: '480px', margin: 'auto', border: '1px solid #ccc', position: 'relative', overflow: 'hidden' }}>
