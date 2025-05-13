@@ -1,9 +1,9 @@
-// src/pages/LipstickMirrorLive.jsx (Add per-frame log, trigger re-render after GPU init)
+// src/pages/LipstickMirrorLive.jsx (Log video dimensions and landmark spread)
 
 import React, { useEffect, useRef, useState } from 'react';
 import initWebGPU from '@/utils/initWebGPU';
 import createPipelines from '@/utils/createPipelines';
-import lipTriangles from '@/utils/lipTriangles';
+import lipTriangles from '@/utils/lipTriangles'; // Ensure this file has correct indices
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export default function LipstickMirrorLive() {
@@ -21,7 +21,6 @@ export default function LipstickMirrorLive() {
     vertexBufferSize: 0, renderRequestId: null,
   }).current;
 
-  // Effect 1: Initialize FaceLandmarker
   useEffect(() => {
     const initLandmarker = async () => {
       try {
@@ -33,20 +32,13 @@ export default function LipstickMirrorLive() {
         });
         setLandmarker(lm);
         console.log("[LM_EFFECT] FaceLandmarker ready.");
-      } catch (err) {
-        console.error("[LM_EFFECT] Error initializing FaceLandmarker:", err);
-        setError(`FaceLandmarker init failed: ${err.message}`); setDebugMessage("Error.");
-      }
+      } catch (err) { console.error("[LM_EFFECT] Error initializing FaceLandmarker:", err); setError(`FaceLandmarker init failed: ${err.message}`); setDebugMessage("Error."); }
     };
     initLandmarker();
   }, []);
 
-  // Effect 2: Initialize WebGPU and Video
   useEffect(() => {
-    if (!canvasRef.current || !videoRef.current) {
-      console.log("[INIT_EFFECT] Skipping: Canvas or Video ref not ready yet.");
-      return;
-    }
+    if (!canvasRef.current || !videoRef.current) { console.log("[INIT_EFFECT] Skipping: Canvas or Video ref not ready yet."); return; }
     let isCleanup = false;
     const initGPUAndVideo = async () => {
       try {
@@ -56,26 +48,23 @@ export default function LipstickMirrorLive() {
         if (isCleanup) { stream.getTracks().forEach(t => t.stop()); return; }
         videoRef.current.srcObject = stream;
         await new Promise((res, rej) => {
-          videoRef.current.onloadedmetadata = () => { console.log("[INIT_EFFECT] Video metadata loaded."); res(); };
+          videoRef.current.onloadedmetadata = () => { console.log(`[INIT_EFFECT] Video metadata loaded: ${videoRef.current.videoWidth}x${videoRef.current.videoHeight}`); res(); }; // Log actual video dimensions
           videoRef.current.onerror = () => rej(new Error("Video load error."));
         });
         await videoRef.current.play();
         console.log("[INIT_EFFECT] Video playback started.");
-
         if (!navigator.gpu) throw new Error("WebGPU not supported.");
-        const { device, context, format } = await initWebGPU(canvasRef.current); // Calls updated initWebGPU
+        const { device, context, format } = await initWebGPU(canvasRef.current);
         renderState.device = device; renderState.context = context;
         console.log("[INIT_EFFECT] WebGPU device and context obtained.");
         device.lost.then((info) => {
           console.error(`[DEVICE_LOST_HANDLER] WebGPU device lost: ${info.message}`);
           setError(`Device lost: ${info.message}`); setDebugMessage("Error: Device Lost.");
           if (renderState.renderRequestId) cancelAnimationFrame(renderState.renderRequestId);
-          renderState.renderRequestId = null; renderState.device = null;
-          setGpuResourcesReady(false);
+          renderState.renderRequestId = null; renderState.device = null; setGpuResourcesReady(false);
         });
         const pipes = await createPipelines(device, format);
-        renderState.videoPipeline = pipes.videoPipeline; renderState.lipstickPipeline = pipes.lipstickPipeline;
-        renderState.videoBindGroupLayout = pipes.videoBindGroupLayout;
+        renderState.videoPipeline = pipes.videoPipeline; renderState.lipstickPipeline = pipes.lipstickPipeline; renderState.videoBindGroupLayout = pipes.videoBindGroupLayout;
         console.log("[INIT_EFFECT] WebGPU Pipelines created.");
         renderState.videoSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
         console.log("[INIT_EFFECT] WebGPU Sampler created.");
@@ -84,79 +73,66 @@ export default function LipstickMirrorLive() {
         console.log("[INIT_EFFECT] WebGPU Vertex Buffer created.");
         console.log("[INIT_EFFECT] GPU/Video Initialization complete.");
         setGpuResourcesReady(true);
-      } catch (err) {
-        console.error("[INIT_EFFECT] Initialization failed:", err);
-        setError(`Setup failed: ${err.message}`); setDebugMessage("Error.");
-        setGpuResourcesReady(false);
-      }
+      } catch (err) { console.error("[INIT_EFFECT] Initialization failed:", err); setError(`Setup failed: ${err.message}`); setDebugMessage("Error."); setGpuResourcesReady(false); }
     };
     initGPUAndVideo();
     return () => {
-      console.log("[INIT_EFFECT_CLEANUP] Cleaning up GPU/Video resources...");
-      isCleanup = true;
-      videoRef.current?.srcObject?.getTracks().forEach(t => t.stop());
-      if(videoRef.current) videoRef.current.srcObject = null;
-      renderState.vertexBuffer?.destroy(); renderState.device = null;
-      setGpuResourcesReady(false);
+      console.log("[INIT_EFFECT_CLEANUP] Cleaning up GPU/Video resources..."); isCleanup = true;
+      videoRef.current?.srcObject?.getTracks().forEach(t => t.stop()); if(videoRef.current) videoRef.current.srcObject = null;
+      renderState.vertexBuffer?.destroy(); renderState.device = null; setGpuResourcesReady(false);
       console.log("[INIT_EFFECT_CLEANUP] GPU/Video cleanup finished.");
     };
   }, []);
 
   const allResourcesReady = !!(landmarker && gpuResourcesReady);
 
-  console.log('[COMPONENT_BODY_RENDER] allResourcesReady:', allResourcesReady, {
-    landmarker: !!landmarker,
-    gpuResourcesReady: gpuResourcesReady,
-    device: !!renderState.device,
-  });
+  console.log('[COMPONENT_BODY_RENDER] allResourcesReady:', allResourcesReady, { lm: !!landmarker, gpuRdy: gpuResourcesReady, dev: !!renderState.device });
 
-  // Effect 3: Update UI Message
   useEffect(() => {
-    if (allResourcesReady) {
-      setDebugMessage("Live Tracking Active!");
-      console.log("[UI_MSG_EFFECT] Resources ready. UI message set.");
-    }
+    if (allResourcesReady) { setDebugMessage("Live Tracking Active!"); console.log("[UI_MSG_EFFECT] Resources ready. UI message set."); }
   }, [allResourcesReady]);
 
-  // Effect 4: Manage the Render Loop
   useEffect(() => {
     if (!allResourcesReady) {
       console.log("[RENDER_LOOP_EFFECT] Conditions NOT YET MET for starting render loop (allResourcesReady is false).");
-      if (renderState.renderRequestId) {
-        console.log("[RENDER_LOOP_EFFECT] Resources no longer ready, stopping previous loop.");
-        cancelAnimationFrame(renderState.renderRequestId);
-        renderState.renderRequestId = null;
-      }
+      if (renderState.renderRequestId) { console.log("[RENDER_LOOP_EFFECT] Resources no longer ready, stopping previous loop."); cancelAnimationFrame(renderState.renderRequestId); renderState.renderRequestId = null; }
       return;
     }
-    if (!renderState.device) {
-        console.error("[RENDER_LOOP_EFFECT] CRITICAL: allResourcesReady is true but renderState.device is null. Aborting loop start.");
-        setError("GPU Device unavailable for render loop.");
-        return;
-    }
-
+    if (!renderState.device) { console.error("[RENDER_LOOP_EFFECT] CRITICAL: allResourcesReady is true but renderState.device is null. Aborting loop start."); setError("GPU Device unavailable for render loop."); return; }
     console.log("[RENDER_LOOP_EFFECT] All resources ready. Starting render loop mechanism.");
-    
     const render = async () => {
-      if (!renderState.device) {
-        console.warn(`[RENDER ${frameCounter.current}] Loop aborted: Device lost.`);
-        renderState.renderRequestId = null; return;
-      }
+      if (!renderState.device) { console.warn(`[RENDER ${frameCounter.current}] Loop aborted: Device lost.`); renderState.renderRequestId = null; return; }
       frameCounter.current++;
-      // THIS IS THE NEWLY ADDED/ENSURED LOG LINE:
-      console.log(`[RENDER ${frameCounter.current}] Frame Start. Device: ${!!renderState.device}`); 
+      // console.log(`[RENDER ${frameCounter.current}] Frame Start. Device: ${!!renderState.device}`); // Already have this from previous step
 
-      if (!videoRef.current || videoRef.current.readyState < videoRef.current.HAVE_ENOUGH_DATA) {
+      if (!videoRef.current || videoRef.current.readyState < videoRef.current.HAVE_ENOUGH_DATA || videoRef.current.videoWidth === 0) { // Added videoWidth check
         renderState.renderRequestId = requestAnimationFrame(render); return;
       }
       const videoFrame = videoRef.current;
+      
+      // NEW LOG 1: Log actual video dimensions being used by MediaPipe
+      if (frameCounter.current % 60 === 1) { // Log every 60 frames to avoid flooding
+        console.log(`[RENDER ${frameCounter.current}] Video dims for MediaPipe: ${videoFrame.videoWidth}x${videoFrame.videoHeight}`);
+      }
+
       let numLipVertices = 0;
       try {
         const now = performance.now();
         const results = landmarker.detectForVideo(videoFrame, now);
         if (results?.faceLandmarks?.length > 0) {
-          const lm = results.faceLandmarks[0];
-          const lips = lipTriangles.map(([a, b, c]) => [lm[a], lm[b], lm[c]]);
+          const allFaceLandmarks = results.faceLandmarks[0]; // Array of {x,y,z}
+
+          // NEW LOG 2: Calculate and log landmark spread
+          if (allFaceLandmarks && frameCounter.current % 60 === 1) { // Log every 60 frames
+            let minX = 1.0, maxX = 0.0, minY = 1.0, maxY = 0.0;
+            allFaceLandmarks.forEach(lm => {
+              if (lm.x < minX) minX = lm.x; if (lm.x > maxX) maxX = lm.x;
+              if (lm.y < minY) minY = lm.y; if (lm.y > maxY) maxY = lm.y;
+            });
+            console.log(`[RENDER ${frameCounter.current}] Landmark Spread: X[${minX.toFixed(3)}-${maxX.toFixed(3)}] (span ${ (maxX-minX).toFixed(3) }), Y[${minY.toFixed(3)}-${maxY.toFixed(3)}] (span ${ (maxY-minY).toFixed(3) })`);
+          }
+
+          const lips = lipTriangles.map(([a, b, c]) => [allFaceLandmarks[a], allFaceLandmarks[b], allFaceLandmarks[c]]);
           const v = new Float32Array(lips.flat().map(pt => [(0.5 - pt.x) * 2, (0.5 - pt.y) * 2]).flat());
           numLipVertices = v.length / 2;
           if (v.byteLength > 0) {
@@ -180,23 +156,15 @@ export default function LipstickMirrorLive() {
       passEnc.end();
       renderState.device.queue.submit([cmdEnc.finish()]);
 
-      if (frameCounter.current === 1) { // Only log this for the very first frame
-        console.log(`[RENDER 1] First frame drawn successfully. Expect blue debug screen. Subsequent frames should follow.`);
-      }
-      if (renderState.device) {
-        renderState.renderRequestId = requestAnimationFrame(render);
-      } else {
-        console.warn(`[RENDER ${frameCounter.current}] Device became null post-submit. Loop stopping.`);
-        renderState.renderRequestId = null;
-      }
+      if (frameCounter.current === 1) { console.log(`[RENDER 1] First frame drawn. Subsequent frames should follow.`); }
+      if (renderState.device) { renderState.renderRequestId = requestAnimationFrame(render); }
+      else { console.warn(`[RENDER ${frameCounter.current}] Device became null post-submit. Loop stopping.`); renderState.renderRequestId = null; }
     };
     console.log("[RENDER_LOOP_EFFECT] Requesting first animation frame for the loop.");
-    frameCounter.current = 0;
-    renderState.renderRequestId = requestAnimationFrame(render);
+    frameCounter.current = 0; renderState.renderRequestId = requestAnimationFrame(render);
     return () => {
       console.log(`[RENDER_LOOP_EFFECT_CLEANUP] Stopping render loop (ID: ${renderState.renderRequestId}).`);
-      if (renderState.renderRequestId) cancelAnimationFrame(renderState.renderRequestId);
-      renderState.renderRequestId = null;
+      if (renderState.renderRequestId) cancelAnimationFrame(renderState.renderRequestId); renderState.renderRequestId = null;
     };
   }, [allResourcesReady, landmarker]);
 
