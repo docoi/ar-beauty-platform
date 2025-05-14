@@ -13,7 +13,9 @@ import AvatarSwitcher from "@/pages/AvatarSwitcher.jsx";
 import ComingSoonPage from "@/pages/ComingSoon.jsx";
 import HydrationSerumPage from "@/pages/hydration_serum.jsx";
 import VirtualTryOnPage from "@/pages/VirtualTryOnPage.jsx";
-import TestWebGPUCanvas from './components/TestWebGPUCanvas'; // Import the new test component
+import LipstickMirrorLive from "@/pages/LipstickMirrorLive.jsx";
+import MirrorPage from "@/pages/mirror.jsx";
+
 
 
 
@@ -23,8 +25,9 @@ import WebGPUTest from '@/pages/webgpu-test.jsx';
 import StaticSafeTryOn from "@/components/StaticSelfieTryOn.jsx";
 import TryOnRenderer from "@/components/TryOnRenderer.jsx";
 import LipstickMirror from "@/components/LipstickMirror.jsx";
-import LipstickMirrorLive from "@/pages/LipstickMirrorLive.jsx";
-import MirrorPage from "@/pages/mirror.jsx";
+import TestWebGPUCanvas from './components/TestWebGPUCanvas'; // Import the new test component
+import TestInConstrainedParent from './components/TestInConstrainedParent'; // New test setup
+
 
 function App() {
   return (
@@ -47,6 +50,7 @@ function App() {
         <Route path="/lipstick-mirror" element={<LipstickMirror />} />
         <Route path="/mirror" element={<MirrorPage />} />
         <Route path="/mirror-live" element={<LipstickMirrorLive />} />
+        <Route path="/test-constrained" element={<TestInConstrainedParent />} />
       </Routes>
     </Router>
   );
