@@ -1,190 +1,218 @@
-// src/pages/LipstickMirrorLive.jsx (DIAGNOSTIC - Render Pass with CLEAR ONLY to MAGENTA)
+// src/pages/LipstickMirrorLive.jsx (Adopting ChatGPT's Recommended Structure - Clear Only Diagnostic)
 
 import React, { useEffect, useRef, useState } from 'react';
-// createPipelines is not strictly needed for this diagnostic, but keep import for structure
-import createPipelines from '@/utils/createPipelines'; 
-import lipTriangles from '@/utils/lipTriangles'; // Not used in this diagnostic pass
-import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'; // Not used in this diagnostic pass
+// createPipelines and other app-specific imports are not used in this immediate diagnostic version
+// but would be added back once the clear works.
+// import createPipelines from '@/utils/createPipelines';
+// import lipTriangles from '@/utils/lipTriangles';
+// import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export default function LipstickMirrorLive() {
   const canvasRef = useRef(null);
-  const videoRef = useRef(null); // Not used in this diagnostic pass
+  // videoRef is not used in this clear-only diagnostic
+  // const videoRef = useRef(null); 
 
-  const deviceRef = useRef(null);
-  const contextRef = useRef(null);
-  const formatRef = useRef(null);
-  // pipelineStateRef fields won't be used for drawing in this diagnostic
-  const pipelineStateRef = useRef({ 
-    videoPipeline: null, lipstickPipeline: null, videoBindGroupLayout: null,
-    aspectRatioGroupLayout: null, aspectRatioUniformBuffer: null, aspectRatioBindGroup: null,
-    videoSampler: null, vertexBuffer: null, vertexBufferSize: 2048,
-  });
+  // We'll use local variables inside useEffect as much as possible,
+  // and refs only for things that need to persist across render() calls or be accessed by cleanup.
   const animationFrameIdRef = useRef(null);
-  const resizeHandlerRef = useRef(null);
+  const resizeHandlerRef = useRef(null); // To store the actual function for removal
 
-  const [landmarker, setLandmarker] = useState(null); // Landmarker state kept for effect structure
-  const [isGpuReady, setIsGpuReady] = useState(false);
+  // State for UI feedback (error/debug messages)
   const [error, setError] = useState(null);
   const [debugMessage, setDebugMessage] = useState('Initializing...');
-  const frameCounter = useRef(0);
+  const frameCounter = useRef(0); // For UI frame count display
 
-  // Effect 1: Initialize FaceLandmarker (kept for structural consistency with previous state)
   useEffect(() => {
-    const initLandmarker = async () => {
-      try {
-        console.log("[LM_EFFECT] Initializing FaceLandmarker (skipped for clear diagnostic, but effect runs)...");
-        // To speed up, we can comment out actual landmarker loading for this specific test
-        // const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
-        // const lm = await FaceLandmarker.createFromOptions(vision, { /* ... */ });
-        // setLandmarker(lm); 
-        setLandmarker({}); // Set to a dummy object to satisfy `allResourcesReady` if it checks landmarker
-        console.log("[LM_EFFECT] FaceLandmarker placeholder set.");
-      } catch (err) { console.error("[LM_EFFECT] Error (during placeholder):", err); setError(`LM init placeholder failed: ${err.message}`); }
-    };
-    initLandmarker();
-  }, []);
+    console.log("[MAIN_EFFECT] useEffect running.");
+    // --- Local variables within useEffect ---
+    let device = null; // GPUDevice
+    let context = null; // GPUCanvasContext
+    let format = null; // GPUCanvasFormat
+    // No need for landmarker, video, or complex pipelineState for this clear test
 
-  // Effect 2: Core WebGPU Initialization, Canvas Sizing, Context Config
-  useEffect(() => {
-    console.log("[CORE_GPU_EFFECT] Diagnostic - useEffect running.");
     const canvas = canvasRef.current;
-    if (!canvas) { console.error("[CORE_GPU_EFFECT] Canvas element not found."); return; }
-    let currentDevice = null;
+    if (!canvas) {
+      console.error("[MAIN_EFFECT] Canvas element not available on mount.");
+      setError("Canvas element not found.");
+      return;
+    }
 
-    const initializeWebGPUForClearTest = async () => {
-      if (!navigator.gpu) { console.error('WebGPU not supported.'); setError('WebGPU not supported.'); return; }
+    // This function will handle both initial setup and resize
+    const configureCanvasAndContext = () => {
+      if (!device || !context || !format || !canvas) {
+        console.error("[configureCanvasAndContext] Prerequisites not met (device, context, format, canvas).");
+        return false; // Indicate failure
+      }
+      console.log("[configureCanvasAndContext] Called.");
+      const dpr = window.devicePixelRatio || 1;
+      
+      // Log measurements BEFORE setting canvas.width/height
+      const currentClientWidth = canvas.clientWidth;
+      const currentClientHeight = canvas.clientHeight;
+      const rect = canvas.getBoundingClientRect();
+      console.log(`[configureCanvasAndContext] Before resize - clientWidth: ${currentClientWidth}, clientHeight: ${currentClientHeight}, DPR: ${dpr}`);
+      console.log(`[configureCanvasAndContext] Before resize - getBoundingClientRect: w=${rect.width}, h=${rect.height}`);
+
+      const targetWidth = Math.floor(currentClientWidth * dpr);
+      const targetHeight = Math.floor(currentClientHeight * dpr);
+
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        console.log(`[configureCanvasAndContext] Canvas buffer size SET to (physical pixels): ${canvas.width}x${canvas.height}`);
+      } else {
+        console.log(`[configureCanvasAndContext] Canvas buffer size ALREADY matches: ${canvas.width}x${canvas.height}.`);
+      }
+      
+      try {
+        context.configure({
+          device,
+          format,
+          alphaMode: 'opaque', // As per successful examples
+          size: [canvas.width, canvas.height],
+        });
+        console.log(`[configureCanvasAndContext] Context CONFIGURED. Size: ${canvas.width}x${canvas.height}`);
+        return true; // Indicate success
+      } catch (e) {
+        console.error("[configureCanvasAndContext] Error configuring context:", e);
+        setError("Error configuring WebGPU context.");
+        return false; // Indicate failure
+      }
+    };
+    
+    resizeHandlerRef.current = configureCanvasAndContext; // Store for resize listener removal
+
+    const renderLoop = () => {
+      if (!device || !context) {
+        console.warn(`[RENDER_LOOP] Device or context not available. Stopping.`);
+        if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+        return;
+      }
+      frameCounter.current++; // Update frame counter ref
+
+      let currentTexture;
+      try {
+        currentTexture = context.getCurrentTexture();
+      } catch (e) {
+        console.error(`[RENDER_LOOP ${frameCounter.current}] Error getting current texture:`, e);
+        // Attempt to reconfigure if texture acquisition fails (e.g., context lost or canvas size 0x0)
+        if (resizeHandlerRef.current && !resizeHandlerRef.current()) {
+            console.error(`[RENDER_LOOP ${frameCounter.current}] Re-configuration failed. Stopping loop.`);
+            if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
+            animationFrameIdRef.current = null;
+            return;
+        }
+        animationFrameIdRef.current = requestAnimationFrame(renderLoop); // Try next frame
+        return;
+      }
+
+      // Log texture and canvas dimensions (for diagnostic)
+      if (frameCounter.current < 5 || frameCounter.current % 120 === 1) {
+          console.log(`[RENDER_LOOP ${frameCounter.current}] Canvas physical: ${canvas.width}x${canvas.height}. Texture to clear: ${currentTexture.width}x${currentTexture.height}`);
+      }
+      
+      const commandEncoder = device.createCommandEncoder({ label: "ClearOnlyEncoder" });
+      const textureView = currentTexture.createView();
+      const renderPassDescriptor = {
+        colorAttachments: [{
+          view: textureView,
+          clearValue: { r: 1.0, g: 0.0, b: 1.0, a: 1.0 }, // MAGENTA
+          loadOp: 'clear',
+          storeOp: 'store',
+        }],
+      };
+      const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+      // For clear-only, viewport/scissor are often not strictly needed if clearing the whole attachment,
+      // but for rigor, especially given our past issues:
+      passEncoder.setViewport(0, 0, currentTexture.width, currentTexture.height, 0, 1);
+      passEncoder.setScissorRect(0, 0, currentTexture.width, currentTexture.height);
+      passEncoder.end();
+      device.queue.submit([commandEncoder.finish()]);
+
+      if (frameCounter.current === 1) {
+        console.log(`[RENDER_LOOP 1] First frame cleared to magenta.`);
+        setDebugMessage("Diagnostic: Clear Test (rAF)"); // Update UI after first successful frame
+      }
+      animationFrameIdRef.current = requestAnimationFrame(renderLoop);
+    };
+
+    const initializeAndStart = async () => {
+      if (!navigator.gpu) {
+        console.error("WebGPU not supported."); setError("WebGPU not supported."); return;
+      }
+      setDebugMessage("Initializing WebGPU...");
       try {
         const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) { console.error('Failed to get GPU adapter.'); setError('No GPU adapter.'); return; }
-        currentDevice = await adapter.requestDevice();
-        deviceRef.current = currentDevice;
-        console.log("[CORE_GPU_EFFECT] Device obtained:", currentDevice);
-        currentDevice.lost.then((info) => {
+        if (!adapter) { console.error("Failed to get GPU adapter."); setError("No GPU adapter."); return; }
+        
+        device = await adapter.requestDevice(); // Assign to local variable first
+        if (!device) { console.error("Failed to get GPU device."); setError("No GPU device."); return; }
+        console.log("[MAIN_EFFECT] Device obtained.");
+
+        device.lost.then((info) => {
           console.error(`[DEVICE_LOST_HANDLER] WebGPU device lost: ${info.message}`);
-          setError(`Device lost: ${info.message}.`); if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
-          animationFrameIdRef.current = null; deviceRef.current = null; contextRef.current = null; setIsGpuReady(false);
+          setError(`Device lost: ${info.message}.`); setDebugMessage("Error: Device Lost.");
+          if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
+          animationFrameIdRef.current = null; device = null; context = null; // Clear local vars
         });
-        
-        const context = canvas.getContext('webgpu');
+
+        context = canvas.getContext('webgpu'); // Assign to local variable
         if (!context) { console.error("Failed to get context."); setError('No WebGPU context.'); return; }
-        contextRef.current = context;
-        console.log("[CORE_GPU_EFFECT] Context obtained.");
-        formatRef.current = navigator.gpu.getPreferredCanvasFormat();
-        console.log("[CORE_GPU_EFFECT] Preferred format:", formatRef.current);
+        console.log("[MAIN_EFFECT] Context obtained.");
 
-        resizeHandlerRef.current = () => {
-            console.log("[resizeHandlerRef.current - configureAndSizeCanvas] Called");
-            const dvc = deviceRef.current; const ctx = contextRef.current; const fmt = formatRef.current; const cnvs = canvasRef.current;
-            if (!dvc || !ctx || !fmt || !cnvs) { console.error("[configureAndSizeCanvas] Missing core refs."); return false; }
-            const dpr = window.devicePixelRatio || 1;
-            const displayWidth = Math.floor(cnvs.clientWidth * dpr);
-            const displayHeight = Math.floor(cnvs.clientHeight * dpr);
-            if (cnvs.width !== displayWidth || cnvs.height !== displayHeight) {
-                cnvs.width = displayWidth; cnvs.height = displayHeight;
-                console.log(`[configureAndSizeCanvas] Canvas buffer SET to: ${cnvs.width}x${cnvs.height}. DPR: ${dpr}`);
-            } else { console.log(`[configureAndSizeCanvas] Canvas buffer size already matches: ${cnvs.width}x${cnvs.height}.`); }
-            try {
-                ctx.configure({ device: dvc, format: fmt, alphaMode: 'opaque', size: [cnvs.width, cnvs.height] });
-                console.log(`[configureAndSizeCanvas] Context CONFIGURED. Size: ${cnvs.width}x${cnvs.height}`);
-                return true;
-            } catch (e) { console.error("[configureAndSizeCanvas] Error configuring context:", e); setError("Error configuring context."); return false; }
-        };
-        
-        if (!resizeHandlerRef.current()) { console.error("[CORE_GPU_EFFECT] Initial canvas/context configuration failed."); return; }
-        window.addEventListener('resize', resizeHandlerRef.current);
-        console.log("[CORE_GPU_EFFECT] Initial canvas config done. Resize listener added.");
-        
-        // Pipeline creation is skipped for this diagnostic
-        console.log("[CORE_GPU_EFFECT] Pipeline creation SKIPPED for clear diagnostic.");
-        pipelineStateRef.current.videoPipeline = true; // Dummy value to satisfy allResourcesReady
-        
-        setIsGpuReady(true);
-        console.log("[CORE_GPU_EFFECT] GPU Core is Ready (for clear diagnostic).");
+        format = navigator.gpu.getPreferredCanvasFormat(); // Assign to local variable
+        console.log("[MAIN_EFFECT] Preferred format obtained:", format);
 
-        // Video stream setup is skipped for this diagnostic
-        console.log("[CORE_GPU_EFFECT] Video stream setup SKIPPED for clear diagnostic.");
-
-        // --- Render Loop (Clear Only) ---
-        const render = async () => {
-          const dvc = deviceRef.current; const ctx = contextRef.current;
-          if (!dvc || !ctx) {
-            console.warn(`[RENDER ${frameCounter.current}] Loop waiting: No Device/Context.`);
-            animationFrameIdRef.current = requestAnimationFrame(render); return;
+        // Defer initial configuration and render loop start until the next animation frame
+        // This is the key change suggested by ChatGPT to ensure layout is flushed.
+        console.log("[MAIN_EFFECT] Requesting animation frame for initial canvas config and render start...");
+        requestAnimationFrame(() => {
+          console.log("[MAIN_EFFECT] rAF callback: Starting initial canvas config.");
+          if (!configureCanvasAndContext()) { // Initial configuration
+              console.error("[MAIN_EFFECT] rAF callback: Initial canvas/context configuration FAILED.");
+              setError("Initial WebGPU canvas/context config failed.");
+              return;
           }
-          frameCounter.current++;
+          console.log("[MAIN_EFFECT] rAF callback: Initial canvas config successful. Starting render loop.");
+          renderLoop(); // Start render loop only after successful initial config
+        });
 
-          // Optional: Aggressive re-config for first few frames (can be removed if initial config is trusted)
-          if (frameCounter.current < 5) {
-            // console.log(`[RENDER ${frameCounter.current}] Attempting pre-render re-configuration...`);
-            if (resizeHandlerRef.current && !resizeHandlerRef.current()) {
-                 console.error(`[RENDER ${frameCounter.current}] Pre-render re-configuration FAILED. Skipping frame.`);
-                 animationFrameIdRef.current = requestAnimationFrame(render); return;
-            }
-          }
+        window.addEventListener('resize', resizeHandlerRef.current); // Use stored handler
+        console.log("[MAIN_EFFECT] Resize listener added.");
 
-          let currentTexture;
-          try {
-            currentTexture = ctx.getCurrentTexture();
-          } catch(e) {
-            console.error(`[RENDER ${frameCounter.current}] Error getting current texture for clear:`, e);
-            if (resizeHandlerRef.current) { resizeHandlerRef.current(); }
-            animationFrameIdRef.current = requestAnimationFrame(render); 
-            return;
-          }
-          
-          if (frameCounter.current < 5 || frameCounter.current % 120 === 1) {
-            console.log(`[RENDER ${frameCounter.current}] DIAGNOSTIC CLEAR: Canvas physical ${ctx.canvas.width}x${ctx.canvas.height}. Texture to clear: ${currentTexture.width}x${currentTexture.height}, format: ${currentTexture.format}`);
-          }
-
-          const texView = currentTexture.createView();
-          const cmdEnc = dvc.createCommandEncoder({label: "ClearOnlyEncoder"});
-          
-          const passEnc = cmdEnc.beginRenderPass({
-            colorAttachments:[{
-              view: texView,
-              clearValue: { r: 1.0, g: 0.0, b: 1.0, a: 1.0 }, // MAGENTA
-              loadOp: 'clear',
-              storeOp: 'store'
-            }]
-          });
-          passEnc.end(); // End pass immediately after clear
-          dvc.queue.submit([cmdEnc.finish()]);
-
-          if(frameCounter.current === 1) { console.log(`[RENDER 1] DIAGNOSTIC: First frame cleared to magenta.`); setDebugMessage("Diagnostic: Clear Test"); }
-          if(dvc) { animationFrameIdRef.current = requestAnimationFrame(render); }
-          else { animationFrameIdRef.current = null; }
-        };
-        console.log("[CORE_GPU_EFFECT] Starting render loop (Clear Only Diagnostic).");
-        animationFrameIdRef.current = requestAnimationFrame(render);
-      } catch (error) { console.error('[CORE_GPU_EFFECT] Error during WebGPU Init (Clear Diagnostic):', error); setError(`WebGPU Init failed: ${error.message}`); setIsGpuReady(false); }
+      } catch (err) {
+        console.error("[MAIN_EFFECT] Error during initializeAndStart:", err);
+        setError(`WebGPU main init failed: ${err.message}`);
+      }
     };
-    initializeWebGPUForClearTest();
+
+    initializeAndStart();
+
+    // Cleanup function for the main useEffect
     return () => {
-        console.log("[CORE_GPU_EFFECT_CLEANUP] Cleaning up (Clear Diagnostic).");
-        if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
-        if (resizeHandlerRef.current) window.removeEventListener('resize', resizeHandlerRef.current);
-        // No video stream or pipelines to clean up in this specific diagnostic version
-        deviceRef.current = null; contextRef.current = null; setIsGpuReady(false);
-        console.log("[CORE_GPU_EFFECT_CLEANUP] Finished (Clear Diagnostic).");
+      console.log("[MAIN_EFFECT_CLEANUP] Cleaning up.");
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+        console.log("[MAIN_EFFECT_CLEANUP] Animation frame cancelled.");
+      }
+      if (resizeHandlerRef.current) {
+        window.removeEventListener('resize', resizeHandlerRef.current);
+        console.log("[MAIN_EFFECT_CLEANUP] Resize listener removed.");
+      }
+      // Device and context are local to useEffect or managed by device.lost
+      // No need to destroy device here unless managing it more globally
+      console.log("[MAIN_EFFECT_CLEANUP] Finished.");
     };
-  }, []);
-
-  // Derived state for starting render loop
-  const allResourcesReady = !!(landmarker && isGpuReady && pipelineStateRef.current.videoPipeline); // videoPipeline is now a dummy true value
-
-  useEffect(() => { // UI Message Effect
-    if (allResourcesReady) { setDebugMessage("Diagnostic: Clear Test Active"); console.log("[UI_MSG_EFFECT] Resources ready for clear test."); }
-    else { setDebugMessage("Initializing for Clear Test..."); }
-  }, [allResourcesReady]); // landmarker is just a placeholder here
+  }, []); // Empty dependency array: runs once on mount
 
   return (
     <div style={{ width: '640px', height: '480px', margin: 'auto', border: '1px solid #ccc', position: 'relative', overflow: 'hidden' }}>
       <div style={{position:'absolute',top:'5px',left:'5px',background:'rgba(0,0,0,0.7)',color:'white',padding:'2px 5px',fontSize:'12px',zIndex:10,pointerEvents:'none'}}>
         {error ? `Error: ${error}` : debugMessage} (Frame: {frameCounter.current})
       </div>
-      {/* Video element not strictly needed for clear test but kept for structural similarity */}
-      <video ref={videoRef} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',objectFit:'cover',opacity:0,pointerEvents:'none',zIndex:1}} width={640} height={480} autoPlay playsInline muted />
-      <canvas ref={canvasRef} width={640} height={480} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2, background: 'lightgray'}} /> {/* Lightgray background */}
+      <canvas ref={canvasRef} width={640} height={480} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2, display: 'block', background: 'lightgray'}} />
     </div>
   );
 }
