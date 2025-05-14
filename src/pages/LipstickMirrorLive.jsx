@@ -1,4 +1,4 @@
-// src/pages/LipstickMirrorLive.jsx (Diagnostic: Clear Only to BLACK)
+// src/pages/LipstickMirrorLive.jsx (DIAGNOSTIC - Clear Only to BLACK, with SIMPLIFIED PARENT STYLING)
 
 import React, { useEffect, useRef, useState } from 'react';
 // createPipelines and lipTriangles not used in this specific diagnostic step
@@ -9,24 +9,22 @@ import React, { useEffect, useRef, useState } from 'react';
 
 export default function LipstickMirrorLive() {
   const canvasRef = useRef(null);
-  const videoRef = useRef(null); // Kept for structure, but video stream won't be used
+  const videoRef = useRef(null); 
 
   const deviceRef = useRef(null);
   const contextRef = useRef(null);
   const formatRef = useRef(null);
-  // pipelineStateRef not used for drawing in this diagnostic
-  // const pipelineStateRef = useRef({ /* ... */ });
   const animationFrameIdRef = useRef(null);
   const resizeHandlerRef = useRef(null);
 
-  const [landmarker, setLandmarker] = useState(true); // Dummy true to satisfy allResourcesReady
-  const [isGpuReady, setIsGpuReady] = useState(false); // Will be set by core GPU init
+  const [landmarker, setLandmarker] = useState(true); // Dummy true for allResourcesReady
+  const [isGpuReady, setIsGpuReady] = useState(false);
   const [error, setError] = useState(null);
   const [debugMessage, setDebugMessage] = useState('Initializing...');
   const frameCounter = useRef(0);
 
   useEffect(() => {
-    console.log("[MAIN_EFFECT] LipstickMirrorLive useEffect running (Clear Only Diagnostic).");
+    console.log("[MAIN_EFFECT] LipstickMirrorLive useEffect running (Clear Only Diagnostic with simplified parent).");
     let device = null; let context = null; let format = null;
     let resizeObserver = null; let renderLoopStarted = false;
     const canvas = canvasRef.current;
@@ -34,11 +32,13 @@ export default function LipstickMirrorLive() {
 
     const configureCanvas = (entries) => {
       if (!device || !context || !format) { console.warn("[configureCanvas] Prerequisites not met."); return; }
-      if (entries) { console.log("[configureCanvas via ResizeObserver] Called."); } else { console.log("[configureCanvas direct call] Called."); }
+      if (entries) { console.log("[configureCanvas via ResizeObserver] Called."); } 
+      else { console.log("[configureCanvas direct call] Called."); }
       const dpr = window.devicePixelRatio || 1;
       const cw = canvas.clientWidth; const ch = canvas.clientHeight;
-      if (cw === 0 || ch === 0) { console.warn(`[configureCanvas] Canvas clientWidth/Height is zero.`); return; }
+      if (cw === 0 || ch === 0) { console.warn(`[configureCanvas] Canvas clientWidth/Height is zero. W: ${cw}, H: ${ch}`); return; }
       const tw = Math.floor(cw * dpr); const th = Math.floor(ch * dpr);
+      console.log(`[configureCanvas] DPR: ${dpr}, clientW: ${cw}, clientH: ${ch} => target phys: ${tw}x${th}`);
       if (canvas.width !== tw || canvas.height !== th) { canvas.width = tw; canvas.height = th; console.log(`[configureCanvas] Canvas buffer SET to: ${tw}x${th}`); }
       else { console.log(`[configureCanvas] Canvas size ${tw}x${th} already correct.`); }
       try { context.configure({ device, format, alphaMode: 'opaque', size: [canvas.width, canvas.height] }); console.log(`[configureCanvas] Context CONFIGURED. Size: ${canvas.width}x${canvas.height}`); }
@@ -60,17 +60,15 @@ export default function LipstickMirrorLive() {
       passEnc.setScissorRect(0,0,currentGpuTexture.width, currentGpuTexture.height);
       passEnc.end();
       device.queue.submit([cmdEnc.finish()]);
-      if(frameCounter.current === 1) { console.log(`[RENDER 1] First frame (black clear).`); setDebugMessage("Diagnostic: Black Clear Test"); }
+      if(frameCounter.current === 1) { console.log(`[RENDER 1] First frame (black clear).`); setDebugMessage("Diagnostic: Black Clear (FullVP Parent)"); }
       animationFrameIdRef.current = requestAnimationFrame(render);
     };
 
     const initializeAll = async () => {
       if (!navigator.gpu) { console.error("WebGPU not supported."); setError("WebGPU not supported."); return; }
-      setDebugMessage("Initializing Systems (Clear Test)...");
+      setDebugMessage("Initializing Systems (Clear Test FullVP)...");
       try {
         console.log("[initializeAll] Skipping FaceLandmarker for clear test.");
-        // setLandmarker({}); // Already set with dummy true
-
         console.log("[initializeAll] Initializing WebGPU Device & Format...");
         const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) { console.error("Failed to get GPU adapter."); setError("No GPU adapter."); return; }
@@ -82,8 +80,6 @@ export default function LipstickMirrorLive() {
         format = navigator.gpu.getPreferredCanvasFormat(); formatRef.current = format;
         console.log("[initializeAll] Context and Format obtained.");
         console.log("[initializeAll] Skipping pipeline creation for clear test.");
-        
-        // Video element setup is skipped for clear test
         console.log("[initializeAll] Skipping video setup for clear test.");
         
         resizeObserver = new ResizeObserver(resizeHandlerRef.current);
@@ -92,19 +88,19 @@ export default function LipstickMirrorLive() {
         console.log("[initializeAll] Calling initial configureCanvas.");
         resizeHandlerRef.current(); 
         
-        setIsGpuReady(true); // Mark GPU as ready for allResourcesReady check
+        setIsGpuReady(true);
         console.log("[initializeAll] GPU Core is Ready (for clear test).");
 
         if (!renderLoopStarted) { console.log("[initializeAll] Starting render loop."); render(); renderLoopStarted = true; }
-        // setDebugMessage("Diagnostic: Black Clear Active"); // Set by UI_MSG_EFFECT
       } catch (err) { console.error("[initializeAll] Major error during initialization:", err); setError(`Init failed: ${err.message}`); setDebugMessage("Initialization Error."); setIsGpuReady(false);}
     };
     initializeAll();
-    return () => { /* ... cleanup ... */
-        console.log("[MAIN_EFFECT_CLEANUP] Cleaning up (Clear Test).");
+    return () => {
+        console.log("[MAIN_EFFECT_CLEANUP] Cleaning up (Clear Test FullVP).");
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
         if (resizeObserver && canvasRef.current) resizeObserver.unobserve(canvasRef.current);
-        if (resizeHandlerRef.current) window.removeEventListener('resize', resizeHandlerRef.current); // Should be unobserve for RO
+        // No need to remove 'resize' listener if it's the same function instance as used by RO and RO handles it.
+        // However, if we had a separate window.addEventListener('resize', resizeHandlerRef.current), we would remove it.
         deviceRef.current = null; contextRef.current = null; formatRef.current = null; setLandmarker(null); setIsGpuReady(false);
     };
   }, []);
@@ -112,17 +108,30 @@ export default function LipstickMirrorLive() {
   const allResourcesReady = !!(landmarker && isGpuReady && deviceRef.current && contextRef.current);
 
   useEffect(() => {
-    if(allResourcesReady) { console.log("[UI_MSG_EFFECT] Resources ready for Black Clear Test."); setDebugMessage("Diagnostic: Black Clear");}
-    else { setDebugMessage("Initializing for Black Clear Test...");}
+    if(allResourcesReady) { console.log("[UI_MSG_EFFECT] Resources ready for Black Clear Test (FullVP)."); setDebugMessage("Diagnostic: Black Clear (FullVP Parent)");}
+    else { setDebugMessage("Initializing for Black Clear Test (FullVP)...");}
   }, [allResourcesReady]);
 
   return (
-    <div style={{ width: '640px', height: '480px', margin: 'auto', border: '1px solid #ccc', position: 'relative', overflow: 'hidden' }}>
+    // MODIFIED Parent Div Styling for this diagnostic:
+    <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, background: 'darkseagreen' }}>
       <div style={{position:'absolute',top:'5px',left:'5px',background:'rgba(0,0,0,0.7)',color:'white',padding:'2px 5px',fontSize:'12px',zIndex:10,pointerEvents:'none'}}>
         {error ? `Error: ${error}` : debugMessage} (Frame: {frameCounter.current})
       </div>
-      <video ref={videoRef} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',objectFit:'cover',opacity:0,pointerEvents:'none',zIndex:1}} width={640} height={480} autoPlay playsInline muted />
-      <canvas ref={canvasRef} width={640} height={480} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2, background: 'lightgray'}} />
+      {/* Video element is not used by this diagnostic but kept in DOM for structural similarity */}
+      <video ref={videoRef} style={{display:'none'}} width={640} height={480} autoPlay playsInline muted />
+      
+      <canvas 
+        ref={canvasRef} 
+        width={640} /* Nominal HTML attributes, JS+CSS control actual size */
+        height={480}
+        style={{
+          display: 'block', 
+          width: '100%', 
+          height: '100%', 
+          background: 'lightgray' // CSS background for the canvas element itself
+        }} 
+      />
     </div>
   );
 }
