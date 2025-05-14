@@ -1,4 +1,4 @@
-// src/components/TestWebGPUCanvas.jsx (Ensure device/context/format exist before first configureCanvas)
+// src/components/TestWebGPUCanvas.jsx (Corrected texture dimension access for viewport/scissor)
 import React, { useEffect, useRef } from 'react';
 
 const TestWebGPUCanvas = () => {
@@ -12,39 +12,26 @@ const TestWebGPUCanvas = () => {
     let context = null;
     let format = null;
     let resizeObserver = null;
-    let renderLoopStarted = false; // Flag to ensure render loop starts only once
+    let renderLoopStarted = false;
 
-    // Define configureCanvas here, it will close over device, context, format
     const configureCanvas = (entries) => {
-      const canvas = canvasRef.current; // Always get fresh canvas ref
-      if (!canvas) {
-        console.error("[configureCanvas] Canvas ref is null during configure call.");
-        return;
-      }
-      // Ensure device, context, and format are populated before proceeding
-      if (!device || !context || !format) {
-        console.warn("[configureCanvas] Attempted to configure before device/context/format were ready. Skipping.");
-        return;
-      }
+      const canvas = canvasRef.current;
+      if (!canvas) { console.error("[configureCanvas] Canvas ref is null."); return; }
+      if (!device || !context || !format) { console.warn("[configureCanvas] Device/context/format not ready. Skipping."); return; }
 
-      if (entries) { 
-        console.log("[configureCanvas via ResizeObserver] Called. Entry rect:", entries[0].contentRect);
-      } else {
-        console.log("[configureCanvas direct call] Called.");
-      }
+      if (entries) { console.log("[configureCanvas via ResizeObserver] Called."); } 
+      else { console.log("[configureCanvas direct call] Called."); }
       
       const dpr = window.devicePixelRatio || 1;
       const currentClientWidth = canvas.clientWidth;
       const currentClientHeight = canvas.clientHeight;
-      
       if (currentClientWidth === 0 || currentClientHeight === 0) {
-        console.warn(`[configureCanvas] Canvas clientWidth/Height is zero. Skipping configure. W: ${currentClientWidth}, H: ${currentClientHeight}`);
-        return; // Avoid configuring with 0x0 size
+        console.warn(`[configureCanvas] Canvas clientWidth/Height is zero. W: ${currentClientWidth}, H: ${currentClientHeight}`);
+        return;
       }
-
       const targetWidth = Math.floor(currentClientWidth * dpr);
       const targetHeight = Math.floor(currentClientHeight * dpr);
-      console.log(`[configureCanvas] DPR: ${dpr}, clientWidth: ${currentClientWidth}, clientHeight: ${currentClientHeight}`);
+      console.log(`[configureCanvas] DPR: ${dpr}, clientW: ${currentClientWidth}, clientH: ${currentClientHeight} => target phys: ${targetWidth}x${targetHeight}`);
 
       if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
         canvas.width = targetWidth;
@@ -57,47 +44,52 @@ const TestWebGPUCanvas = () => {
       try {
         context.configure({ device, format, alphaMode: 'opaque', size: [canvas.width, canvas.height] });
         console.log(`[configureCanvas] Context configured with size: ${canvas.width}x${canvas.height}`);
-      } catch (e) {
-        console.error("[configureCanvas] Error configuring context:", e);
-      }
+      } catch (e) { console.error("[configureCanvas] Error configuring context:", e); }
     };
 
     const render = () => {
-      if (!device || !context) {
+      if (!device || !context || !canvasRef.current) { // Added canvasRef.current check
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
         return;
       }
       
+      const canvas = canvasRef.current; // Use current canvas ref
+      let currentGpuTexture;
       let textureView;
+
       try {
-        textureView = context.getCurrentTexture().createView();
+        currentGpuTexture = context.getCurrentTexture(); // Get the GPUTexture
+        textureView = currentGpuTexture.createView();   // Then create its view
       } catch (e) {
-        console.error("[render] Error getting current texture:", e);
+        console.error("[render] Error getting current texture/view:", e);
         animationFrameIdRef.current = requestAnimationFrame(render);
         return;
       }
 
       frameCounter.current++;
       if (frameCounter.current < 5 || frameCounter.current % 120 === 1) {
-          console.log(`[RENDER ${frameCounter.current}] Canvas physical: ${canvasRef.current?.width}x${canvasRef.current?.height}. Texture: ${textureView.texture.width}x${textureView.texture.height}`);
+          // Log dimensions from the GPUTexture and the canvas element's attributes
+          console.log(`[RENDER ${frameCounter.current}] Canvas attr: ${canvas.width}x${canvas.height}. GPUTexture: ${currentGpuTexture.width}x${currentGpuTexture.height}`);
       }
 
       const commandEncoder = device.createCommandEncoder();
-      const renderPassDescriptor = { /* ... magenta clear ... */ 
+      const renderPassDescriptor = {
         colorAttachments: [ { view: textureView, clearValue: { r: 1, g: 0, b: 1, a: 1 }, loadOp: 'clear', storeOp: 'store' } ],
       };
       const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-      passEncoder.setViewport(0,0, textureView.texture.width, textureView.texture.height, 0, 1);
-      passEncoder.setScissorRect(0,0, textureView.texture.width, textureView.texture.height);
+      
+      // Use dimensions from the GPUTexture for viewport and scissor, as this is the actual drawing surface
+      passEncoder.setViewport(0,0, currentGpuTexture.width, currentGpuTexture.height, 0, 1);
+      passEncoder.setScissorRect(0,0, currentGpuTexture.width, currentGpuTexture.height);
+      
       passEncoder.end();
       device.queue.submit([commandEncoder.finish()]);
       animationFrameIdRef.current = requestAnimationFrame(render);
     };
 
     const initializeWebGPU = async () => {
-      const canvas = canvasRef.current; // Get it once
+      const canvas = canvasRef.current;
       if (!canvas) { console.error("Canvas ref null in initializeWebGPU"); return; }
-
       if (!navigator.gpu) { console.error('WebGPU not supported.'); return; }
 
       try {
@@ -105,40 +97,35 @@ const TestWebGPUCanvas = () => {
         if (!adapter) { console.error('Failed to get GPU adapter.'); return; }
         console.log("[TestWebGPUCanvas_ResizeObserver] Adapter obtained.");
 
-        device = await adapter.requestDevice(); // Assign to module-scoped let
+        device = await adapter.requestDevice();
         console.log("[TestWebGPUCanvas_ResizeObserver] Device obtained:", device);
-        device.lost.then((info) => { /* ... device lost handling ... */ });
+        device.lost.then((info) => { console.error(`[TestWebGPUCanvas_ResizeObserver] Device lost: ${info.message}`); if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);});
 
-        context = canvas.getContext('webgpu'); // Assign to module-scoped let
+        context = canvas.getContext('webgpu');
         if (!context) { console.error("Failed to get WebGPU context."); return; }
         console.log("[TestWebGPUCanvas_ResizeObserver] Context obtained:", context);
 
-        format = navigator.gpu.getPreferredCanvasFormat(); // Assign to module-scoped let
+        format = navigator.gpu.getPreferredCanvasFormat();
         console.log("[TestWebGPUCanvas_ResizeObserver] Preferred format:", format);
         
-        // Now that device, context, and format are initialized, set up ResizeObserver
         resizeObserver = new ResizeObserver(configureCanvas);
         resizeObserver.observe(canvas);
         console.log("[TestWebGPUCanvas_ResizeObserver] ResizeObserver observing canvas.");
 
-        // Perform the first configureCanvas call *after* device, context, and format are ready
         console.log("[TestWebGPUCanvas_ResizeObserver] Calling initial configureCanvas.");
-        configureCanvas(); // This should now have valid device, context, format
+        configureCanvas(); 
 
-        if (!renderLoopStarted) { // Ensure render loop is started only once
+        if (!renderLoopStarted) {
             console.log("[TestWebGPUCanvas_ResizeObserver] Starting render loop.");
             render(); 
             renderLoopStarted = true;
         }
-
-      } catch (error) {
-        console.error('[TestWebGPUCanvas_ResizeObserver] Error initializing WebGPU:', error);
-      }
+      } catch (error) { console.error('[TestWebGPUCanvas_ResizeObserver] Error initializing WebGPU:', error); }
     };
 
     initializeWebGPU();
 
-    return () => { /* ... cleanup ... */
+    return () => {
       console.log("[TestWebGPUCanvas_ResizeObserver] Cleanup.");
       if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
       if (resizeObserver) resizeObserver.disconnect();
