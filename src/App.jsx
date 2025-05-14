@@ -46,8 +46,7 @@ function App() {
         <Route path="/webgpu-test" element={<WebGPUDemo />} />
         <Route path="/lipstick-mirror" element={<LipstickMirror />} />
         <Route path="/mirror" element={<MirrorPage />} />
-        <Route path="/test-webgpu" element={<TestWebGPUCanvas />} />
-        <Route path="/mirror-live" element={<LipstickMirrorLive />} />
+        <Route path="/mirror-live" element={<TestWebGPUCanvas />} />
       </Routes>
     </Router>
   );
