@@ -1,20 +1,23 @@
-// src/utils/createPipelines.js (Add uniform buffer for aspect ratios to video pipeline)
-
-import videoShaderSource from '@/shaders/videoBackground.wgsl?raw';
+// src/utils/createPipelines.js (Add flag for simple video pipeline)
+import videoShaderSource from '@/shaders/videoBackground.wgsl?raw'; // This will be the simple version
 import lipstickShaderSource from '@/shaders/lipstickEffect.wgsl?raw';
 
-// Video Pipeline (Modified)
-async function createVideoPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout) { // Added aspectRatioGroupLayout
-  const videoModule = device.createShaderModule({
-    label: 'Video Background Shader Module', code: videoShaderSource
-  });
+async function createSimpleVideoPipeline(device, format, videoBindGroupLayout) {
+  const videoModule = device.createShaderModule({ code: videoShaderSource }); // Ensure this shader is simple
   return device.createRenderPipeline({
-    label: 'Video Background Pipeline',
-    layout: device.createPipelineLayout({
-        label: 'Video Background Pipeline Layout',
-        // Bind group 0 for texture/sampler, Bind group 1 for aspect ratios
-        bindGroupLayouts: [videoBindGroupLayout, aspectRatioGroupLayout] 
-    }),
+    label: 'Simple Video Background Pipeline',
+    layout: device.createPipelineLayout({ bindGroupLayouts: [videoBindGroupLayout] }), // Only one bind group
+    vertex: { module: videoModule, entryPoint: 'vert_main' },
+    fragment: { module: videoModule, entryPoint: 'frag_main', targets: [{ format }] },
+    primitive: { topology: 'triangle-list' },
+  });
+}
+
+async function createFullVideoPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout) {
+  const videoModule = device.createShaderModule({ code: videoShaderSource }); // This shader needs aspect ratio group
+  return device.createRenderPipeline({
+    label: 'Full Video Background Pipeline',
+    layout: device.createPipelineLayout({ bindGroupLayouts: [videoBindGroupLayout, aspectRatioGroupLayout] }),
     vertex: { module: videoModule, entryPoint: 'vert_main' },
     fragment: { module: videoModule, entryPoint: 'frag_main', targets: [{ format }] },
     primitive: { topology: 'triangle-list' },
@@ -22,25 +25,10 @@ async function createVideoPipeline(device, format, videoBindGroupLayout, aspectR
 }
 
 // Lipstick Pipeline (No change)
-async function createLipstickPipeline(device, format) {
-  // ... (no changes to this function)
-  const lipstickModule = device.createShaderModule({
-    label: 'Lipstick Shader Module', code: lipstickShaderSource
-  });
-  return device.createRenderPipeline({
-    label: 'Lipstick Overlay Pipeline', layout: 'auto',
-    vertex: {
-      module: lipstickModule, entryPoint: 'vert_main',
-      buffers: [{ arrayStride: 2 * 4, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] }],
-    },
-    fragment: { module: lipstickModule, entryPoint: 'frag_main', targets: [{ format }] },
-    primitive: { topology: 'triangle-list' },
-  });
-}
+async function createLipstickPipeline(device, format) { /* ... same as before ... */ }
 
-// Main export function (Modified)
-export default async function createPipelines(device, format) {
-  const videoBindGroupLayout = device.createBindGroupLayout({
+export default async function createPipelines(device, format, isSimpleVideoTest = false) { // Added flag
+  const videoBindGroupLayout = device.createBindGroupLayout({ /* ... same as before ... */ 
     label: 'Video Texture Bind Group Layout',
     entries: [
       { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
@@ -48,25 +36,21 @@ export default async function createPipelines(device, format) {
     ]
   });
 
-  // NEW: Bind group layout for aspect ratio uniforms
-  const aspectRatioGroupLayout = device.createBindGroupLayout({
-    label: 'Aspect Ratio Uniforms Bind Group Layout',
-    entries: [
-      {
-        binding: 0,
-        visibility: GPUShaderStage.FRAGMENT, // Only needed in fragment shader
-        buffer: { type: 'uniform' }
-      }
-    ]
-  });
-  console.log("Aspect Ratio Group Layout created.");
+  let videoPipeline;
+  let aspectRatioGroupLayout = null; // Only created if not simple
 
-  console.log("Creating pipelines...");
-  const [videoPipeline, lipstickPipeline] = await Promise.all([
-      createVideoPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout), // Pass new layout
-      createLipstickPipeline(device, format)
-  ]);
-  console.log("Video and Lipstick pipelines created.");
-  // Return pipelines AND BOTH layouts
+  if (isSimpleVideoTest) {
+    console.log("[createPipelines] Creating SIMPLE video pipeline.");
+    videoPipeline = await createSimpleVideoPipeline(device, format, videoBindGroupLayout);
+  } else {
+    console.log("[createPipelines] Creating FULL video pipeline with aspect ratio support.");
+    aspectRatioGroupLayout = device.createBindGroupLayout({
+        label: 'Aspect Ratio Uniforms Bind Group Layout',
+        entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' }}]
+    });
+    videoPipeline = await createFullVideoPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout);
+  }
+  
+  const lipstickPipeline = await createLipstickPipeline(device, format);
   return { videoPipeline, lipstickPipeline, videoBindGroupLayout, aspectRatioGroupLayout };
 }
