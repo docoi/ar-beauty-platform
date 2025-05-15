@@ -1,13 +1,13 @@
 // src/components/TestWebGPUCanvas.jsx (Corrected texture dimension access for viewport/scissor)
 import React, { useEffect, useRef } from 'react';
 
-const TestWebGPUCanvas = () => {
+const LipstickMirrorLive_Clone = () => {
   const canvasRef = useRef(null);
   const animationFrameIdRef = useRef(null);
   const frameCounter = useRef(0);
 
   useEffect(() => {
-    console.log("[TestWebGPUCanvas_ResizeObserver] useEffect running.");
+    console.log("[LML_Clone_Base_ResizeObserver] useEffect running.");
     let device = null; 
     let context = null;
     let format = null;
@@ -95,38 +95,38 @@ const TestWebGPUCanvas = () => {
       try {
         const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) { console.error('Failed to get GPU adapter.'); return; }
-        console.log("[TestWebGPUCanvas_ResizeObserver] Adapter obtained.");
+        console.log("[LML_Clone_Base_ResizeObserver] Adapter obtained.");
 
         device = await adapter.requestDevice();
-        console.log("[TestWebGPUCanvas_ResizeObserver] Device obtained:", device);
+        console.log("[LML_Clone_Base_ResizeObserver] Device obtained:", device);
         device.lost.then((info) => { console.error(`[TestWebGPUCanvas_ResizeObserver] Device lost: ${info.message}`); if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);});
 
         context = canvas.getContext('webgpu');
         if (!context) { console.error("Failed to get WebGPU context."); return; }
-        console.log("[TestWebGPUCanvas_ResizeObserver] Context obtained:", context);
+        console.log("[LML_Clone_Base_ResizeObserver] Context obtained:", context);
 
         format = navigator.gpu.getPreferredCanvasFormat();
-        console.log("[TestWebGPUCanvas_ResizeObserver] Preferred format:", format);
+        console.log("[LML_Clone_Base_ResizeObserver] Preferred format:", format);
         
         resizeObserver = new ResizeObserver(configureCanvas);
         resizeObserver.observe(canvas);
-        console.log("[TestWebGPUCanvas_ResizeObserver] ResizeObserver observing canvas.");
+        console.log("[LML_Clone_Base_ResizeObserver] ResizeObserver observing canvas.");
 
-        console.log("[TestWebGPUCanvas_ResizeObserver] Calling initial configureCanvas.");
+        console.log("[LML_Clone_Base_ResizeObserver] Calling initial configureCanvas.");
         configureCanvas(); 
 
         if (!renderLoopStarted) {
-            console.log("[TestWebGPUCanvas_ResizeObserver] Starting render loop.");
+            console.log("[LML_Clone_Base_ResizeObserver] Starting render loop.");
             render(); 
             renderLoopStarted = true;
         }
-      } catch (error) { console.error('[TestWebGPUCanvas_ResizeObserver] Error initializing WebGPU:', error); }
+      } catch (error) { console.error('[LML_Clone_Base_ResizeObserver] Error initializing WebGPU:', error); }
     };
 
     initializeWebGPU();
 
     return () => {
-      console.log("[TestWebGPUCanvas_ResizeObserver] Cleanup.");
+      console.log("[LML_Clone_Base_ResizeObserver] Cleanup.");
       if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
       if (resizeObserver) resizeObserver.disconnect();
     };
@@ -135,4 +135,4 @@ const TestWebGPUCanvas = () => {
   return ( <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block', background: 'lightgoldenrodyellow' }} /> );
 };
 
-export default TestWebGPUCanvas;
+export default LipstickMirrorLive_Clone;
