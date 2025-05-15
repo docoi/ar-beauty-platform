@@ -1,8 +1,8 @@
-// src/pages/LipstickMirrorLive_Clone.jsx (Full Viewport Parent + Video)
+// src/pages/LipstickMirrorLive_Clone.jsx (Stage 2: Add Lips Overlay)
 
 import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines'; 
-import lipTriangles from '@/utils/lipTriangles'; 
+import lipTriangles from '@/utils/lipTriangles'; // Now used for drawing
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export default function LipstickMirrorLive_Clone() {
@@ -12,10 +12,16 @@ export default function LipstickMirrorLive_Clone() {
   const deviceRef = useRef(null);
   const contextRef = useRef(null);
   const formatRef = useRef(null);
-  const pipelineStateRef = useRef({ /* ... same as before ... */ 
-    videoPipeline: null, lipstickPipeline: null, videoBindGroupLayout: null,
-    aspectRatioGroupLayout: null, aspectRatioUniformBuffer: null, aspectRatioBindGroup: null,
-    videoSampler: null, vertexBuffer: null, vertexBufferSize: 2048,
+  const pipelineStateRef = useRef({ 
+    videoPipeline: null,
+    lipstickPipeline: null, 
+    videoBindGroupLayout: null,
+    aspectRatioGroupLayout: null,
+    aspectRatioUniformBuffer: null,
+    aspectRatioBindGroup: null,
+    videoSampler: null,
+    vertexBuffer: null, 
+    vertexBufferSize: 2048, // Should be sufficient for lip triangles
   });
   const animationFrameIdRef = useRef(null);
   const resizeHandlerRef = useRef(null);
@@ -26,7 +32,7 @@ export default function LipstickMirrorLive_Clone() {
   const frameCounter = useRef(0); 
   
   useEffect(() => {
-    console.log("[LML_Clone FullVP] useEffect running.");
+    console.log("[LML_Clone STAGE2] useEffect running.");
     let device = null; let context = null; let format = null;
     let currentLandmarkerInstance = null; 
     let resizeObserver = null; let renderLoopStarted = false;
@@ -34,33 +40,31 @@ export default function LipstickMirrorLive_Clone() {
     const canvasElement = canvasRef.current; 
     const videoElement = videoRef.current;
 
-    if (!canvasElement || !videoElement) {
-      console.error("[LML_Clone FullVP] Canvas or Video element not available.");
-      return;
-    }
+    if (!canvasElement || !videoElement) { /* ... error handling ... */ return; }
 
-    const configureCanvas = (entries) => {
-      if (!device || !context || !format || !canvasRef.current) { console.warn("[LML_Clone FullVP configureCanvas] Prerequisites not met."); return; }
+    const configureCanvas = (entries) => { /* ... same as previous working version ... */ 
+      if (!device || !context || !format || !canvasRef.current) { console.warn("[LML_Clone configureCanvas] Prerequisites not met."); return; }
       const currentCanvas = canvasRef.current;
-      if (entries) { console.log("[LML_Clone FullVP configureCanvas via RO]"); } else { console.log("[LML_Clone FullVP configureCanvas direct]"); }
+      if (entries) { console.log("[LML_Clone configureCanvas via RO]"); } else { console.log("[LML_Clone configureCanvas direct]"); }
       const dpr = window.devicePixelRatio || 1;
       const cw = currentCanvas.clientWidth; const ch = currentCanvas.clientHeight;
-      if (cw === 0 || ch === 0) { console.warn(`[LML_Clone FullVP configureCanvas] Canvas clientW/H is zero.`); return; }
+      if (cw === 0 || ch === 0) { console.warn(`[LML_Clone configureCanvas] Canvas clientW/H is zero.`); return; }
       const tw = Math.floor(cw * dpr); const th = Math.floor(ch * dpr);
-      console.log(`[LML_Clone FullVP configureCanvas] DPR:${dpr}, clientW/H:${cw}x${ch} => phys:${tw}x${th}`);
-      if (currentCanvas.width !== tw || currentCanvas.height !== th) { currentCanvas.width = tw; currentCanvas.height = th; console.log(`[LML_Clone FullVP configureCanvas] Canvas buffer SET:${tw}x${th}`); }
-      else { console.log(`[LML_Clone FullVP configureCanvas] Canvas size ${tw}x${th} OK.`); }
-      try { context.configure({ device, format, alphaMode: 'opaque', size: [currentCanvas.width, currentCanvas.height] }); console.log(`[LML_Clone FullVP configureCanvas] Context CONFIG. Size:${currentCanvas.width}x${currentCanvas.height}`); }
-      catch (e) { console.error("[LML_Clone FullVP configureCanvas] Error config context:", e); setError("Error config context."); }
+      if (currentCanvas.width !== tw || currentCanvas.height !== th) { currentCanvas.width = tw; currentCanvas.height = th; console.log(`[LML_Clone configureCanvas] Canvas buffer SET:${tw}x${th}`); }
+      else { console.log(`[LML_Clone configureCanvas] Canvas size ${tw}x${th} OK.`); }
+      try { context.configure({ device, format, alphaMode: 'opaque', size: [currentCanvas.width, currentCanvas.height] }); console.log(`[LML_Clone configureCanvas] Context CONFIG. Size:${currentCanvas.width}x${currentCanvas.height}`); }
+      catch (e) { console.error("[LML_Clone configureCanvas] Error config context:", e); setError("Error config context."); }
     };
     resizeHandlerRef.current = configureCanvas;
 
     const render = async () => {
-      const currentDevice = deviceRef.current; const currentContext = contextRef.current;
-      const currentVideoEl = videoRef.current; const pState = pipelineStateRef.current;
+      const currentDevice = deviceRef.current; 
+      const currentContext = contextRef.current;
+      const currentVideoEl = videoRef.current; 
+      const pState = pipelineStateRef.current;
       const activeLandmarker = landmarker; 
 
-      if (!currentDevice || !currentContext || !pState.videoPipeline || !currentVideoEl) {
+      if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.lipstickPipeline || !currentVideoEl) {
         animationFrameIdRef.current = requestAnimationFrame(render); return; 
       }
       frameCounter.current++;
@@ -73,11 +77,47 @@ export default function LipstickMirrorLive_Clone() {
         currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 0, aspectRatioData);
       }
 
+      // --- MediaPipe Landmark Processing & Vertex Buffer Update ---
       let numLipVertices = 0; 
-      if (activeLandmarker) { /* ... landmarker processing (for next stage) ... */ }
+      if (activeLandmarker && pState.vertexBuffer) { 
+        try {
+          const now = performance.now(); 
+          const results = activeLandmarker.detectForVideo(currentVideoEl, now);
+          if (results?.faceLandmarks?.length > 0) {
+            const allFaceLm = results.faceLandmarks[0];
+            if (frameCounter.current % 120 === 1 && allFaceLm) { 
+                let minX=1,maxX=0,minY=1,maxY=0; 
+                allFaceLm.forEach(lm => {minX=Math.min(minX,lm.x);maxX=Math.max(maxX,lm.x);minY=Math.min(minY,lm.y);maxY=Math.max(maxY,lm.y);}); 
+                console.log(`[RENDER LML_Clone ${frameCounter.current}] Landmark Spread: X[${minX.toFixed(3)}-${maxX.toFixed(3)}], Y[${minY.toFixed(3)}-${maxY.toFixed(3)}]`);
+            }
+            // Use lipTriangles data to get specific lip landmark indices
+            const lips = lipTriangles.map(([idxA, idxB, idxC]) => [
+                allFaceLm[idxA], allFaceLm[idxB], allFaceLm[idxC]
+            ]);
+            const lipVertexData = new Float32Array(lips.flat().map(pt => [(0.5-pt.x)*2, (0.5-pt.y)*2]).flat());
+            numLipVertices = lipVertexData.length/2;
+            if(lipVertexData.byteLength > 0){ 
+                if(lipVertexData.byteLength <= pState.vertexBufferSize) {
+                    currentDevice.queue.writeBuffer(pState.vertexBuffer,0,lipVertexData);
+                } else {
+                    console.warn(`[RENDER LML_Clone ${frameCounter.current}] Lip vertex data too large for buffer.`);
+                    numLipVertices=0;
+                }
+            } else {
+                numLipVertices=0;
+            }
+          } else {
+            numLipVertices = 0; // No face detected
+          }
+        } catch (e) { 
+            console.error(`[RENDER LML_Clone ${frameCounter.current}] Error in landmarker processing:`, e);
+            numLipVertices = 0; 
+        }
+      }
+      // --- End MediaPipe ---
 
       let videoTextureGPU, frameBindGroupForTexture;
-      try {
+      try { /* ... same as before ... */ 
         videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl });
         if (pState.videoBindGroupLayout && pState.videoSampler) {
           frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{binding:0,resource:pState.videoSampler},{binding:1,resource:videoTextureGPU}]});
@@ -85,57 +125,66 @@ export default function LipstickMirrorLive_Clone() {
       } catch (e) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
       
       let currentGpuTexture, texView;
-      try { currentGpuTexture = currentContext.getCurrentTexture(); texView = currentGpuTexture.createView(); }
-      catch(e) { console.error(`[RENDER LML_Clone FullVP ${frameCounter.current}] Error currentTex:`, e); if(resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+      try { /* ... same as before ... */ 
+        currentGpuTexture = currentContext.getCurrentTexture(); texView = currentGpuTexture.createView(); 
+      }
+      catch(e) { console.error(`[RENDER LML_Clone ${frameCounter.current}] Error currentTex:`, e); if(resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
       
-      if (frameCounter.current < 2 || frameCounter.current % 240 === 1) { console.log(`[RENDER LML_Clone FullVP ${frameCounter.current}] Canvas: ${canvasRef.current.width}x${canvasRef.current.height}. GPU Tex: ${currentGpuTexture.width}x${currentGpuTexture.height}`); }
+      if (frameCounter.current < 2 || frameCounter.current % 240 === 1) { console.log(`[RENDER LML_Clone ${frameCounter.current}] Canvas: ${canvasRef.current.width}x${canvasRef.current.height}. GPU Tex: ${currentGpuTexture.width}x${currentGpuTexture.height}`); }
 
-      const cmdEnc = currentDevice.createCommandEncoder({label: "LML_Clone_FullVP_Encoder"});
+      const cmdEnc = currentDevice.createCommandEncoder({label: "LML_Clone_FullRenderEncoder"});
       const passEnc = cmdEnc.beginRenderPass({colorAttachments:[{view:texView,clearValue:{r:0.0,g:0.0,b:0.0,a:1.0},loadOp:'clear',storeOp:'store'}]});
       passEnc.setViewport(0,0,currentGpuTexture.width,currentGpuTexture.height,0,1);
       passEnc.setScissorRect(0,0,currentGpuTexture.width,currentGpuTexture.height);
       
+      // Draw video background
       if (pState.videoPipeline && frameBindGroupForTexture && pState.aspectRatioBindGroup) {
         passEnc.setPipeline(pState.videoPipeline);
         passEnc.setBindGroup(0, frameBindGroupForTexture); 
         passEnc.setBindGroup(1, pState.aspectRatioBindGroup);
         passEnc.draw(6);
       }
-      // No lipstick drawing yet
+      
+      // --- Draw Lipstick Overlay ---
+      if(numLipVertices>0 && pState.lipstickPipeline && pState.vertexBuffer){
+        passEnc.setPipeline(pState.lipstickPipeline); 
+        passEnc.setVertexBuffer(0,pState.vertexBuffer); 
+        passEnc.draw(numLipVertices); // Draw the calculated lip vertices
+        if (frameCounter.current % 60 === 1) console.log(`[RENDER LML_Clone ${frameCounter.current}] Drawing ${numLipVertices} lip vertices.`);
+      }
+      // --- End Lipstick Overlay ---
+
       passEnc.end();
       currentDevice.queue.submit([cmdEnc.finish()]);
 
-      if(frameCounter.current === 1) { console.log(`[RENDER LML_Clone FullVP 1] First frame with video.`); setDebugMessage("Live Video Active (FullVP)"); }
+      if(frameCounter.current === 1) { console.log(`[RENDER LML_Clone 1] First full frame (video+lips attempt).`); }
       animationFrameIdRef.current = requestAnimationFrame(render);
-    };
+    }; // End of render function
 
-    const initializeAll = async () => {
-      // ... (All of initializeAll remains identical to the previous version)
-      // It correctly sets up landmarker, device, context, format, pipelines, video, ResizeObserver
-      // The key change is the JSX structure this component returns.
+    const initializeAll = async () => { /* ... same as previous working version ... */ 
       if (!navigator.gpu) { setError("WebGPU not supported."); return; }
-      setDebugMessage("Initializing LML_Clone FullVP Systems...");
+      setDebugMessage("Initializing Full Application...");
       try {
-        console.log("[LML_Clone FullVP initializeAll] Initializing FaceLandmarker...");
+        console.log("[LML_Clone initializeAll] Initializing FaceLandmarker...");
         const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
-        const lmInstance = await FaceLandmarker.createFromOptions(vision, { /* ... correct options ... */ 
+        const lmInstance = await FaceLandmarker.createFromOptions(vision, { 
             baseOptions: { modelAssetPath: '/models/face_landmarker.task', delegate: 'GPU' },
             outputFaceBlendshapes: false, runningMode: 'VIDEO', numFaces: 1,
         });
-        setLandmarker(lmInstance); console.log("[LML_Clone FullVP initializeAll] FaceLandmarker ready.");
+        setLandmarker(lmInstance); console.log("[LML_Clone initializeAll] FaceLandmarker ready.");
 
-        console.log("[LML_Clone FullVP initializeAll] Initializing WebGPU Device & Format...");
+        console.log("[LML_Clone initializeAll] Initializing WebGPU Device & Format...");
         const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) { setError("No GPU adapter."); return; }
         device = await adapter.requestDevice(); deviceRef.current = device;
-        console.log("[LML_Clone FullVP initializeAll] Device obtained.");
+        console.log("[LML_Clone initializeAll] Device obtained.");
         device.lost.then((info) => { /* ... */ });
         context = canvasElement.getContext('webgpu'); contextRef.current = context;
         if (!context) { setError('No WebGPU context.'); return; }
         format = navigator.gpu.getPreferredCanvasFormat(); formatRef.current = format;
-        console.log("[LML_Clone FullVP initializeAll] Context and Format obtained.");
+        console.log("[LML_Clone initializeAll] Context and Format obtained.");
 
-        console.log("[LML_Clone FullVP initializeAll] Creating pipelines and GPU resources...");
+        console.log("[LML_Clone initializeAll] Creating pipelines and GPU resources...");
         const { videoPipeline, lipstickPipeline, videoBindGroupLayout, aspectRatioGroupLayout } = await createPipelines(device, format);
         pipelineStateRef.current = { ...pipelineStateRef.current, videoPipeline, lipstickPipeline, videoBindGroupLayout, aspectRatioGroupLayout };
         const uniformBufferSize = 4 * Float32Array.BYTES_PER_ELEMENT;
@@ -144,33 +193,33 @@ export default function LipstickMirrorLive_Clone() {
             pipelineStateRef.current.aspectRatioBindGroup = device.createBindGroup({ layout: aspectRatioGroupLayout, entries: [{ binding: 0, resource: { buffer: pipelineStateRef.current.aspectRatioUniformBuffer }}]});
         }
         pipelineStateRef.current.videoSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
-        pipelineStateRef.current.vertexBuffer = device.createBuffer({ size: pipelineStateRef.current.vertexBufferSize, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-        console.log("[LML_Clone FullVP initializeAll] Pipelines and GPU resources created.");
+        pipelineStateRef.current.vertexBuffer = device.createBuffer({ size: pipelineStateRef.current.vertexBufferSize, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }); // For lips
+        console.log("[LML_Clone initializeAll] Pipelines and GPU resources created.");
         
-        console.log("[LML_Clone FullVP initializeAll] Setting up video element...");
+        console.log("[LML_Clone initializeAll] Setting up video element...");
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera not supported.");
         const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
         videoElement.srcObject = stream;
-        await new Promise((res, rej) => { /* ... onloadedmetadata ... */ 
-            videoElement.onloadedmetadata = () => { console.log(`[LML_Clone FullVP initializeAll] Video metadata: ${videoElement.videoWidth}x${videoElement.videoHeight}`); res(); };
+        await new Promise((res, rej) => { 
+            videoElement.onloadedmetadata = () => { console.log(`[LML_Clone initializeAll] Video metadata: ${videoElement.videoWidth}x${videoElement.videoHeight}`); res(); };
             videoElement.onerror = () => rej(new Error("Video load error."));
         });
-        await videoElement.play(); console.log("[LML_Clone FullVP initializeAll] Video playback started.");
+        await videoElement.play(); console.log("[LML_Clone initializeAll] Video playback started.");
         
         resizeObserver = new ResizeObserver(resizeHandlerRef.current);
         resizeObserver.observe(canvasElement);
-        console.log("[LML_Clone FullVP initializeAll] ResizeObserver observing canvas.");
+        console.log("[LML_Clone initializeAll] ResizeObserver observing canvas.");
         if(resizeHandlerRef.current) resizeHandlerRef.current(); 
-        else console.error("[LML_Clone FullVP initializeAll] resizeHandlerRef.current is null");
+        else console.error("[LML_Clone initializeAll] resizeHandlerRef.current is null");
         
-        console.log("[LML_Clone FullVP initializeAll] All sub-initializations complete.");
-        if (!renderLoopStarted) { console.log("[LML_Clone FullVP initializeAll] Starting render loop."); render(); renderLoopStarted = true; }
-      } catch (err) { console.error("[LML_Clone FullVP initializeAll] Major error:", err); setError(`Init failed: ${err.message}`); }
+        console.log("[LML_Clone initializeAll] All sub-initializations complete.");
+        if (!renderLoopStarted) { console.log("[LML_Clone initializeAll] Starting render loop."); render(); renderLoopStarted = true; }
+      } catch (err) { console.error("[LML_Clone initializeAll] Major error:", err); setError(`Init failed: ${err.message}`); }
     }; // End of initializeAll
 
     initializeAll();
     return () => { /* ... cleanup (same as before) ... */
-      console.log("[LML_Clone FullVP MAIN_EFFECT_CLEANUP] Cleaning up.");
+      console.log("[LML_Clone MAIN_EFFECT_CLEANUP] Cleaning up.");
       if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
       if (resizeObserver && canvasRef.current) resizeObserver.unobserve(canvasRef.current);
       if (resizeObserver) resizeObserver.disconnect();
@@ -180,60 +229,25 @@ export default function LipstickMirrorLive_Clone() {
       deviceRef.current = null; contextRef.current = null; formatRef.current = null; 
       setLandmarker(null); 
     };
-  }, []); // Main effect
+  }, []);
 
-  useEffect(() => { /* ... UI Message Effect (same as before) ... */ 
-    if(landmarker && deviceRef.current && contextRef.current && pipelineStateRef.current.videoPipeline && !error) { 
-        setDebugMessage("Live Video Active (FullVP)");
+  useEffect(() => { /* ... UI Message Effect (same as before, maybe update message) ... */ 
+    if(landmarker && deviceRef.current && contextRef.current && pipelineStateRef.current.lipstickPipeline && !error) { 
+        setDebugMessage("Live Lipstick Try-On Active");
     } else if (error) {
         setDebugMessage(`Error: ${String(error).substring(0, 30)}...`);
     } else {
-        setDebugMessage("Initializing (FullVP)...");
+        setDebugMessage("Initializing Lipstick Try-On...");
     }
-  }, [landmarker, deviceRef.current, contextRef.current, pipelineStateRef.current.videoPipeline, error]);
+  }, [landmarker, deviceRef.current, contextRef.current, pipelineStateRef.current.lipstickPipeline, error]);
 
-  // --- MODIFIED JSX based on ChatGPT's "Recommended Structural Fix" ---
-  return (
-    <div style={{
-      position: 'absolute', // Takes up full available space of its offset parent, or viewport if no offset parent
-      top: 0, left: 0, right: 0, bottom: 0, // Stretches to edges
-      overflow: 'hidden',    // Prevent scrollbars if canvas slightly overflows (due to rounding)
-      margin: 0,             // Reset margin
-      padding: 0,            // Reset padding
-      background: 'darkslateblue' // Background for the very outer div, to see its bounds
-    }}>
-      <div style={{
-        position:'absolute',
-        top:'5px', left:'5px',
-        background:'rgba(0,0,0,0.7)',
-        color:'white',
-        padding:'2px 5px',
-        fontSize:'12px',
-        zIndex:10, // Ensure it's above the canvas
-        pointerEvents:'none'
-      }}>
+  return ( /* ... JSX using original parent div styling (same as before) ... */
+    <div style={{ width: '640px', height: '480px', margin: 'auto', border: '1px solid #ccc', position: 'relative', overflow: 'hidden', background: 'darkkhaki' }}>
+      <div style={{position:'absolute',top:'5px',left:'5px',background:'rgba(0,0,0,0.7)',color:'white',padding:'2px 5px',fontSize:'12px',zIndex:10,pointerEvents:'none'}}>
         {debugMessage} (Frame: {frameCounter.current})
       </div>
-      
-      {/* Video element is not directly visible but provides the texture */}
-      <video 
-        ref={videoRef} 
-        style={{ display: 'none' }} // Keep it out of layout, WebGPU uses it directly
-        width={640} height={480} autoPlay playsInline muted 
-      />
-      
-      <canvas
-        ref={canvasRef}
-        // HTML width/height attributes are set by JS in configureCanvas
-        style={{
-          width: '100%',    // Fill the parent div
-          height: '100%',   // Fill the parent div
-          display: 'block', // Removes extra space below inline elements
-          // CSS background for the canvas element itself, visible if WebGPU doesn't draw
-          // Let's use the lightpink again to be sure
-          background: 'lightpink', 
-        }}
-      />
+      <video ref={videoRef} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',objectFit:'cover',opacity:0,pointerEvents:'none',zIndex:1}} width={640} height={480} autoPlay playsInline muted />
+      <canvas ref={canvasRef} width={640} height={480} style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',zIndex:2, background: 'lightpink'}} />
     </div>
   );
 }
