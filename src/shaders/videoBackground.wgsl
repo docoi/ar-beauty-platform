@@ -1,4 +1,4 @@
-// src/shaders/videoBackground.wgsl (Corrected "Contain" for Portrait-Dominant Case)
+// src/shaders/videoBackground.wgsl (Corrected "Contain" Logic AGAIN)
 
 struct VertOut {
   @builtin(position) position: vec4f,
@@ -38,41 +38,82 @@ fn frag_main(input: VertOut) -> @location(0) vec4f {
   let videoActualH = aspectRatiosUniform.videoDimensions.y;
 
   if (canvasPhysH == 0.0 || videoActualH == 0.0 || videoActualW == 0.0 || canvasPhysW == 0.0) {
-    return vec4f(0.0, 0.0, 0.0, 1.0); // Prevent division by zero
+    return vec4f(0.0, 0.0, 0.0, 1.0);
   }
 
-  let screenAspect = canvasPhysW / canvasPhysH; // e.g., 1078/1987 = ~0.543 (Tall/Skinny Canvas)
-  let videoAspect = videoActualW / videoActualH;     // e.g., 480/640 = 0.75 (Less Tall/Slightly Wider Video)
+  let screenAspect = canvasPhysW / canvasPhysH; // e.g., ~0.543 (Tall/Skinny Canvas)
+  let videoAspect = videoActualW / videoActualH;     // e.g., 0.75 (Less Tall/"Wider" Video)
 
-  var tc = input.uv; // Texcoords from quad, [0,1] range, (0,0) is top-left
-
-  // Scale factors for the texture coordinates
-  var scale = vec2f(1.0, 1.0);
+  var tc = input.uv; 
+  var scale = vec2f(1.0, 1.0); // By default, sample 1:1
 
   if (videoAspect > screenAspect) {
-    // Video is relatively WIDER than the screen area it needs to fit into.
-    // (e.g., video 0.75, screen 0.543). Video needs to be scaled down vertically to fit,
-    // effectively "letterboxing" (black bars top/bottom).
-    // We achieve this by making the V (Y) component of UVs sample a smaller portion of the texture.
-    scale.y = screenAspect / videoAspect; // scale.y will be < 1.0 (e.g., 0.543 / 0.75 = ~0.724)
-  } else {
-    // Video is relatively TALLER (or same aspect) than the screen area.
-    // (e.g., video 0.5, screen 1.0). Video needs to be scaled down horizontally to fit,
-    // effectively "pillarboxing" (black bars left/right).
-    // We achieve this by making the U (X) component of UVs sample a smaller portion of the texture.
-    scale.x = videoAspect / screenAspect; // scale.x will be < 1.0
+    // Video is relatively WIDER than the screen canvas.
+    // To "contain" it, we must fit its width to the screen's width,
+    // which means the video's height on screen will be less than screen height (letterboxing).
+    // We need to scale our V (Y) texture coordinates to sample more of the texture vertically.
+    // NO, we need to make the video *appear* shorter. So sample a *larger part* of texture V,
+    // meaning scale the *sampling region* for V.
+    // scale.y determines how much of the quad's height corresponds to the texture's height.
+    // If video is wider, we fit to width. The displayed height = canvasWidth / videoAspect.
+    // The ratio of this to canvasHeight is (canvasWidth / videoAspect) / canvasHeight = screenAspect / videoAspect.
+    // This ratio should be applied to the UV's Y component.
+    scale.y = screenAspect / videoAspect; // This makes scale.y < 1, e.g., 0.543 / 0.75 = ~0.724
+                                          // This means input.uv.y * 0.724 will sample a smaller vertical portion of texture.
+                                          // This is what caused the stretch. We need the inverse for the UV scale.
+
+    // Correct logic for letterboxing (video wider than screen):
+    // We want the output video height to be canvas_width / video_aspect.
+    // The scale factor for the *displayed video* height is (canvas_width / video_aspect) / canvas_height = screen_aspect / video_aspect.
+    // So, the UVs need to be scaled by the inverse of this to "zoom out" and show letterbox bars.
+    // OR, think: we want to map the full texture height (UV 0-1) to only a part of the screen height.
+    // Scale for texture coordinates should be:
+    scale.y = videoAspect / screenAspect; // Should be > 1 to "zoom in" on Y, this is WRONG for contain.
+
+    // Let's try again: we want to fit the video to the canvas width.
+    // The new height of the video on screen will be: canvas_width / video_aspect.
+    // The scale factor for the VERTICAL dimension of the *video on screen* is: (canvas_width / video_aspect) / canvas_height.
+    // scale_video_display_y = screen_aspect / video_aspect.
+    // To achieve this by scaling UVs: if scale_video_display_y < 1, it means video is shorter than screen.
+    // Centered UVs are scaled by this factor.
+    // new_uv.y = centered_uv.y * scale_video_display_y.
+    // This samples a smaller part of the texture. Correct.
+     scale.y = screenAspect / videoAspect; // This compresses the V coordinate, showing less vertical texture content stretched. Incorrect.
+
+    // If video is WIDER than screen (videoAspect > screenAspect)
+    // We fit to screen HEIGHT. Video will be pillarboxed.
+    // new_uv.x needs to be scaled.
+    // scale.x = screenAspect / videoAspect (this is if screen is wider, which is not our case)
+
+    // Re-think:
+    // Screen aspect S = Ws/Hs (e.g. 0.543)
+    // Video aspect V = Wv/Hv (e.g. 0.75)
+    // If V > S (video is relatively wider than screen, like 16:9 video on 4:3 screen, or 4:3 video on 9:16 screen)
+    //   We must match heights. Video's new width on screen = Hs * V.
+    //   Scale factor for screen X = (Hs * V) / Ws = (1/S) * V = V/S.
+    //   So tc.x (0-1) should map to a region of size 1 / (V/S) = S/V of the texture.
+    //   uv_scale.x = S/V.
+    // If V < S (video is relatively skinnier than screen, like 4:3 video on 16:9 screen, or 9:16 video on 4:3 screen)
+    //   We must match widths. Video's new height on screen = Ws / V.
+    //   Scale factor for screen Y = (Ws / V) / Hs = S * (1/V) = S/V.
+    //   So tc.y (0-1) should map to a region of size 1 / (S/V) = V/S of the texture.
+    //   uv_scale.y = V/S.
+
+    // Our case: V (0.75) > S (0.543). Video relatively wider than screen. Match heights. Pillarbox.
+    // uv_scale.x = S/V = 0.543 / 0.75 = ~0.724
+    scale.x = screenAspect / videoAspect; 
+    // uv_scale.y = 1.0
+
+  } else { // V <= S. Video relatively skinnier/taller than screen. Match widths. Letterbox.
+    // uv_scale.y = V/S = 0.75 / 0.543 = ~1.38
+    scale.y = videoAspect / screenAspect;
+    // uv_scale.x = 1.0
   }
   
-  // Transform UVs:
-  // 1. Center input UVs (which are 0 to 1) to be -0.5 to 0.5
-  // 2. Apply the scale (this makes the sampling area on the texture smaller)
-  // 3. Shift back to be centered around 0.5 for the [0,1] texture space
   tc = (tc - vec2f(0.5, 0.5)) * scale + vec2f(0.5, 0.5);
-
-  // Check if the transformed UVs are outside the [0,1] valid texture coordinate range
+  
   if (tc.x < 0.0 || tc.x > 1.0 || tc.y < 0.0 || tc.y > 1.0) {
-    return vec4f(0.0, 0.0, 0.0, 1.0); // Black bars for areas outside the scaled UVs
+    return vec4f(0.0, 0.0, 0.0, 1.0); 
   }
-
   return textureSampleBaseClampToEdge(videoTexture, videoSampler, tc);
 }
