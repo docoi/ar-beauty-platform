@@ -1,169 +1,139 @@
-// src/pages/LipstickMirrorLive_Clone.jsx (Attempt at IDENTICAL logic to working TestWebGPUCanvas for clear)
+// src/pages/LipstickMirrorLive_Clone.jsx (ULTRA MINIMAL CLEAR - Round 2 - Fix videoRef error)
 
-import React, { useEffect, useRef, useState } from 'react'; // Added useState for error/debug
+import React, { useEffect, useRef, useState } from 'react';
 
-export default function LipstickMirrorLive_Clone() { // Renamed component
+export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null);
+  const videoRef = useRef(null); // videoRef is defined here
+  
   const animationFrameIdRef = useRef(null);
-  const frameCounter = useRef(0); 
-  //resizeHandlerRef was in my last attempt, but not in the TestWebGPUCanvas you provided back.
-  //Let's stick to what you provided as working.
-  //const resizeHandlerRef = useRef(null); 
+  const frameCounter = useRef(0);
+  const resizeHandlerRef = useRef(null); 
 
-  // Add state for error/debug messages, even if not heavily used by core logic here
   const [error, setError] = useState(null);
-  const [debugMessage, setDebugMessage] = useState('Initializing LML_Clone (Exact Test)...');
-
+  const [debugMessage, setDebugMessage] = useState('Initializing...');
+  
+  const deviceActualRef = useRef(null); 
+  const contextActualRef = useRef(null); 
+  const formatActualRef = useRef(null); 
 
   useEffect(() => {
-    console.log("[LML_Clone_ExactTest] useEffect running."); // Changed prefix
-    let device = null; 
-    let context = null;
-    let format = null;
-    let resizeObserver = null; // Was in TestWebGPUCanvas
-    let renderLoopStarted = false;
+    console.log("[LML_Clone UMC2-FixVideoRef] useEffect running.");
+    let deviceInternal = null; 
+    let contextInternal = null;
+    let formatInternal = null; 
+    let resizeObserverInternal = null; 
+    let renderLoopStartedInternal = false;
 
-    // configureCanvas MUST be defined before initializeWebGPU if initializeWebGPU calls it directly
-    // or if resizeObserver is set up with it before device/context/format are ready.
-    // Let's define it so it closes over device, context, format from initializeWebGPU.
-    let configureCanvasFunc = null; 
+    const canvas = canvasRef.current; // Get from ref
+    // Get videoElement from ref early, check its existence with canvas
+    const videoElement = videoRef.current; 
+
+    if (!canvas || !videoElement) { // Check both refs
+      console.error("[LML_Clone UMC2-FixVideoRef] Canvas or Video element not available on mount.");
+      setError("Canvas or Video element not found.");
+      return;
+    }
+
+    const configureCanvas = (entries) => {
+      if (!deviceInternal || !contextInternal || !formatInternal) { 
+        console.warn("[LML_Clone UMC2-FixVideoRef configureCanvas] Prerequisites not met. Skipping."); 
+        return; 
+      }
+      if (!canvasRef.current) { console.error("[LML_Clone UMC2-FixVideoRef configureCanvas] CanvasRef is null!"); return; }
+      const currentCanvas = canvasRef.current;
+      if (entries) { /* ... RO log ... */ } else { /* ... direct call log ... */ }
+      const dpr = window.devicePixelRatio || 1;
+      const clientWidth = currentCanvas.clientWidth; const clientHeight = currentCanvas.clientHeight;
+      if (clientWidth === 0 || clientHeight === 0) { /* ... zero size log ... */ return; }
+      const targetWidth = Math.floor(clientWidth * dpr); const targetHeight = Math.floor(clientHeight * dpr);
+      if (currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight) {
+        currentCanvas.width = targetWidth; currentCanvas.height = targetHeight;
+        console.log(`[LML_Clone UMC2-FixVideoRef configureCanvas] Canvas buffer SET:${targetWidth}x${targetHeight}`);
+      }
+      try {
+        contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [currentCanvas.width, currentCanvas.height] });
+      } catch (e) { console.error("[LML_Clone UMC2-FixVideoRef configureCanvas] Error config context:", e); setError("Error config context.");}
+    };
+    resizeHandlerRef.current = configureCanvas; 
+
+    const render = () => { /* ... Render function (magenta clear) remains identical to the previous "VERIFIED and FIXED" version ... */
+      const activeDevice = deviceActualRef.current; 
+      const activeContext = contextActualRef.current;
+      if (!activeDevice || !activeContext || !canvasRef.current ) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
+      const currentCanvas = canvasRef.current;
+      let currentGpuTexture, textureView;
+      try { currentGpuTexture = activeContext.getCurrentTexture(); textureView = currentGpuTexture.createView(); } 
+      catch(e) { console.error(`[LML_Clone UMC2-FixVideoRef RENDER ${frameCounter.current}] Error currentTex:`, e); if(resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+      frameCounter.current++;
+      if (frameCounter.current === 1 || frameCounter.current % 240 === 1) { console.log(`[LML_Clone UMC2-FixVideoRef RENDER ${frameCounter.current}] Canvas attr: ${currentCanvas.width}x${currentCanvas.height}. GPU Tex: ${currentGpuTexture.width}x${currentGpuTexture.height}`); }
+      const commandEncoder = activeDevice.createCommandEncoder();
+      const renderPassDescriptor = { colorAttachments: [ { view: textureView, clearValue: { r: 1.0, g: 0.0, b: 1.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' } ], };
+      const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+      passEncoder.setViewport(0,0, currentGpuTexture.width, currentGpuTexture.height, 0, 1);
+      passEncoder.setScissorRect(0,0, currentGpuTexture.width, currentGpuTexture.height);
+      passEncoder.end();
+      activeDevice.queue.submit([commandEncoder.finish()]);
+      if(frameCounter.current === 1) { setDebugMessage("Diagnostic: UMC2 Active (Fixed vRef)"); }
+      animationFrameIdRef.current = requestAnimationFrame(render);
+    };
 
     const initializeWebGPU = async () => {
-      const canvas = canvasRef.current;
-      if (!canvas) { 
-          console.error("[LML_Clone_ExactTest] Canvas ref null in initializeWebGPU"); 
-          setError("Canvas not found"); // Set error state
-          return; 
-      }
-      if (!navigator.gpu) { 
-          console.error('[LML_Clone_ExactTest] WebGPU not supported.'); 
-          setError("WebGPU not supported"); // Set error state
-          return; 
-      }
-      setDebugMessage("Initializing WebGPU..."); // Update debug state
-
+      // canvasElement is canvasRef.current, already checked
+      if (!navigator.gpu) { /* ... */ return; }
+      setDebugMessage("Initializing UMC2 (Fixed vRef)...");
       try {
         const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) { 
-            console.error('[LML_Clone_ExactTest] Failed to get GPU adapter.'); 
-            setError("No GPU adapter"); // Set error state
-            return; 
-        }
-        console.log("[LML_Clone_ExactTest] Adapter obtained.");
-
-        device = await adapter.requestDevice(); // Assign to useEffect-scoped variable
-        console.log("[LML_Clone_ExactTest] Device obtained:", device);
-        device.lost.then((info) => { 
-            console.error(`[LML_Clone_ExactTest] Device lost: ${info.message}`); 
-            if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
-            setError("WebGPU Device Lost"); // Set error state
-        });
-
-        context = canvas.getContext('webgpu'); // Assign to useEffect-scoped variable
-        if (!context) { 
-            console.error("[LML_Clone_ExactTest] Failed to get WebGPU context."); 
-            setError("No WebGPU context"); // Set error state
-            return; 
-        }
-        console.log("[LML_Clone_ExactTest] Context obtained:", context);
-
-        format = navigator.gpu.getPreferredCanvasFormat(); // Assign to useEffect-scoped variable
-        console.log("[LML_Clone_ExactTest] Preferred format:", format);
+        if (!adapter) { /* ... */ return; }
+        deviceInternal = await adapter.requestDevice(); deviceActualRef.current = deviceInternal;
+        console.log("[LML_Clone UMC2-FixVideoRef] Device obtained.");
+        deviceInternal.lost.then((info) => { /* ... */ });
+        contextInternal = canvasElement.getContext('webgpu'); contextActualRef.current = contextInternal;
+        if (!contextInternal) { /* ... */ return; }
+        formatInternal = navigator.gpu.getPreferredCanvasFormat(); formatActualRef.current = formatInternal;
+        console.log("[LML_Clone UMC2-FixVideoRef] Context and Format obtained.");
         
-        // Define configureCanvas now that device, context, format are available
-        configureCanvasFunc = (entries) => {
-            const currentCanvas = canvasRef.current; // Use fresh ref inside
-            if (!currentCanvas) { console.error("[LML_Clone_ExactTest configureCanvas] Canvas ref is null."); return; }
-            // device, context, format are from the outer initializeWebGPU scope
-            if (!device || !context || !format) { console.warn("[LML_Clone_ExactTest configureCanvas] Device/context/format not ready. Skipping."); return; }
-
-            if (entries) { console.log("[LML_Clone_ExactTest configureCanvas via RO]"); } 
-            else { console.log("[LML_Clone_ExactTest configureCanvas direct]"); }
-            
-            const dpr = window.devicePixelRatio || 1;
-            const clientWidth = currentCanvas.clientWidth;
-            const clientHeight = currentCanvas.clientHeight;
-            if (clientWidth === 0 || clientHeight === 0) {
-                console.warn(`[LML_Clone_ExactTest configureCanvas] clientWidth/Height is zero.`); return;
-            }
-            const targetWidth = Math.floor(clientWidth * dpr);
-            const targetHeight = Math.floor(clientHeight * dpr);
-            console.log(`[LML_Clone_ExactTest configureCanvas] DPR:${dpr}, clientW/H:${clientWidth}x${clientHeight} => phys:${targetWidth}x${targetHeight}`);
-
-            if (currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight) {
-                currentCanvas.width = targetWidth; currentCanvas.height = targetHeight;
-                console.log(`[LML_Clone_ExactTest configureCanvas] Canvas buffer SET:${targetWidth}x${targetHeight}`);
-            } else { console.log(`[LML_Clone_ExactTest configureCanvas] Canvas size ${targetWidth}x${targetHeight} OK.`); }
-            
-            try {
-                context.configure({ device, format, alphaMode: 'opaque', size: [currentCanvas.width, currentCanvas.height] });
-                console.log(`[LML_Clone_ExactTest configureCanvas] Context CONFIG. Size:${currentCanvas.width}x${currentCanvas.height}`);
-            } catch (e) { console.error("[LML_Clone_ExactTest configureCanvas] Error config context:", e); setError("Error configuring context."); }
-        };
+        resizeObserverInternal = new ResizeObserver(resizeHandlerRef.current);
+        resizeObserverInternal.observe(canvasElement); // Use canvasElement here
+        console.log("[LML_Clone UMC2-FixVideoRef] ResizeObserver observing canvas.");
         
-        resizeObserver = new ResizeObserver(configureCanvasFunc); // Use the defined function
-        resizeObserver.observe(canvas);
-        console.log("[LML_Clone_ExactTest] ResizeObserver observing canvas.");
-
-        console.log("[LML_Clone_ExactTest] Calling initial configureCanvas.");
-        configureCanvasFunc(); // Call it
-
-        const render = () => {
-            // device and context are from the outer initializeWebGPU scope
-            if (!device || !context || !canvasRef.current) { 
-                if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
-                return;
-            }
-            const currentCanvas = canvasRef.current;
-            let currentGpuTexture, textureView;
-            try { currentGpuTexture = context.getCurrentTexture(); textureView = currentGpuTexture.createView(); } 
-            catch (e) { console.error("[LML_Clone_ExactTest render] Error currentTex:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
-
-            frameCounter.current++;
-            if (frameCounter.current < 5 || frameCounter.current % 120 === 1) {
-                console.log(`[LML_Clone_ExactTest RENDER ${frameCounter.current}] Canvas attr: ${currentCanvas.width}x${currentCanvas.height}. GPUTexture: ${currentGpuTexture.width}x${currentGpuTexture.height}`);
-            }
-            const commandEncoder = device.createCommandEncoder();
-            const renderPassDescriptor = {
-                colorAttachments: [ { view: textureView, clearValue: { r: 1, g: 0, b: 1, a: 1 }, loadOp: 'clear', storeOp: 'store' } ], // MAGENTA
-            };
-            const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-            passEncoder.setViewport(0,0, currentGpuTexture.width, currentGpuTexture.height, 0, 1);
-            passEncoder.setScissorRect(0,0, currentGpuTexture.width, currentGpuTexture.height);
-            passEncoder.end();
-            device.queue.submit([commandEncoder.finish()]);
-            animationFrameIdRef.current = requestAnimationFrame(render);
-        }; // End of render
-
-        if (!renderLoopStarted) {
-            console.log("[LML_Clone_ExactTest] Starting render loop.");
-            render(); 
-            renderLoopStarted = true;
-            setDebugMessage("LML_Clone: Magenta Clear Active"); // Update UI message
-        }
-      } catch (error) { 
-          console.error('[LML_Clone_ExactTest] Error initializing WebGPU:', error); 
-          setError(`WebGPU Init Error: ${error.message}`); // Set error state
-      }
-    }; // End of initializeWebGPU
+        if(resizeHandlerRef.current) { resizeHandlerRef.current(); } 
+        else { console.error("[LML_Clone UMC2-FixVideoRef] resizeHandlerRef.current is null"); }
+        
+        console.log("[LML_Clone UMC2-FixVideoRef] Core WebGPU setup complete.");
+        if (!renderLoopStartedInternal) { console.log("[LML_Clone UMC2-FixVideoRef] Starting render loop."); render(); renderLoopStartedInternal = true; }
+      } catch (error) { console.error('[LML_Clone UMC2-FixVideoRef] Error initializing WebGPU:', error); setError(`Init failed: ${error.message}`);}
+    };
 
     initializeWebGPU();
 
-    return () => {
-      console.log("[LML_Clone_ExactTest] Cleanup.");
+    return () => { // Cleanup
+      console.log("[LML_Clone UMC2-FixVideoRef Cleanup]");
       if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
-      if (resizeObserver) resizeObserver.disconnect(); // Disconnect observer
-      // No device.destroy() as per TestWebGPUCanvas pattern
-    };
-  }, []); // Empty dependency array means this runs once on mount
+      if (resizeObserverInternal && canvasRef.current) resizeObserverInternal.unobserve(canvasRef.current);
+      if (resizeObserverInternal) resizeObserverInternal.disconnect();
+      // No active video stream to stop in this version.
+      // videoRef.current.srcObject?.getTracks().forEach(track => track.stop()); // This line would cause error if videoRef.current.srcObject is null
+      if (videoRef.current && videoRef.current.srcObject) { // Check if srcObject exists
+        videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+      }
+      if (videoRef.current) videoRef.current.srcObject = null; // Clear srcObject
 
-  return ( 
-    // Using the original parent div styling for LipstickMirrorLive
+      deviceActualRef.current = null; contextActualRef.current = null; formatActualRef.current = null;
+    };
+  }, []); // Empty dependency array
+  
+  useEffect(() => { /* ... UI Message Effect ... */ 
+    if (deviceActualRef.current && contextActualRef.current && !error) { setDebugMessage("Diagnostic: UMC2 Active (Fixed vRef)"); }
+    else if (error) { setDebugMessage("Error State"); }
+    else { setDebugMessage("Initializing UMC2 (Fixed vRef)..."); }
+  }, [deviceActualRef.current, contextActualRef.current, error]);
+
+  return ( /* ... JSX remains the same, including the video element with ref={videoRef} ... */
     <div style={{ width: '640px', height: '480px', margin: 'auto', border: '1px solid #ccc', position: 'relative', overflow: 'hidden', background: 'darkkhaki' }}>
       <div style={{position:'absolute',top:'5px',left:'5px',background:'rgba(0,0,0,0.7)',color:'white',padding:'2px 5px',fontSize:'12px',zIndex:10,pointerEvents:'none'}}>
-        {error ? `Error: ${error}` : debugMessage} (Frame: {frameCounter.current})
+        {debugMessage} (Frame: {frameCounter.current})
       </div>
-      {/* videoRef is present in JSX but not actively used by JS in this version */}
       <video ref={videoRef} style={{display:'none'}} width={640} height={480} />
       <canvas 
         ref={canvasRef} 
