@@ -109,7 +109,7 @@ export default function LipstickMirrorLive_Clone() {
             }).filter(tri=>tri!==null);
             if (lips.length > 0) { 
                 // TEST A: Standard X mapping
-                const lipVertexData = new Float32Array(lips.flat().map(pt => [(pt.x - 0.5) * 2, (0.5 - pt.y) * 2]).flat()); 
+                const lipVertexData = new Float32Array(lips.flat().map(pt => [(0.5 - pt.x) * 2, (0.5 - pt.y) * 2]).flat()); 
                 numLipVertices = lipVertexData.length / 2; 
                 if(lipVertexData.byteLength > 0){ 
                     if(lipVertexData.byteLength <= pState.vertexBufferSize) {
