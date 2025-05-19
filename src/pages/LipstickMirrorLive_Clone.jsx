@@ -67,11 +67,12 @@ export default function LipstickMirrorLive_Clone() {
       const activeLandmarker = landmarker; // Use landmarker from React state
 
       if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.lipstickPipeline || !currentVideoEl) {
-        animationFrameIdRef.current = requestAnimationFrame(render); return; 
-      }
-      frameCounter.current++;
-      if (currentVideoEl.readyState < currentVideoEl.HAVE_ENOUGH_DATA || currentVideoEl.videoWidth === 0) {
-        animationFrameIdRef.current = requestAnimationFrame(render); return;
+        // ADD THIS LOG TO SEE WHAT'S MISSING
+        if (frameCounter.current < 10 || frameCounter.current % 60 === 0) { // Log frequently at start, then less often
+            console.warn(`[RENDER GUARD] Bailing: Device=${!!currentDevice}, Context=${!!currentContext}, VidPipe=${!!pState.videoPipeline}, LipPipe=${!!pState.lipstickPipeline}, VidEl=${!!currentVideoEl}`);
+        }
+        animationFrameIdRef.current = requestAnimationFrame(render); 
+        return; 
       }
       
       // Update Aspect Ratio Uniform Buffer
