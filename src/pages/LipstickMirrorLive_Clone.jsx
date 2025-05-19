@@ -148,16 +148,26 @@ export default function LipstickMirrorLive_Clone() {
     else { setDebugMessage("Initializing UMC2 (CanvasScope Fixed)..."); }
   }, [deviceActualRef.current, contextActualRef.current, error]);
 
-  return ( /* ... JSX remains the same ... */
-    <div style={{ width: '640px', height: '480px', margin: 'auto', border: '1px solid #ccc', position: 'relative', overflow: 'hidden', background: 'darkkhaki' }}>
-      <div style={{position:'absolute',top:'5px',left:'5px',background:'rgba(0,0,0,0.7)',color:'white',padding:'2px 5px',fontSize:'12px',zIndex:10,pointerEvents:'none'}}>
+// MODIFIED JSX for LipstickMirrorLive_Clone.jsx
+return (
+    <div style={{
+      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, // Fill viewport
+      overflow: 'hidden', margin: 0, padding: 0,
+      background: 'darkolivegreen' // Different parent background for this test
+    }}>
+      <div style={{ /* ... UI message styling ... */ zIndex:10 }}>
         {debugMessage} (Frame: {frameCounter.current})
       </div>
-      <video ref={videoRef} style={{display:'none'}} width={640} height={480} />
+      <video ref={videoRef} style={{display:'none'}} width={640} height={480} /> {/* Still present but hidden */}
       <canvas 
         ref={canvasRef} 
-        width={640} height={480}
-        style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', zIndex:2, display: 'block', background: 'lightskyblue' }} 
+        // HTML attributes will be set by JS to physical pixels of full viewport
+        style={{
+          width: '100%', 
+          height: '100%', 
+          display: 'block', 
+          background: 'lightpink' // Canvas CSS background
+        }} 
       />
     </div>
   );
