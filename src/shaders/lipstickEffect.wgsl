@@ -1,10 +1,24 @@
-// src/shaders/lipstickEffect.wgsl (Corrected Vertex Transformation)
+// src/shaders/lipstickEffect.wgsl (Corrected struct definition order and aspect logic)
+
+// DEFINE STRUCT FIRST
+struct AspectRatios {
+    videoDimensions: vec2f, // videoWidth, videoHeight
+    canvasDimensions: vec2f // canvasPhysicalWidth, canvasPhysicalHeight
+};
+
+// THEN USE IT IN BINDING
+@group(0) @binding(0) var<uniform> aspectRatiosUniform: AspectRatios;
 
 struct VertexInput {
-  @location(0) pos: vec2f, // Raw NDC from JS, assuming video filled -1 to 1
+  @location(0) pos: vec2f, // Raw NDC from MediaPipe processing (-1 to 1)
+                           // This assumes JS has done:
+                           // X: (landmark.x - 0.5) * 2  (for non-mirrored video) OR (0.5 - landmark.x) * 2 (for mirrored video)
+                           // Y: (0.5 - landmark.y) * 2  (to invert Y)
 };
-// ... (VertexOut and AspectRatios uniform struct are the same) ...
-@group(0) @binding(0) var<uniform> aspectRatiosUniform: AspectRatios;
+
+struct VertexOut {
+  @builtin(position) position: vec4f,
+};
 
 @vertex
 fn vert_main(input: VertexInput) -> VertexOut {
@@ -16,25 +30,26 @@ fn vert_main(input: VertexInput) -> VertexOut {
   let videoH = aspectRatiosUniform.videoDimensions.y;
 
   if (canvasH == 0.0 || videoH == 0.0 || videoW == 0.0 || canvasW == 0.0) {
-    out.position = vec4f(input.pos, 0.0, 1.0); return out;
+    out.position = vec4f(input.pos, 0.0, 1.0); // Pass through if invalid
+    return out;
   }
 
   let screenAspect = canvasW / canvasH;  // e.g. ~0.543 (Tall screen)
-  let videoAspect = videoW / videoH;    // e.g. 0.75  (Wider video)
+  let videoAspect = videoW / videoH;    // e.g. 0.75  (Wider video relative to a square)
 
   var finalPos = input.pos; // Already in mirrored/inverted NDC space [-1, 1] from JS
 
   // Apply scaling to fit these NDC coordinates into the letterboxed/pillarboxed video area
   if (videoAspect > screenAspect) {
-    // Video is WIDER than the screen area (e.g., 16:9 video on 4:3 screen, or 0.75 video on 0.543 screen).
-    // Video will be letterboxed (fill width, bars top/bottom).
-    // The effective display height of the video is screenWidth / videoAspect.
-    // The scale factor for Y NDC coords is (screenWidth / videoAspect) / screenHeight = screenAspect / videoAspect.
+    // Video is WIDER than the screen display area (e.g. landscape video on portrait screen, OR portrait video on even skinnier portrait screen).
+    // Fit video to screen WIDTH. Video will be letterboxed (bars top/bottom).
+    // Scale Y coordinates of the overlay.
     finalPos.y = input.pos.y * (screenAspect / videoAspect);
   } else {
-    // Video is TALLER/SKINNIER than the screen area (or same aspect). Pillarbox.
-    // Video will fill screen height. Its display width is screenHeight * videoAspect.
-    // The scale factor for X NDC coords is (screenHeight * videoAspect) / screenWidth = videoAspect / screenAspect.
+    // Video is TALLER/SKINNIER than the screen display area (or same aspect).
+    // (e.g. portrait video on landscape screen, OR portrait video on wider portrait screen).
+    // Fit video to screen HEIGHT. Video will be pillarboxed (bars left/right).
+    // Scale X coordinates of the overlay.
     finalPos.x = input.pos.x * (videoAspect / screenAspect);
   }
   
@@ -44,5 +59,6 @@ fn vert_main(input: VertexInput) -> VertexOut {
 
 @fragment
 fn frag_main() -> @location(0) vec4f {
-  return vec4f(1.0, 1.0, 0.0, 0.7); // Yellow with alpha
+  // Output yellow with 70% alpha for testing blend
+  return vec4f(1.0, 1.0, 0.0, 0.7); 
 }
