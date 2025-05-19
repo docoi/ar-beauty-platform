@@ -1,8 +1,8 @@
-// src/pages/LipstickMirrorLive_Clone.jsx (Stage 2: Add Lips Overlay)
+// src/pages/LipstickMirrorLive_Clone.jsx (Stage 2: Add Lips Overlay with DETAILED LOGS)
 
 import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines'; 
-import lipTriangles from '@/utils/lipTriangles'; // Now actively used!
+import lipTriangles from '@/utils/lipTriangles'; 
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export default function LipstickMirrorLive_Clone() {
@@ -25,8 +25,8 @@ export default function LipstickMirrorLive_Clone() {
     aspectRatioUniformBuffer: null,
     aspectRatioBindGroup: null,
     videoSampler: null,
-    vertexBuffer: null, // For lips
-    vertexBufferSize: 2048, // Default size
+    vertexBuffer: null, 
+    vertexBufferSize: 2048,
   });
 
   const [landmarker, setLandmarker] = useState(null); 
@@ -34,28 +34,36 @@ export default function LipstickMirrorLive_Clone() {
   const [debugMessage, setDebugMessage] = useState('Initializing...');
   
   useEffect(() => {
-    console.log("[LML_Clone STAGE2_Lips] useEffect running.");
+    console.log("[LML_Clone S2_LipsDebug] useEffect running.");
     let deviceInternal = null; let contextInternal = null; let formatInternal = null;
-    // currentLandmarkerInstance is not strictly needed here as render loop uses 'landmarker' state
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
     
     const canvasElement = canvasRef.current; 
     const videoElement = videoRef.current;
 
-    if (!canvasElement || !videoElement) { /* ... error handling ... */ return; }
+    if (!canvasElement || !videoElement) {
+      console.error("[LML_Clone S2_LipsDebug] Canvas or Video element not available.");
+      setError("Canvas or Video element not found.");
+      return;
+    }
 
-    const configureCanvas = (entries) => { /* ... same as previous working version ... */ 
-      if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) {return; }
+    const configureCanvas = (entries) => {
+      if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) { console.warn("[LML_Clone S2_LipsDebug configureCanvas] Prerequisites not met."); return; }
       const currentCanvas = canvasRef.current;
-      if (entries) { /* RO call */ } else { /* direct call */ }
+      if (entries) { /* console.log("[LML_Clone S2_LipsDebug configureCanvas via RO]"); */ } 
+      else { /* console.log("[LML_Clone S2_LipsDebug configureCanvas direct]"); */ }
       const dpr = window.devicePixelRatio || 1;
       const cw = currentCanvas.clientWidth; const ch = currentCanvas.clientHeight;
-      if (cw === 0 || ch === 0) { return; }
+      if (cw === 0 || ch === 0) { console.warn(`[LML_Clone S2_LipsDebug configureCanvas] Canvas clientW/H is zero.`); return; }
       const tw = Math.floor(cw * dpr); const th = Math.floor(ch * dpr);
-      if (currentCanvas.width !== tw || currentCanvas.height !== th) { currentCanvas.width = tw; currentCanvas.height = th; console.log(`[LML_Clone S2 configureCanvas] Canvas buffer SET:${tw}x${th}`); }
-      try { contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [currentCanvas.width, currentCanvas.height] }); 
-            console.log(`[LML_Clone S2 configureCanvas] Context CONFIG. Size:${currentCanvas.width}x${currentCanvas.height}`); 
-      } catch (e) { console.error("[LML_Clone S2 configureCanvas] Error config context:", e); setError("Error config context."); }
+      // console.log(`[LML_Clone S2_LipsDebug configureCanvas] DPR:${dpr}, clientW/H:${cw}x${ch} => phys:${tw}x${th}`);
+      if (currentCanvas.width !== tw || currentCanvas.height !== th) { currentCanvas.width = tw; currentCanvas.height = th; console.log(`[LML_Clone S2_LipsDebug configureCanvas] Canvas buffer SET:${tw}x${th}`); }
+      else { /* console.log(`[LML_Clone S2_LipsDebug configureCanvas] Canvas size ${tw}x${th} OK.`); */ }
+      try { 
+          contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [currentCanvas.width, currentCanvas.height] }); 
+          // console.log(`[LML_Clone S2_LipsDebug configureCanvas] Context CONFIG. Size:${currentCanvas.width}x${currentCanvas.height}`); 
+      }
+      catch (e) { console.error("[LML_Clone S2_LipsDebug configureCanvas] Error config context:", e); setError("Error config context."); }
     };
     resizeHandlerRef.current = configureCanvas;
 
@@ -64,18 +72,16 @@ export default function LipstickMirrorLive_Clone() {
       const currentContext = contextRef.current;
       const currentVideoEl = videoRef.current; 
       const pState = pipelineStateRef.current;
-      const activeLandmarker = landmarker; // Use landmarker from React state
+      const activeLandmarker = landmarker; 
 
       if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.lipstickPipeline || !currentVideoEl) {
-        // ADD THIS LOG TO SEE WHAT'S MISSING
-        if (frameCounter.current < 10 || frameCounter.current % 60 === 0) { // Log frequently at start, then less often
-            console.warn(`[RENDER GUARD] Bailing: Device=${!!currentDevice}, Context=${!!currentContext}, VidPipe=${!!pState.videoPipeline}, LipPipe=${!!pState.lipstickPipeline}, VidEl=${!!currentVideoEl}`);
-        }
-        animationFrameIdRef.current = requestAnimationFrame(render); 
-        return; 
+        animationFrameIdRef.current = requestAnimationFrame(render); return; 
+      }
+      frameCounter.current++;
+      if (currentVideoEl.readyState < currentVideoEl.HAVE_ENOUGH_DATA || currentVideoEl.videoWidth === 0) {
+        animationFrameIdRef.current = requestAnimationFrame(render); return;
       }
       
-      // Update Aspect Ratio Uniform Buffer
       if (pState.aspectRatioUniformBuffer && currentVideoEl.videoWidth > 0 && currentContext.canvas.width > 0) {
         const aspectRatioData = new Float32Array([ currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height ]);
         currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 0, aspectRatioData);
@@ -84,43 +90,69 @@ export default function LipstickMirrorLive_Clone() {
       // --- MediaPipe Landmark Processing & Vertex Buffer Update ---
       let numLipVertices = 0; 
       if (activeLandmarker && pState.vertexBuffer) { 
+        if (frameCounter.current % 60 === 2 || frameCounter.current === 1) { 
+            console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] Attempting landmark detection. Landmarker: ${!!activeLandmarker}, VertexBuffer: ${!!pState.vertexBuffer}`);
+        }
         try {
           const now = performance.now(); 
           const results = activeLandmarker.detectForVideo(currentVideoEl, now);
+          
           if (results?.faceLandmarks?.length > 0) {
             const allFaceLm = results.faceLandmarks[0];
-            if (frameCounter.current % 120 === 1 && allFaceLm) { 
-                // Optional: Log landmark spread if needed for debugging lip scale
+            if ((frameCounter.current % 60 === 2 || frameCounter.current === 1) && allFaceLm) { 
+                console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] Face landmarks detected. Count: ${allFaceLm.length}`);
             }
-            const lips = lipTriangles.map(([idxA, idxB, idxC]) => [
-                allFaceLm[idxA], allFaceLm[idxB], allFaceLm[idxC]
-            ]);
-            // Convert to NDC: X mirrored, Y inverted.
-            const lipVertexData = new Float32Array(lips.flat().map(pt => [(0.5 - pt.x) * 2, (0.5 - pt.y) * 2]).flat());
-            numLipVertices = lipVertexData.length / 2;
 
-            if(lipVertexData.byteLength > 0){ 
-                if(lipVertexData.byteLength <= pState.vertexBufferSize) {
-                    currentDevice.queue.writeBuffer(pState.vertexBuffer, 0, lipVertexData);
+            const lips = lipTriangles.map(([idxA, idxB, idxC]) => {
+                if (allFaceLm && idxA < allFaceLm.length && idxB < allFaceLm.length && idxC < allFaceLm.length &&
+                    allFaceLm[idxA] && allFaceLm[idxB] && allFaceLm[idxC]) {
+                    return [allFaceLm[idxA], allFaceLm[idxB], allFaceLm[idxC]];
+                }
+                if (frameCounter.current % 60 === 2 || frameCounter.current === 1) {
+                    console.warn(`[LML_Clone S2 RENDER ${frameCounter.current}] Invalid landmark index in lipTriangles: ${idxA}, ${idxB}, or ${idxC} (Landmark count: ${allFaceLm?.length})`);
+                }
+                return null;
+            }).filter(tri => tri !== null);
+
+            if (lips.length > 0) {
+                const lipVertexData = new Float32Array(lips.flat().map(pt => [(0.5 - pt.x) * 2, (0.5 - pt.y) * 2]).flat());
+                numLipVertices = lipVertexData.length / 2;
+                 if (frameCounter.current % 60 === 2 || frameCounter.current === 1) console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] Calculated ${numLipVertices} lip vertices.`);
+
+                if(lipVertexData.byteLength > 0){ 
+                    if(lipVertexData.byteLength <= pState.vertexBufferSize) {
+                        currentDevice.queue.writeBuffer(pState.vertexBuffer, 0, lipVertexData);
+                    } else {
+                        console.warn(`[LML_Clone S2 RENDER ${frameCounter.current}] Lip vertex data (${lipVertexData.byteLength}) too large for buffer (${pState.vertexBufferSize}).`);
+                        numLipVertices = 0;
+                    }
                 } else {
-                    console.warn(`[RENDER LML_Clone S2 ${frameCounter.current}] Lip vertex data too large for buffer.`);
+                    if (frameCounter.current % 60 === 2 || frameCounter.current === 1) console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] lipVertexData is empty (length 0).`);
                     numLipVertices = 0;
                 }
             } else {
+                if (frameCounter.current % 60 === 2 || frameCounter.current === 1) console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] No valid lip triangles formed from landmarks.`);
                 numLipVertices = 0;
             }
           } else {
-            numLipVertices = 0; // No face detected
+            if (frameCounter.current % 60 === 2 || frameCounter.current === 1) {
+                console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] No face landmarks detected in results.`);
+            }
+            numLipVertices = 0; 
           }
         } catch (e) { 
-            console.error(`[RENDER LML_Clone S2 ${frameCounter.current}] Error in landmarker processing:`, e);
+            console.error(`[LML_Clone S2 RENDER ${frameCounter.current}] Error in landmarker processing:`, e);
             numLipVertices = 0; 
         }
+      } else {
+          if (frameCounter.current % 60 === 2 || frameCounter.current === 1) {
+              console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] Skipping landmark detection: Landmarker not ready (${!!activeLandmarker}) or VertexBuffer not ready (${!!pState.vertexBuffer}).`);
+          }
       }
       // --- End MediaPipe ---
 
       let videoTextureGPU, frameBindGroupForTexture;
-      try { /* ... same as before ... */ 
+      try { /* ... video texture and bind group ... */ 
         videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl });
         if (pState.videoBindGroupLayout && pState.videoSampler) {
           frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{binding:0,resource:pState.videoSampler},{binding:1,resource:videoTextureGPU}]});
@@ -128,19 +160,18 @@ export default function LipstickMirrorLive_Clone() {
       } catch (e) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
       
       let currentGpuTexture, texView;
-      try { /* ... same as before ... */ 
+      try { /* ... current texture view ... */ 
         currentGpuTexture = currentContext.getCurrentTexture(); texView = currentGpuTexture.createView(); 
       }
       catch(e) { console.error(`[RENDER LML_Clone S2 ${frameCounter.current}] Error currentTex:`, e); if(resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
       
-      // if (frameCounter.current === 1 || frameCounter.current % 240 === 1) { console.log(`[RENDER LML_Clone S2 ${frameCounter.current}] Canvas: ${canvasRef.current.width}x${canvasRef.current.height}. GPU Tex: ${currentGpuTexture.width}x${currentGpuTexture.height}`); }
+      if (frameCounter.current === 1 || frameCounter.current % 240 === 1) { console.log(`[RENDER LML_Clone S2 ${frameCounter.current}] Canvas: ${canvasRef.current.width}x${canvasRef.current.height}. GPU Tex: ${currentGpuTexture.width}x${currentGpuTexture.height}`); }
 
       const cmdEnc = currentDevice.createCommandEncoder({label: "LML_Clone_S2_Encoder"});
       const passEnc = cmdEnc.beginRenderPass({colorAttachments:[{view:texView,clearValue:{r:0.0,g:0.0,b:0.0,a:1.0},loadOp:'clear',storeOp:'store'}]});
       passEnc.setViewport(0,0,currentGpuTexture.width,currentGpuTexture.height,0,1);
       passEnc.setScissorRect(0,0,currentGpuTexture.width,currentGpuTexture.height);
       
-      // Draw video background
       if (pState.videoPipeline && frameBindGroupForTexture && pState.aspectRatioBindGroup) {
         passEnc.setPipeline(pState.videoPipeline);
         passEnc.setBindGroup(0, frameBindGroupForTexture); 
@@ -148,26 +179,26 @@ export default function LipstickMirrorLive_Clone() {
         passEnc.draw(6);
       }
       
-      // --- Draw Lipstick Overlay ---
       if(numLipVertices > 0 && pState.lipstickPipeline && pState.vertexBuffer){
         passEnc.setPipeline(pState.lipstickPipeline); 
         passEnc.setVertexBuffer(0, pState.vertexBuffer); 
         passEnc.draw(numLipVertices); 
-        if (frameCounter.current % 60 === 1) console.log(`[RENDER LML_Clone S2 ${frameCounter.current}] Drawing ${numLipVertices} lip vertices.`);
+        if (frameCounter.current % 60 === 2 || frameCounter.current === 1) console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] EXECUTED LIP DRAW CALL for ${numLipVertices} vertices.`);
+      } else {
+        if ((frameCounter.current % 60 === 2 || frameCounter.current === 1) && pState.lipstickPipeline && pState.vertexBuffer) {
+             console.log(`[LML_Clone S2 RENDER ${frameCounter.current}] SKIPPED LIP DRAW CALL. numLipVertices: ${numLipVertices}, lipstickPipe: ${!!pState.lipstickPipeline}, vertexBuf: ${!!pState.vertexBuffer}`);
+        }
       }
-      // --- End Lipstick Overlay ---
-
       passEnc.end();
       currentDevice.queue.submit([cmdEnc.finish()]);
 
-      if(frameCounter.current === 1) { console.log(`[RENDER LML_Clone S2 1] First full frame with video & lips attempt.`); }
+      if(frameCounter.current === 1) { console.log(`[RENDER LML_Clone S2 1] First full frame attempt (video+lips).`); }
       animationFrameIdRef.current = requestAnimationFrame(render);
-    }; // End of render function
+    }; 
 
-    const initializeAll = async () => { /* ... All initialization logic is the same as Stage 1.B ... */ 
-                                     /* ... including FaceLandmarker, video, pipelines, ResizeObserver etc. ... */
+    const initializeAll = async () => { /* ... same as Stage 1.B ... */ 
       if (!navigator.gpu) { setError("WebGPU not supported."); return; }
-      setDebugMessage("Initializing Full App (S2)...");
+      setDebugMessage("Initializing Lipstick Try-On (S2)...");
       try {
         console.log("[LML_Clone S2 initializeAll] Initializing FaceLandmarker...");
         const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
@@ -220,10 +251,9 @@ export default function LipstickMirrorLive_Clone() {
         console.log("[LML_Clone S2 initializeAll] All sub-initializations complete.");
         if (!renderLoopStartedInternal) { console.log("[LML_Clone S2 initializeAll] Starting render loop."); render(); renderLoopStartedInternal = true; }
       } catch (err) { console.error("[LML_Clone S2 initializeAll] Major error:", err); setError(`Init S2 failed: ${err.message}`); }
-    }; // End of initializeAll
-
+    };
     initializeAll();
-    return () => { /* ... cleanup (same as Stage 1.B) ... */
+    return () => { /* ... cleanup (same as before) ... */
       console.log("[LML_Clone S2 MAIN_EFFECT_CLEANUP] Cleaning up.");
       if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
       if (resizeObserverInternal && canvasRef.current) resizeObserverInternal.unobserve(canvasRef.current);
@@ -236,7 +266,7 @@ export default function LipstickMirrorLive_Clone() {
     };
   }, []);
 
-  useEffect(() => { /* ... UI Message Effect (same as Stage 1.B, maybe update message) ... */ 
+  useEffect(() => { /* ... UI Message Effect (same as before, maybe update message) ... */ 
     if(landmarker && deviceRef.current && contextRef.current && pipelineStateRef.current.lipstickPipeline && !error) { 
         setDebugMessage("Live Lipstick Try-On (S2)");
     } else if (error) {
