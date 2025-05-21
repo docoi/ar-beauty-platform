@@ -1,105 +1,171 @@
-// src/utils/lipTriangles.js (New Curated Set - Aiming for ~30-40 triangles)
+// src/utils/lipTriangles.js
 
 const lipTriangles = [
-  // --- UPPER LIP VERMILION ---
-  // Outer Upper Contour (approximate, using key points)
-  // 61 (L corner), 185, 40, 39, 37, 0 (top mid), 267, 269, 270, 409, 291 (R corner)
-  // Inner Upper Contour (approximate)
-  // 78 (L inner corner), 191, 80, 81, 82, 13 (bottom mid), 312, 311, 310, 415, 308 (R inner corner)
+  // Upper lip: outer to inner (left → right)
+  [61, 185, 78],
+  [185, 40, 191],
+  [40, 39, 80],
+  [39, 37, 81],
+  [37, 0, 82],
+  [0, 267, 13],
+  [267, 269, 312],
+  [269, 270, 311],
+  [270, 409, 310],
+  [409, 291, 415],
+  [291, 308, 308], // intentionally degenerate to keep loop - let's test this as is
 
-  // Upper Lip Left Side (Screen Right for unmirrored video)
-  [61, 185, 78], [185, 191, 78], // Commisure to inner
-  [185, 40, 191], [40, 39, 191], // Outer edge to inner
-  [39, 37, 80], [191, 80, 39],   // Outer edge to inner
-  [37, 0, 80], [80, 81, 37],     // Top outer to inner
+  // Connecting upper lip strip
+  [61, 78, 191],    // Corrected based on typical strip: OuterL, InnerL, InnerR
+  [61, 191, 185],   // OuterL, InnerR, OuterR
+  [185, 191, 80],   // etc.
+  [185, 80, 40],
+  [40, 80, 81],
+  [40, 81, 39],
+  [39, 81, 82],
+  [39, 82, 37],
+  [37, 82, 13],
+  [37, 13, 0],
+  [0, 13, 312],
+  [0, 312, 267],
+  [267, 312, 311],
+  [267, 311, 269],
+  [269, 311, 310],
+  [269, 310, 270],
+  [270, 310, 415],
+  [270, 415, 409],
+  [409, 415, 308], // This closes the upper strip from outer right to inner right.
+  // [291, 415, 308], // The original connecting strip from ChatGPT might have been simpler.
+                     // The above is a more standard way to "skin" two polylines.
 
-  // Upper Lip Right Side (Screen Left for unmirrored video)
-  [291, 308, 78], [308, 415, 78], // Commisure to inner (using 78 as a central inner anchor)
-  [291, 409, 308], [409, 270, 308], // Outer edge to inner
-  [270, 269, 310], [308, 310, 270], // Outer edge to inner
-  [269, 267, 311], [311, 310, 269], // Top outer to inner
-  [0, 267, 311], [311, 312, 0],     // Top outer to inner using 0 and 13 (midline)
-  [81, 82, 0], [82, 13, 0], // Connecting inner points to top midline (0)
+  // Lower lip: outer to inner (left → right)
+  [61, 146, 95],   // OuterL, OuterMid, InnerMid
+  [146, 91, 88],   // OuterMid, OuterR, InnerR
+  [91, 181, 178],
+  [181, 84, 87],
+  [84, 17, 14],
+  [17, 314, 317],
+  [314, 405, 402],
+  [405, 321, 318],
+  [321, 375, 324],
+  [375, 291, 308], 
 
-  // --- LOWER LIP VERMILION ---
-  // Outer Lower Contour
-  // 61 (L corner), 146, 91, 181, 84, 17 (bottom mid), 314, 405, 321, 375, 291 (R corner)
-  // Inner Lower Contour
-  // 78 (L inner), 95, 88, 178, 87, 14 (top mid), 317, 402, 318, 324, 308 (R inner)
+  // Connecting lower lip strip
+  [61, 95, 146],    // OuterL, InnerMid, OuterMid
+  [146, 88, 91],    // OuterMid, InnerR, OuterR
+  [91, 88, 178],    // etc.
+  [181, 178, 87],
+  [84, 87, 14],
+  [17, 14, 317],
+  [314, 317, 402],
+  [405, 402, 318],
+  [321, 318, 324],
+  [375, 324, 308], // This closes the lower strip.
 
-  // Lower Lip Left Side (Screen Right)
-  [61, 146, 78], [146, 95, 78], // Commisure to inner/midline
-  [146, 91, 95],
-  [91, 181, 88], [95, 88, 91],
-  [181, 84, 88], [88, 178, 181],
-  [84, 17, 87], [178, 87, 84],
+  // Commissure edge smoothing (just outside of mouth corner)
+  // ChatGPT's original commissure suggestions:
+  // [308, 291, 375], // This is part of lower outer
+  // [61, 291, 308],   // This connects upper left outer, to lower right outer, to inner right. Complex.
+  // [61, 308, 78],    // Connects upper left outer, to inner right, to inner left.
+  // Let's try a simpler connection at the corners if needed, or rely on the strips meeting.
+  // For now, let's use the "Upper lip fill" and "Lower lip fill" and their "Connecting strip" logic from ChatGPT directly.
+  // The "Commissure" triangles ChatGPT listed might be redundant or specific tweaks.
 
-  // Lower Lip Right Side (Screen Left)
-  [291, 308, 78], // Connects to inner midline (78)
-  [291, 375, 308], [375, 321, 308],
-  [321, 405, 324], [308, 324, 321],
-  [405, 314, 318], [318, 324, 405],
-  [314, 17, 318], [318, 402, 314],
-  [17, 87, 317], [317, 402, 17], // Connecting to inner point 14 via 87,317
-  [87, 14, 317], // part of inner contour
-
-  // Ensure commissures are covered by connecting the fans if gaps appear
-  // Example connecting outer points with inner points at corners
-  [61, 78, 146], // Left Commissure area (top outer, top inner, bottom outer)
-  [291, 78, 308], // Right Commissure area (using 78 as a shared inner point temporarily)
-                 // A better commissure would use 308 and 415 for right upper inner,
-                 // and 95, 88 for left lower inner, then bridge.
-                 // For now, the fans should mostly meet.
-
-  // Let's try ChatGPT's latest provided list again, as it was curated and intended to be complete,
-  // but remove the one degenerate triangle: [78, 308, 308]
-  // Also, remove triangles from "Commissures" section if they are duplicates of "Fill between" or "Outer"
-  // This list comes from your input where ChatGPT said "✅ Triangulated Lip Mesh: lipTriangles.js"
-  // This is the 25-triangle list (75 vertices).
-  // We will use this list, as it was the one that produced the "solid yellow bar" before,
-  // indicating it *does* fill. The goal now is to ensure no bar.
-  // The prompt given to ChatGPT for *that* list specifically asked to avoid the bar.
+  // Re-pasting EXACTLY what ChatGPT provided in its latest response for "Triangulated Lip Mesh: lipTriangles.js"
+  // To avoid my interpretation errors.
 ];
 
-// Using the list from ChatGPT's response you just gave me,
-// which was in response to my prompt about fixing the bar.
-const chatGptRefinedList = [
-    // Upper lip fill (outer → inner contour (vermillion fill))
-    [61, 146, 91], // This seems to connect upper-left-outer to lower-left-outer to lower-left-inner.
-    [61, 91, 78],  // Connects to upper-left-inner.
-    [78, 91, 80],  // From upper-left-inner, to lower-left-inner, to upper-mid-inner.
-    [80, 81, 78],  // Upper-mid-inner triangle.
-    [78, 81, 61],  // Closes a section on user's right side of upper lip (screen left).
+const lipTrianglesFromChatGptResponse = [
+  // Upper lip: outer → inner contour (vermillion fill)
+  [61, 185, 78],
+  [185, 40, 191],
+  [40, 39, 80],
+  [39, 37, 81],
+  [37, 0, 82],
+  [0, 267, 13],
+  [267, 269, 312],
+  [269, 270, 311],
+  [270, 409, 310],
+  [409, 291, 415],
+  // [291, 308, 308], // Intentionally removing the degenerate one for now. If it was crucial, ChatGPT can clarify.
+  // Let's check if the next line implies the previous one's third point was meant to be different or if it starts a new sequence.
+  // The list seems to be pairs of triangles forming quads between outer and inner.
+  // For example, [61, 185, 78] and then [61, 78, 191] (from connecting strip) would form a quad 61-185-191-78.
 
-    [61, 81, 82],  // Continuing user's right upper lip.
-    [61, 82, 13],
-    [61, 13, 312],
-    [61, 312, 311],
-    [61, 311, 310],
-    [61, 310, 415],
-    [61, 415, 308], // This completes a fan from 61 (user's right outer corner) around the upper lip.
+  // Connecting upper lip strip (This should ideally be integrated with the above to form the fill)
+  [61, 78, 191], // This makes sense with [61, 185, 78] to form quad 61,185,191,78
+  [185, 191, 80], // With [185, 40, 191] -> quad 185,40,80,191
+  [40, 191, 80], // This is a duplicate if the above logic is right. Let's use ChatGPT's raw list.
+  // The two sections "Upper lip: outer to inner" and "Connecting upper lip strip" seem to be two halves of the quads.
 
-    // Lower lip fill (outer → inner contour (vermillion fill))
-    // This section looks like a fan from 84 (user's left outer mid-lower lip) around the lower lip.
-    [84, 181, 91],
-    [84, 91, 95],
-    [95, 88, 84],
-    [88, 178, 84],
-    [178, 87, 84],
-    [87, 14, 84],
-    [14, 317, 84],
-    [317, 402, 84],
-    [402, 318, 84],
-    [318, 324, 84],
-    [324, 308, 84], 
+  // From ChatGPT's "✅ Triangulated Lip Mesh: lipTriangles.js" section:
+  // Upper lip: outer → inner contour (vermillion fill)
+  [61, 185, 78], [185, 40, 191], [40, 39, 80], [39, 37, 81], [37, 0, 82],
+  [0, 267, 13], [267, 269, 312], [269, 270, 311], [270, 409, 310], [409, 291, 415],
+  // [291, 308, 308], // Degenerate, omitting for now.
+  // ChatGPT then had "Connecting upper lip strip". These are likely the other halves of the quads.
+  [61, 78, 191], [185, 191, 40], // Note: ChatGPT had [185, 191, 80], using 40 seems more logical for outer.
+                                 // Let's stick to its list: [185, 191, 80] - this makes [185,40,191] and [185,191,80] share edge 185-191
+                                 // Actually, it should be: [Outer1, Inner1, Inner2] and [Outer1, Inner2, Outer2]
+                                 // So for quad Outer1-Outer2-Inner2-Inner1:
+                                 // Triangle1: Outer1, Outer2, Inner1
+                                 // Triangle2: Outer2, Inner2, Inner1
+                                 // ChatGPT list is:
+                                 // [61(O1), 185(O2), 78(I1)]
+                                 // [185(O2), 40(O3), 191(I2)] -> This seems to be advancing along the outer and inner loops.
+                                 // Let's use its list verbatim, minus the degenerate one.
 
-    // Commissures — blend corners of mouth
-    [78, 61, 84],   // Connects the 'anchor' of upper fan (61) with 'anchor' of lower fan (84) via an inner point (78)
-    [84, 78, 95],   // Uses lower fan anchor (84), inner upper (78), and inner lower midline (95)
+  // Lower lip: outer to inner (left → right)
+  [61, 146, 95], [146, 91, 88], [91, 181, 178], [181, 84, 87], [84, 17, 14],
+  [17, 314, 317], [314, 405, 402], [405, 321, 318], [321, 375, 324], [375, 291, 308],
+
+  // Connecting lower lip strip (These are the second triangles for the quads forming the lower lip surface)
+  [61, 95, 146], // These should be: [OuterOld, InnerNew, OuterNew]
+                 // e.g. for quad 61-146-88-95: Tri1=[61,146,95], Tri2=[146,88,95]
+                 // Let's use ChatGPT's list verbatim.
+  [146, 88, 91], // This with [146,91,88] from above is a duplicate flipped.
+                 // The "Connecting" list from ChatGPT seems problematic or needs careful pairing.
+
+  // Using THE EXACT LIST from ChatGPT's "✅ Triangulated Lip Mesh: lipTriangles.js" block:
 ];
-// This list has 12 (upper) + 11 (lower) + 2 (commissures) = 25 triangles.
-// 25 triangles * 3 vertices/triangle = 75 vertices.
+const lipTrianglesFromChatGPT = [
+    // Upper lip: outer → inner contour (vermillion fill)
+    [61, 185, 78], [185, 40, 191], [40, 39, 80], [39, 37, 81], [37, 0, 82],
+    [0, 267, 13], [267, 269, 312], [269, 270, 311], [270, 409, 310], [409, 291, 415],
+    // [291, 308, 308], // SKIPPING DEGENERATE TRIANGLE
 
-console.log(`[lipTriangles.js] Using ChatGPT's refined list. Triangle count: ${chatGptRefinedList.length}, Vertex count: ${chatGptRefinedList.length * 3}`);
+    // Connecting upper lip strip
+    [61, 78, 191], [185, 191, 80], [40, 191, 80], //This [40,191,80] seems to make a quad with [185,40,191] and [185,191,80] - complex
+                   // Let's use the raw list and see. It might be correct.
+    [39, 80, 81], [37, 81, 82], [0, 82, 13], [267, 13, 312], [269, 312, 311],
+    [270, 311, 310], [409, 310, 415], [291, 415, 308],
 
-export default chatGptRefinedList;
+    // Lower lip: outer to inner (left → right)
+    [61, 146, 95], [146, 91, 88], [91, 181, 178], [181, 84, 87], [84, 17, 14],
+    [17, 314, 317], [314, 405, 402], [405, 321, 318], [321, 375, 324], [375, 291, 308],
+
+    // Connecting lower lip strip
+    [61, 95, 88], [146, 88, 178], [91, 178, 87], [181, 87, 14], [84, 14, 317],
+    [17, 317, 402], [314, 402, 318], [405, 318, 324], [321, 324, 308],
+
+    // Commissure edge smoothing (just outside of mouth corner)
+    [308, 291, 375], // This is a repeat of last triangle in lower lip outer list
+    [61, 291, 308],  // Connects upper left corner, lower right corner, inner right corner
+    [61, 308, 78],   // Connects upper left corner, inner right corner, inner left corner
+];
+// Removing the clearly degenerate triangle from ChatGPT's first block:
+const chatGPTsFinalList = lipTrianglesFromChatGPT.filter(tri => !(tri[1] === tri[2] && tri[0] === 291)); // Remove [291,308,308]
+
+// To be absolutely sure about duplicates for the final list before exporting:
+const uniqueTriangles = [];
+const seenTriangles = new Set();
+for (const tri of chatGPTsFinalList) {
+    // Create a canonical representation (e.g., sorted indices as string) to detect duplicates/flips
+    const sortedTriString = [...tri].sort((a,b) => a-b).toString();
+    if (!seenTriangles.has(sortedTriString)) {
+        uniqueTriangles.push(tri); // Add the original winding order
+        seenTriangles.add(sortedTriString);
+    }
+}
+console.log(`[lipTriangles.js] Using ChatGPT's refined list. Original count: ${chatGPTsFinalList.length}, Unique count: ${uniqueTriangles.length}`);
+
+export default uniqueTriangles;
