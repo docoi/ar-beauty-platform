@@ -1,7 +1,7 @@
 // src/utils/lipTriangles.js
 // Make sure it's enclosed in backticks ` ` for a template literal.
 const objFileContentString = `
-#v 0.000000 -3.406404 5.979507
+v 0.000000 -3.406404 5.979507
 v 0.000000 -1.126865 7.475604
 v 0.000000 -2.089024 6.058267
 v -0.463928 0.955357 6.633583
