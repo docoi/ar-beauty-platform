@@ -80,9 +80,11 @@ export default async function createPipelines(device, format) {
 
   const aspectRatioGroupLayout = device.createBindGroupLayout({
     label: 'Aspect Ratio Uniforms Bind Group Layout',
-    entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } }] // Only Vertex for video bg, lipstick vert also uses it.
-    // Lipstick vertex shader will use this at @group(0)
-    // Video fragment shader will use this at @group(1)
+    entries: [{
+        binding: 0,
+        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, // <<< THIS IS THE FIX
+        buffer: { type: 'uniform' }
+    }]
   });
   console.log("[createPipelines] Aspect Ratio Group Layout created.");
 
