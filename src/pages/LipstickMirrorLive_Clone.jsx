@@ -24,7 +24,7 @@ async function loadImageBitmap(url) {
 
 
 export default function LipstickMirrorLive_Clone() {
-  // ... (canvasRef, videoRef, animationFrameIdRef, etc. as before) ...
+  // ... (canvasRef, videoRef, etc. as before) ...
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
   const animationFrameIdRef = useRef(null);
@@ -36,46 +36,43 @@ export default function LipstickMirrorLive_Clone() {
   const formatRef = useRef(null);
   const landmarkerRef = useRef(null);
 
-
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
   const selectedColorForRenderRef = useRef(LIPSTICK_COLORS[0].value);
-
-  // Lighting Parameters (can be adjusted)
-  const lightSettingsRef = useRef({
-    direction: [0.5, 0.5, 1.0], // Light pointing from top-right-front (towards negative Z)
-    ambientColor: [0.4, 0.4, 0.4, 1.0], // Dim overall light
-    diffuseColor: [0.8, 0.8, 0.8, 1.0], // Main light color (white)
+  const lightSettingsRef = useRef({ /* ... as before ... */
+    direction: [0.5, 0.5, 1.0],
+    ambientColor: [0.2, 0.2, 0.2, 1.0],
+    diffuseColor: [0.8, 0.8, 0.8, 1.0],
   });
-
 
   const pipelineStateRef = useRef({
     videoPipeline: null, lipstickPipeline: null, videoBindGroupLayout: null,
     aspectRatioGroupLayout: null, aspectRatioUniformBuffer: null, aspectRatioBindGroup: null,
-    lipstickMaterialGroupLayout: null,
+    lipstickMaterialGroupLayout: null, // Layout for color uniform, albedo tex, albedo sampler, normal tex
     lipstickMaterialUniformBuffer: null,
     lipstickMaterialBindGroup: null,
-    // NEW: Lighting resources
-    lightingGroupLayout: null,         // Will be populated by createPipelines
+    lightingGroupLayout: null,
     lightingUniformBuffer: null,
     lightingBindGroup: null,
     videoSampler: null,
-    // Vertex buffer size: Pos(2) + UV(2) + Normal(3) = 7 floats
-    vertexBuffer: null, vertexBufferSize: 2048 * (7/4), // Adjusted for normals (approx)
+    vertexBuffer: null, vertexBufferSize: 2048 * (7/4), // Pos(2) + UV(2) + Normal(3) = 7 floats
     lipstickAlbedoTexture: null,
     lipstickAlbedoTextureView: null,
-    lipstickAlbedoSampler: null,
+    lipstickAlbedoSampler: null, // We can reuse this for the normal map if filtering is the same
+    // NEW: Normal Map resources
+    lipstickNormalTexture: null,
+    lipstickNormalTextureView: null,
   });
 
+  // ... (landmarkerState, error, debugMessage states as before) ...
   const [landmarkerState, setLandmarkerState] = useState(null);
   const [error, setError] = useState(null);
   const [debugMessage, setDebugMessage] = useState('Initializing...');
 
-  useEffect(() => {
-    selectedColorForRenderRef.current = selectedColorUI;
-  }, [selectedColorUI]);
+
+  useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
-    console.log("[LML_Clone Lighting] Main useEffect running.");
+    console.log("[LML_Clone NormalMap] Main useEffect running.");
     // ... (deviceInternal, contextInternal, etc. as before) ...
     let deviceInternal = null; let contextInternal = null; let formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
@@ -83,7 +80,6 @@ export default function LipstickMirrorLive_Clone() {
     const canvasElement = canvasRef.current;
     const videoElement = videoRef.current;
     if (!canvasElement || !videoElement) { /* ... error handling ... */ return; }
-
 
     const configureCanvas = (entries) => { /* ... Same as before ... */
         if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) { return; }
@@ -98,12 +94,11 @@ export default function LipstickMirrorLive_Clone() {
     };
     resizeHandlerRef.current = configureCanvas;
 
-    const render = async () => {
+    const render = async () => { /* ... Same render loop structure, no changes here for normal map init ... */
       const currentDevice = deviceRef.current; const currentContext = contextRef.current;
       const currentVideoEl = videoRef.current; const pState = pipelineStateRef.current;
       const activeLandmarker = landmarkerRef.current;
 
-      // Check for new lightingBindGroup
       if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.lipstickPipeline ||
           !pState.aspectRatioBindGroup || !pState.lipstickMaterialBindGroup || !pState.lightingBindGroup ||
           !currentVideoEl) {
@@ -114,28 +109,19 @@ export default function LipstickMirrorLive_Clone() {
         animationFrameIdRef.current = requestAnimationFrame(render); return;
       }
 
-      if (pState.aspectRatioUniformBuffer) { /* ... same aspect ratio update ... */
-          const aspectRatioData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]);
-          currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 0, aspectRatioData);
+      if (pState.aspectRatioUniformBuffer) {
+        const aspectRatioData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]);
+        currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 0, aspectRatioData);
       }
-      if (pState.lipstickMaterialUniformBuffer) { /* ... same color uniform update ... */
-          const colorData = new Float32Array(selectedColorForRenderRef.current);
-          currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData);
+      if (pState.lipstickMaterialUniformBuffer) {
+        const colorData = new Float32Array(selectedColorForRenderRef.current);
+        currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData);
       }
-      // NEW: Update lighting uniform buffer
       if (pState.lightingUniformBuffer) {
-        const lightDir = lightSettingsRef.current.direction;
-        const ambientCol = lightSettingsRef.current.ambientColor;
-        const diffuseCol = lightSettingsRef.current.diffuseColor;
-        // Layout: vec3f direction (padded to vec4f), vec4f ambient, vec4f diffuse
-        const lightingData = new Float32Array([
-            lightDir[0], lightDir[1], lightDir[2], 0.0, // Light Direction (padded)
-            ambientCol[0], ambientCol[1], ambientCol[2], ambientCol[3], // Ambient Color
-            diffuseCol[0], diffuseCol[1], diffuseCol[2], diffuseCol[3]  // Diffuse Color
-        ]);
+        const lightDir = lightSettingsRef.current.direction; const ambientCol = lightSettingsRef.current.ambientColor; const diffuseCol = lightSettingsRef.current.diffuseColor;
+        const lightingData = new Float32Array([ lightDir[0], lightDir[1], lightDir[2], 0.0, ambientCol[0], ambientCol[1], ambientCol[2], ambientCol[3], diffuseCol[0], diffuseCol[1], diffuseCol[2], diffuseCol[3] ]);
         currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData);
       }
-
 
       let numLipVertices = 0;
       if (activeLandmarker && pState.vertexBuffer) {
@@ -143,38 +129,27 @@ export default function LipstickMirrorLive_Clone() {
           const now = performance.now(); const results = activeLandmarker.detectForVideo(currentVideoEl, now);
           if (results?.faceLandmarks?.length > 0) {
             const allFaceLm = results.faceLandmarks[0];
-            const lips = lipTriangles.map(([idxA, idxB, idxC]) => { /* ... same check ... */ if (allFaceLm && idxA<allFaceLm.length && idxB<allFaceLm.length && idxC<allFaceLm.length && allFaceLm[idxA] && allFaceLm[idxB] && allFaceLm[idxC]) {return [allFaceLm[idxA],allFaceLm[idxB],allFaceLm[idxC]];} return null; }).filter(tri=>tri!==null);
+            const lips = lipTriangles.map(([idxA, idxB, idxC]) => { if (allFaceLm && idxA < allFaceLm.length && idxB < allFaceLm.length && idxC < allFaceLm.length && allFaceLm[idxA] && allFaceLm[idxB] && allFaceLm[idxC]) { return [allFaceLm[idxA], allFaceLm[idxB], allFaceLm[idxC]]; } return null; }).filter(tri => tri !== null);
             if (lips.length > 0) {
-              // MODIFIED: Include Normals. Placeholder normal (0,0,1) - facing camera.
-              const lipVertexData = new Float32Array(
-                lips.flat().flatMap(pt => [
-                  (0.5 - pt.x) * 2, // PosX (NDC)
-                  (0.5 - pt.y) * 2, // PosY (NDC)
-                  pt.x,             // UV U
-                  pt.y,             // UV V (use 1.0 - pt.y if texture upside down)
-                  0.0, 0.0, 1.0,    // Normal X, Y, Z (placeholder)
-                ])
-              );
-              numLipVertices = lipVertexData.length / 7; // 7 floats per vertex now (Pos2 + UV2 + Norm3)
-              if (lipVertexData.byteLength > 0) { if (lipVertexData.byteLength <= pState.vertexBufferSize) { currentDevice.queue.writeBuffer(pState.vertexBuffer, 0, lipVertexData); } else { console.warn("[LML_Clone Lighting RENDER] Lip vertex data (with normals) too large for buffer."); numLipVertices = 0; } } else { numLipVertices = 0; }
+              const lipVertexData = new Float32Array( lips.flat().flatMap(pt => [ (0.5 - pt.x) * 2, (0.5 - pt.y) * 2, pt.x, pt.y, 0.0, 0.0, 1.0, ]) );
+              numLipVertices = lipVertexData.length / 7;
+              if (lipVertexData.byteLength > 0) { if (lipVertexData.byteLength <= pState.vertexBufferSize) { currentDevice.queue.writeBuffer(pState.vertexBuffer, 0, lipVertexData); } else { console.warn("[LML_Clone NormalMap RENDER] Lip vertex data too large for buffer."); numLipVertices = 0; } } else { numLipVertices = 0; }
             } else { numLipVertices = 0; }
           } else { numLipVertices = 0; }
-        } catch (e) { console.error("[LML_Clone Lighting RENDER] Error in landmarker processing:", e); numLipVertices = 0; }
+        } catch (e) { console.error("[LML_Clone NormalMap RENDER] Error in landmarker processing:", e); numLipVertices = 0; }
       }
-      // ... (video texture import, getCurrentTexture, command encoder setup as before) ...
+
       let videoTextureGPU, frameBindGroupForTexture; try { videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl }); if (pState.videoBindGroupLayout && pState.videoSampler) { frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{ binding: 0, resource: pState.videoSampler }, { binding: 1, resource: videoTextureGPU }] }); } else { animationFrameIdRef.current = requestAnimationFrame(render); return; } } catch (e) { console.error("[LML_Clone RENDER] Error importing video texture:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
       let currentGpuTexture, texView; try { currentGpuTexture = currentContext.getCurrentTexture(); texView = currentGpuTexture.createView(); } catch (e) { console.warn("[LML_Clone RENDER] Error getting current texture, trying to reconfigure canvas.", e); if (resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
       const cmdEnc = currentDevice.createCommandEncoder(); const passEnc = cmdEnc.beginRenderPass({ colorAttachments: [{ view: texView, clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }] });
       passEnc.setViewport(0, 0, currentGpuTexture.width, currentGpuTexture.height, 0, 1); passEnc.setScissorRect(0, 0, currentGpuTexture.width, currentGpuTexture.height);
       if (pState.videoPipeline && frameBindGroupForTexture && pState.aspectRatioBindGroup) { passEnc.setPipeline(pState.videoPipeline); passEnc.setBindGroup(0, frameBindGroupForTexture); passEnc.setBindGroup(1, pState.aspectRatioBindGroup); passEnc.draw(6); }
 
-
-      if (numLipVertices > 0 && pState.lipstickPipeline && pState.vertexBuffer &&
-          pState.aspectRatioBindGroup && pState.lipstickMaterialBindGroup && pState.lightingBindGroup) {
+      if (numLipVertices > 0 && pState.lipstickPipeline && pState.vertexBuffer && pState.aspectRatioBindGroup && pState.lipstickMaterialBindGroup && pState.lightingBindGroup) {
         passEnc.setPipeline(pState.lipstickPipeline);
-        passEnc.setBindGroup(0, pState.aspectRatioBindGroup);        // Group 0: Aspect Ratio
-        passEnc.setBindGroup(1, pState.lipstickMaterialBindGroup);   // Group 1: Material (Color, Texture, Sampler)
-        passEnc.setBindGroup(2, pState.lightingBindGroup);           // Group 2: Lighting Uniforms
+        passEnc.setBindGroup(0, pState.aspectRatioBindGroup);
+        passEnc.setBindGroup(1, pState.lipstickMaterialBindGroup);
+        passEnc.setBindGroup(2, pState.lightingBindGroup);
         passEnc.setVertexBuffer(0, pState.vertexBuffer);
         passEnc.draw(numLipVertices);
       }
@@ -182,15 +157,28 @@ export default function LipstickMirrorLive_Clone() {
       animationFrameIdRef.current = requestAnimationFrame(render);
     };
 
+
     const initializeAll = async () => {
         if (!navigator.gpu) { setError("WebGPU not supported."); return; }
-        setDebugMessage("Initializing Lighting Mode...");
+        setDebugMessage("Initializing Normal Map Mode...");
         try {
-            // ... (Texture loading, Landmarker, Adapter, Device, Context, Format as before) ...
+            // Load Albedo Texture
             let lipstickAlbedoImageBitmap;
-            try { lipstickAlbedoImageBitmap = await loadImageBitmap('/textures/lipstick_albedo_gray.png'); console.log("[LML_Clone Lighting] Lipstick albedo texture loaded.", lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height); }
-            catch (texError) { console.error("[LML_Clone Lighting] Failed to load lipstick albedo texture:", texError); setError("Failed to load lipstick texture.");}
+            try { lipstickAlbedoImageBitmap = await loadImageBitmap('/textures/lipstick_albedo_gray.png'); console.log("[LML_Clone NormalMap] Lipstick albedo texture loaded."); }
+            catch (texError) { console.error("[LML_Clone NormalMap] Failed to load lipstick albedo texture:", texError); setError("Failed to load albedo texture.");}
 
+            // NEW: Load Normal Map Texture
+            let lipstickNormalImageBitmap;
+            try {
+              lipstickNormalImageBitmap = await loadImageBitmap('/textures/lipstick_normal.png'); // Ensure this file exists
+              console.log("[LML_Clone NormalMap] Lipstick normal map texture loaded.");
+            } catch (texError) {
+              console.error("[LML_Clone NormalMap] Failed to load lipstick normal map texture:", texError);
+              setError("Failed to load normal map texture.");
+              // Decide on fallback: proceed, bind group creation might be partial or fail if layout expects it
+            }
+
+            // ... (Landmarker, Adapter, Device, Context, Format as before) ...
             const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
             const lmInstance = await FaceLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: '/models/face_landmarker.task', delegate: 'GPU' }, outputFaceBlendshapes: false, runningMode: 'VIDEO', numFaces: 1 });
             landmarkerRef.current = lmInstance; setLandmarkerState(lmInstance);
@@ -200,16 +188,16 @@ export default function LipstickMirrorLive_Clone() {
             contextInternal = canvasElement.getContext('webgpu'); contextRef.current = contextInternal;
             formatInternal = navigator.gpu.getPreferredCanvasFormat(); formatRef.current = formatInternal;
 
-            // Create Pipelines (createPipelines will be updated next)
-            // It will now also return lightingGroupLayout
+
+            // Create Pipelines (createPipelines will be updated for normal map binding)
             const { videoPipeline, lipstickPipeline, videoBindGroupLayout,
-                    aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout // NEW
+                    aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout
                   } = await createPipelines(deviceInternal, formatInternal);
             if (!videoPipeline || !lipstickPipeline) throw new Error("Pipeline creation failed");
 
             pipelineStateRef.current = { // Update ref with new pipeline and layout info
                 ...pipelineStateRef.current, videoPipeline, lipstickPipeline, videoBindGroupLayout,
-                aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout // NEW
+                aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout
             };
 
             // Aspect Ratio Uniforms (Same)
@@ -219,59 +207,84 @@ export default function LipstickMirrorLive_Clone() {
             if (pipelineStateRef.current.aspectRatioGroupLayout && pipelineStateRef.current.aspectRatioUniformBuffer) { pipelineStateRef.current.aspectRatioBindGroup = deviceInternal.createBindGroup({ label: "Aspect Ratio Bind Group", layout: pipelineStateRef.current.aspectRatioGroupLayout, entries: [{ binding: 0, resource: { buffer: pipelineStateRef.current.aspectRatioUniformBuffer }}]}); } else { throw new Error("Failed to create aspect ratio bind group."); }
 
 
-            // Lipstick GPU Texture and Sampler (Same as before, if bitmap loaded)
-            if (lipstickAlbedoImageBitmap) { /* ... texture creation logic as before ... */
+            // Albedo Texture and Sampler (Same as before, if bitmap loaded)
+            if (lipstickAlbedoImageBitmap) { /* ... albedo texture GPU resource creation ... */
                 const textureDescriptor = { label: "Lipstick Albedo Texture", size: [lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,};
                 pipelineStateRef.current.lipstickAlbedoTexture = deviceInternal.createTexture(textureDescriptor);
                 deviceInternal.queue.copyExternalImageToTexture( { source: lipstickAlbedoImageBitmap }, { texture: pipelineStateRef.current.lipstickAlbedoTexture }, [lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height] );
                 pipelineStateRef.current.lipstickAlbedoTextureView = pipelineStateRef.current.lipstickAlbedoTexture.createView();
-                pipelineStateRef.current.lipstickAlbedoSampler = deviceInternal.createSampler({ label: "Lipstick Albedo Sampler", magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge', });
+                pipelineStateRef.current.lipstickAlbedoSampler = deviceInternal.createSampler({ label: "Lipstick Albedo/Normal Sampler", magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge', }); // Can be reused
+            }
+
+            // NEW: Normal Map GPU Texture
+            if (lipstickNormalImageBitmap) {
+                const textureDescriptor = {
+                    label: "Lipstick Normal Map Texture",
+                    size: [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height],
+                    format: 'rgba8unorm', // Normal maps are often stored this way
+                    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+                };
+                pipelineStateRef.current.lipstickNormalTexture = deviceInternal.createTexture(textureDescriptor);
+                deviceInternal.queue.copyExternalImageToTexture(
+                    { source: lipstickNormalImageBitmap },
+                    { texture: pipelineStateRef.current.lipstickNormalTexture },
+                    [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height]
+                );
+                pipelineStateRef.current.lipstickNormalTextureView = pipelineStateRef.current.lipstickNormalTexture.createView();
+                console.log("[LML_Clone NormalMap] Lipstick Normal Map GPU Texture created.");
             }
 
             // Lipstick Material Uniform Buffer (for tint/alpha - same)
-            /* ... lipstickMaterialUniformBuffer creation as before ... */
+            /* ... lipstickMaterialUniformBuffer creation ... */
             const lipstickMaterialUniformBufferSize = 4 * Float32Array.BYTES_PER_ELEMENT;
             pipelineStateRef.current.lipstickMaterialUniformBuffer = deviceInternal.createBuffer({ label: "Lipstick Material Tint Uniform Buffer", size: lipstickMaterialUniformBufferSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
 
-            // Lipstick Material Bind Group (Same, conditional on texture resources)
-            /* ... lipstickMaterialBindGroup creation as before ... */
+            // MODIFIED: Lipstick Material Bind Group (Now includes Normal Map Texture View)
             if (pipelineStateRef.current.lipstickMaterialGroupLayout && pipelineStateRef.current.lipstickMaterialUniformBuffer) {
                 const entries = [{ binding: 0, resource: { buffer: pipelineStateRef.current.lipstickMaterialUniformBuffer }}];
-                if (lipstickAlbedoImageBitmap && pipelineStateRef.current.lipstickAlbedoTextureView && pipelineStateRef.current.lipstickAlbedoSampler) { entries.push({ binding: 1, resource: pipelineStateRef.current.lipstickAlbedoTextureView }); entries.push({ binding: 2, resource: pipelineStateRef.current.lipstickAlbedoSampler }); console.log("[LML_Clone Lighting] Creating Material Bind Group WITH Texture."); }
-                else { console.warn("[LML_Clone Lighting] Creating Material Bind Group WITHOUT Texture."); if (lipstickAlbedoImageBitmap) throw new Error("Texture loaded, but GPU resources missing for material bind group."); }
-                pipelineStateRef.current.lipstickMaterialBindGroup = deviceInternal.createBindGroup({ label: "Lipstick Material Bind Group", layout: pipelineStateRef.current.lipstickMaterialGroupLayout, entries: entries, });
-            } else { throw new Error("Failed to create lipstick material bind group (layout or uniform buffer missing)."); }
+                // Albedo Texture and Sampler (binding 1 and 2)
+                if (lipstickAlbedoImageBitmap && pipelineStateRef.current.lipstickAlbedoTextureView && pipelineStateRef.current.lipstickAlbedoSampler) {
+                    entries.push({ binding: 1, resource: pipelineStateRef.current.lipstickAlbedoTextureView });
+                    entries.push({ binding: 2, resource: pipelineStateRef.current.lipstickAlbedoSampler }); // Sampler
+                } else {
+                     console.warn("[LML_Clone NormalMap] Albedo texture resources missing for material bind group.");
+                     if(lipstickAlbedoImageBitmap) throw new Error("Albedo image loaded but GPU resources missing.");
+                }
+                // Normal Map Texture View (binding 3) - Sampler can be reused (binding 2 is albedo's sampler)
+                if (lipstickNormalImageBitmap && pipelineStateRef.current.lipstickNormalTextureView && pipelineStateRef.current.lipstickAlbedoSampler) { // Re-use albedo sampler for normal map
+                    entries.push({ binding: 3, resource: pipelineStateRef.current.lipstickNormalTextureView });
+                } else {
+                    console.warn("[LML_Clone NormalMap] Normal map resources missing for material bind group.");
+                    if(lipstickNormalImageBitmap) throw new Error("Normal map image loaded but GPU resources missing.");
+                }
 
-
-            // NEW: Lighting Uniform Buffer and Bind Group
-            // Size: vec3 direction (padded to 4 floats) + vec4 ambient + vec4 diffuse = 12 floats
-            const lightingUniformBufferSize = (4 + 4 + 4) * Float32Array.BYTES_PER_ELEMENT;
-            pipelineStateRef.current.lightingUniformBuffer = deviceInternal.createBuffer({
-                label: "Lighting Uniform Buffer",
-                size: lightingUniformBufferSize,
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            });
-            if (pipelineStateRef.current.lightingGroupLayout && pipelineStateRef.current.lightingUniformBuffer) {
-                pipelineStateRef.current.lightingBindGroup = deviceInternal.createBindGroup({
-                    label: "Lighting Bind Group",
-                    layout: pipelineStateRef.current.lightingGroupLayout,
-                    entries: [{ binding: 0, resource: { buffer: pipelineStateRef.current.lightingUniformBuffer }}],
+                pipelineStateRef.current.lipstickMaterialBindGroup = deviceInternal.createBindGroup({
+                    label: "Lipstick Material Bind Group (with Normal Map)",
+                    layout: pipelineStateRef.current.lipstickMaterialGroupLayout,
+                    entries: entries,
                 });
-                console.log("[LML_Clone Lighting] Lighting Uniform Buffer and Bind Group created.");
+                console.log("[LML_Clone NormalMap] Lipstick Material Bind Group created (entries length: " + entries.length + ").");
             } else {
-                throw new Error("Failed to create lighting bind group (layout or buffer missing).");
+                throw new Error("Failed to create lipstick material bind group (layout or uniform buffer missing).");
             }
 
-            // Vertex Buffer (Size already updated in ref definition for normals)
-            /* ... vertexBuffer and videoSampler creation as before ... */
+            // Lighting Uniform Buffer and Bind Group (Same)
+            /* ... lightingUniformBuffer and lightingBindGroup creation ... */
+            const lightingUniformBufferSize = (4 + 4 + 4) * Float32Array.BYTES_PER_ELEMENT;
+            pipelineStateRef.current.lightingUniformBuffer = deviceInternal.createBuffer({ label: "Lighting Uniform Buffer", size: lightingUniformBufferSize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST, });
+            if (pipelineStateRef.current.lightingGroupLayout && pipelineStateRef.current.lightingUniformBuffer) { pipelineStateRef.current.lightingBindGroup = deviceInternal.createBindGroup({ label: "Lighting Bind Group", layout: pipelineStateRef.current.lightingGroupLayout, entries: [{ binding: 0, resource: { buffer: pipelineStateRef.current.lightingUniformBuffer }}], }); } else { throw new Error("Failed to create lighting bind group."); }
+
+
+            // Vertex Buffer & Video Sampler (Same)
+            /* ... vertexBuffer and videoSampler creation ... */
             const currentVertexBufferSize = pipelineStateRef.current.vertexBufferSize;
             pipelineStateRef.current.vertexBuffer = deviceInternal.createBuffer({ label: "Lip Vertex Buffer (Pos+UV+Norm)", size: currentVertexBufferSize, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
             pipelineStateRef.current.videoSampler = deviceInternal.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
 
             // Video Setup and Start (Same)
-            /* ... video stream, play, resizeObserver as before ... */
+            /* ... video stream, play, resizeObserver ... */
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
             videoElement.srcObject = stream;
             await new Promise((res, rej) => { videoElement.onloadedmetadata = res; videoElement.onerror = () => rej(new Error("Video metadata loading error."));});
@@ -280,19 +293,18 @@ export default function LipstickMirrorLive_Clone() {
             resizeObserverInternal.observe(canvasElement);
             if (resizeHandlerRef.current) resizeHandlerRef.current();
 
-
-            console.log("[LML_Clone Lighting] All sub-initializations complete.");
+            console.log("[LML_Clone NormalMap] All sub-initializations complete.");
             if (!renderLoopStartedInternal) { render(); renderLoopStartedInternal = true; }
         } catch (err) {
-            setError(`Lighting Init failed: ${err.message.substring(0,150)}...`);
-            console.error("[LML_Clone Lighting initializeAll] Major error:", err);
+            setError(`Normal Map Init failed: ${err.message.substring(0,150)}...`);
+            console.error("[LML_Clone NormalMap initializeAll] Major error:", err);
         }
     };
 
     initializeAll();
 
-    return () => { /* ... Same cleanup, add lightingUniformBuffer destruction ... */
-        console.log("[LML_Clone Lighting] Cleanup running.");
+    return () => { /* ... Cleanup: add lipstickNormalTexture destruction ... */
+        console.log("[LML_Clone NormalMap] Cleanup running.");
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
         if (resizeObserverInternal && canvasRef.current) resizeObserverInternal.unobserve(canvasRef.current);
         if (resizeObserverInternal) resizeObserverInternal.disconnect();
@@ -304,19 +316,20 @@ export default function LipstickMirrorLive_Clone() {
         pState.aspectRatioUniformBuffer?.destroy();
         pState.lipstickMaterialUniformBuffer?.destroy();
         pState.lipstickAlbedoTexture?.destroy();
-        pState.lightingUniformBuffer?.destroy(); // NEW
+        pState.lipstickNormalTexture?.destroy(); // NEW
+        pState.lightingUniformBuffer?.destroy();
 
         if (landmarkerRef.current && typeof landmarkerRef.current.close === 'function') { landmarkerRef.current.close(); }
         landmarkerRef.current = null; setLandmarkerState(null);
         deviceRef.current = null; contextRef.current = null; formatRef.current = null;
-        console.log("[LML_Clone Lighting] Cleanup complete.");
+        console.log("[LML_Clone NormalMap] Cleanup complete.");
     };
   }, []);
 
   useEffect(() => { /* ... Same UI Message Effect ... */
     if (error) { setDebugMessage(`Error: ${error.substring(0,40)}...`); }
-    else if (landmarkerState && deviceRef.current && contextRef.current && pipelineStateRef.current.lipstickPipeline) { setDebugMessage("Live Active (Lighting Mode)"); }
-    else { setDebugMessage("Initializing (Lighting Mode)..."); }
+    else if (landmarkerState && deviceRef.current && contextRef.current && pipelineStateRef.current.lipstickPipeline) { setDebugMessage("Live Active (Normal Map Mode)"); }
+    else { setDebugMessage("Initializing (Normal Map Mode)..."); }
   }, [landmarkerState, deviceRef.current, contextRef.current, pipelineStateRef.current.lipstickPipeline, error]);
 
 

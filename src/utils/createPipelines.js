@@ -17,12 +17,13 @@ async function createFullVideoPipeline(device, format, videoBindGroupLayout, asp
   } catch (e) { console.error("[createPipelines] ERROR creating Full Video Render Pipeline:", e); return null; }
 }
 
-// MODIFIED: Added lightingGroupLayout
 async function createLipstickPipeline(device, format, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
+  // ... (This function's signature and vertex buffer layout for normals are already correct from the previous "Lighting" step) ...
+  // ... (The pipeline layout with three bind groups is also correct) ...
   let lipstickModule;
   try {
     lipstickModule = device.createShaderModule({
-      label: 'Lipstick Shader Module (Lighting)', // Updated label
+      label: 'Lipstick Shader Module (Normal Map)', // Updated label
       code: lipstickShaderSource
     });
     console.log("[createPipelines] Lipstick shader module created.");
@@ -30,20 +31,18 @@ async function createLipstickPipeline(device, format, aspectRatioGroupLayout, li
 
   try {
     const pipeline = await device.createRenderPipeline({
-      label: 'Lipstick Overlay Pipeline (Lighting)', // Updated label
-      // MODIFIED layout: Group 0: Aspect, Group 1: Material, Group 2: Lighting
+      label: 'Lipstick Overlay Pipeline (Normal Map)', // Updated label
       layout: device.createPipelineLayout({ bindGroupLayouts: [aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout] }),
       vertex: {
         module: lipstickModule,
         entryPoint: 'vert_main',
-        buffers: [ // MODIFIED: Vertex buffer layout for Pos + UV + Normal
+        buffers: [
           {
-            // Stride: Pos(2) + UV(2) + Normal(3) = 7 floats * 4 bytes/float = 28 bytes
-            arrayStride: 7 * 4,
+            arrayStride: 7 * 4, // Pos(2) + UV(2) + Normal(3) = 7 floats
             attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x2' },     // @location(0) vec2f pos_ndc
-              { shaderLocation: 1, offset: 2 * 4, format: 'float32x2' }, // @location(1) vec2f uv
-              { shaderLocation: 2, offset: 4 * 4, format: 'float32x3' }, // @location(2) vec3f normal (offset by 4 floats)
+              { shaderLocation: 0, offset: 0, format: 'float32x2' },     // pos_ndc
+              { shaderLocation: 1, offset: 2 * 4, format: 'float32x2' }, // uv
+              { shaderLocation: 2, offset: 4 * 4, format: 'float32x3' }, // normal_in
             ],
           },
         ],
@@ -53,7 +52,7 @@ async function createLipstickPipeline(device, format, aspectRatioGroupLayout, li
         entryPoint: 'frag_main',
         targets: [{
           format,
-          blend: { // Keep alpha blending
+          blend: {
             color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
             alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
           }
@@ -61,9 +60,9 @@ async function createLipstickPipeline(device, format, aspectRatioGroupLayout, li
       },
       primitive: { topology: 'triangle-list' },
     });
-    console.log("[createPipelines] Lipstick pipeline (with lighting support) created successfully.");
+    console.log("[createPipelines] Lipstick pipeline (with normal map support) created successfully.");
     return pipeline;
-  } catch (e) { console.error("[createPipelines] ERROR creating lipstick render pipeline (lighting):", e); return null; }
+  } catch (e) { console.error("[createPipelines] ERROR creating lipstick render pipeline (normal map):", e); return null; }
 }
 
 export default async function createPipelines(device, format) {
@@ -73,34 +72,46 @@ export default async function createPipelines(device, format) {
   const aspectRatioGroupLayout = device.createBindGroupLayout({ /* ... (unchanged) ... */
     label: 'Aspect Ratio Uniforms Bind Group Layout', entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' }}]
   });
-  const lipstickMaterialGroupLayout = device.createBindGroupLayout({ /* ... (unchanged, includes color uniform, texture, sampler) ... */
-    label: 'Lipstick Material Bind Group Layout (Texture)', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }, { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }, { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } } ]
+  const lightingGroupLayout = device.createBindGroupLayout({ /* ... (unchanged from previous step) ... */
+    label: 'Lighting Uniforms Bind Group Layout', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } } ]
   });
-  console.log("[createPipelines] Aspect Ratio & Material Group Layouts created.");
 
 
-  // NEW: Lighting Uniforms Bind Group Layout
-  const lightingGroupLayout = device.createBindGroupLayout({
-    label: 'Lighting Uniforms Bind Group Layout',
+  // MODIFIED: Lipstick Material Bind Group Layout for Normal Map
+  const lipstickMaterialGroupLayout = device.createBindGroupLayout({
+    label: 'Lipstick Material Bind Group Layout (Normal Map)', // Updated label
     entries: [
-      {
-        binding: 0, // Uniform buffer for lighting params
-        visibility: GPUShaderStage.FRAGMENT, // Primarily used by the fragment shader
+      { // Binding 0: Uniform buffer for tint/alpha color
+        binding: 0,
+        visibility: GPUShaderStage.FRAGMENT,
         buffer: { type: 'uniform' }
+      },
+      { // Binding 1: Albedo Texture
+        binding: 1,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float' }
+      },
+      { // Binding 2: Sampler (for Albedo AND Normal Map)
+        binding: 2,
+        visibility: GPUShaderStage.FRAGMENT,
+        sampler: { type: 'filtering' }
+      },
+      { // Binding 3: Normal Map Texture
+        binding: 3,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: 'float' } // Assuming normal map is also 'float' filterable
       }
     ]
   });
-  console.log("[createPipelines] Lighting Group Layout created.");
+  console.log("[createPipelines] All Bind Group Layouts (including Normal Map support) created.");
 
 
-  console.log("[createPipelines] Creating pipelines (with lighting support)...");
+  console.log("[createPipelines] Creating pipelines (with normal map support)...");
   const videoPipeline = await createFullVideoPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout);
-  // Pass all three layouts to lipstick pipeline
   const lipstickPipeline = await createLipstickPipeline(device, format, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
 
   if (!videoPipeline) { console.error("[createPipelines] videoPipeline creation failed!"); }
   if (!lipstickPipeline) { console.error("[createPipelines] lipstickPipeline creation failed!"); }
 
-  // Return the new layout as well
   return { videoPipeline, lipstickPipeline, videoBindGroupLayout, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout };
 }
