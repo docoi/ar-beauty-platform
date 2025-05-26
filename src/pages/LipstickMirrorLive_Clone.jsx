@@ -43,7 +43,7 @@ export default function LipstickMirrorLive_Clone() {
   // Lighting Parameters (can be adjusted)
   const lightSettingsRef = useRef({
     direction: [0.5, 0.5, 1.0], // Light pointing from top-right-front (towards negative Z)
-    ambientColor: [0.4, 0.4, 0.4, 1.0], // Dim overall light
+    ambientColor: [0.3, 0.3, 0.3, 1.0], // Dim overall light
     diffuseColor: [0.8, 0.8, 0.8, 1.0], // Main light color (white)
   });
 
