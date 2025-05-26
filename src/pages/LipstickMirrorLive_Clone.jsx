@@ -156,7 +156,7 @@ export default function LipstickMirrorLive_Clone() {
             // --- Load Lipstick Albedo Texture FIRST ---
             let lipstickAlbedoImageBitmap;
             try {
-              lipstickAlbedoImageBitmap = await loadImageBitmap('/textures/lipstick_albedo.png');
+                lipstickAlbedoImageBitmap = await loadImageBitmap('/textures/lipstick_albedo.png');
               console.log("[LML_Clone Texture] Lipstick albedo texture loaded successfully.", lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height);
             } catch (texError) {
               console.error("[LML_Clone Texture] Failed to load lipstick albedo texture:", texError);
