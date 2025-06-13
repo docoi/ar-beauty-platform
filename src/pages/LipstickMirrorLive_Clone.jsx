@@ -1,7 +1,7 @@
 // src/pages/LipstickMirrorLive_Clone.jsx
 
 import React, { useEffect, useRef, useState } from 'react';
-import createPipelines from '@/utils/createPipelines'; // This will be updated for the 3D model pipeline
+import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
@@ -112,10 +112,10 @@ export default function LipstickMirrorLive_Clone() {
   useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect with @loaders.gl (manual accessor parsing).");
+    console.log("[LML_Clone 3DModel] Main useEffect with @loaders.gl (corrected binary buffer access).");
     let deviceInternal = null; let contextInternal = null; let formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
-    const canvasElement = canvasRef.current; const videoElement = videoRef.current;
+    const canvasElement = canvasRef.current; const videoElement = videoRef.current; // videoRef is defined here
     if (!canvasElement || !videoElement) { setError("Canvas or Video element not found."); return; }
 
     const configureCanvas = (/* entries */) => {
@@ -133,7 +133,8 @@ export default function LipstickMirrorLive_Clone() {
 
     const render = async () => {
         const currentDevice = deviceRef.current; const currentContext = contextRef.current;
-        const currentVideoEl = videoRef.current; const pState = pipelineStateRef.current;
+        const currentVideoEl = videoRef.current; // videoRef is used here
+        const pState = pipelineStateRef.current;
 
         if (!currentDevice || !currentContext || !pState.videoPipeline || (pState.lipModelData && !pState.lipModelPipeline) ) {
             animationFrameIdRef.current = requestAnimationFrame(render); return;
@@ -202,21 +203,21 @@ export default function LipstickMirrorLive_Clone() {
             const gltfJson = gltfDataFromLoaders.json;
             let mainBinaryBuffer;
 
-            if (gltfDataFromLoaders.glb && gltfDataFromLoaders.glb.binChunks && gltfDataFromLoaders.glb.binChunks.length > 0 && gltfDataFromLoaders.glb.binChunks[0].arrayBuffer) {
+            // CORRECTED BINARY BUFFER ACCESS:
+            // Check gltfData.buffers first, as this is often where the processed ArrayBuffer is.
+            if (gltfDataFromLoaders.buffers && gltfDataFromLoaders.buffers.length > 0 && gltfDataFromLoaders.buffers[0].arrayBuffer instanceof ArrayBuffer) {
+                mainBinaryBuffer = gltfDataFromLoaders.buffers[0].arrayBuffer;
+                console.log("[LML_Clone 3DModel] Using mainBinaryBuffer from gltfData.buffers[0].arrayBuffer");
+            } 
+            // Fallback: Check _glb.binChunks (more common for raw GLB parsing, but loaders.gl might also expose it this way)
+            else if (gltfDataFromLoaders.glb && gltfDataFromLoaders.glb.binChunks && gltfDataFromLoaders.glb.binChunks.length > 0 && gltfDataFromLoaders.glb.binChunks[0].arrayBuffer instanceof ArrayBuffer) {
                 mainBinaryBuffer = gltfDataFromLoaders.glb.binChunks[0].arrayBuffer;
-                console.log("[LML_Clone 3DModel] Using mainBinaryBuffer from gltfData.glb.binChunks[0].arrayBuffer");
-            } else if (gltfDataFromLoaders.buffers && gltfDataFromLoaders.buffers.length > 0 && gltfDataFromLoaders.buffers[0].buffer instanceof ArrayBuffer) {
-                // Check if .buffer is already an ArrayBuffer
-                mainBinaryBuffer = gltfDataFromLoaders.buffers[0].buffer;
-                console.log("[LML_Clone 3DModel] Using mainBinaryBuffer from gltfData.buffers[0].buffer (already ArrayBuffer)");
-            } else if (gltfDataFromLoaders.buffers && gltfDataFromLoaders.buffers.length > 0 && gltfDataFromLoaders.buffers[0].data instanceof ArrayBuffer ) {
-                 // Some versions of loaders.gl might put data here
-                mainBinaryBuffer = gltfDataFromLoaders.buffers[0].data;
-                console.log("[LML_Clone 3DModel] Using mainBinaryBuffer from gltfData.buffers[0].data");
+                console.log("[LML_Clone 3DModel] Using mainBinaryBuffer from gltfData.glb.binChunks[0].arrayBuffer (fallback)");
+            } else {
+                console.error("[LML_Clone 3DModel] Detailed gltfDataFromLoaders structure for buffer hunting:", gltfDataFromLoaders);
+                throw new Error("Could not find the main binary ArrayBuffer. Checked gltfData.buffers[0].arrayBuffer and gltfData.glb.binChunks[0].arrayBuffer.");
             }
-             else {
-                throw new Error("Could not find the main binary buffer in the loaded GLTF data (checked _glb.binChunks, buffers[0].buffer, buffers[0].data).");
-            }
+
 
             if (!gltfJson) throw new Error("GLTF JSON part not found in loaded data.");
             if (!mainBinaryBuffer) throw new Error("Main binary buffer not extracted correctly.");
@@ -226,14 +227,10 @@ export default function LipstickMirrorLive_Clone() {
             }
             
             const meshJson = gltfJson.meshes[0];
-            console.log("[LML_Clone 3DModel] Using mesh from json.meshes[0]:", meshJson);
-
             if (!meshJson.primitives || meshJson.primitives.length === 0) {
                 throw new Error("No primitives found in the first mesh of GLTF JSON.");
             }
             const primitiveJson = meshJson.primitives[0];
-            console.log("[LML_Clone 3DModel] Using primitive from mesh.primitives[0]:", primitiveJson);
-
             if (primitiveJson.attributes.POSITION === undefined) {
                 throw new Error("Mesh primitive is missing POSITION attribute accessor index.");
             }
@@ -246,7 +243,6 @@ export default function LipstickMirrorLive_Clone() {
             const targetsData = [];
             const shapeKeyNames = meshJson.extras?.targetNames || primitiveJson.extras?.targetNames || [];
             if (primitiveJson.targets) {
-                console.log(`[LML_Clone 3DModel] Found ${primitiveJson.targets.length} morph targets in primitive.`);
                 primitiveJson.targets.forEach((target, index) => {
                     const targetPositions = target.POSITION !== undefined ? getAccessorDataFromGLTF(gltfJson, target.POSITION, mainBinaryBuffer) : null;
                     targetsData.push({ positions: targetPositions, name: shapeKeyNames[index] || `target_${index}` });
@@ -254,10 +250,6 @@ export default function LipstickMirrorLive_Clone() {
             }
 
             if (!positions) throw new Error("Parsed model data is missing positions after accessor processing.");
-            if (!normals) console.warn("3D model: Normals missing. Lighting will be affected.");
-            if (!uvs) console.warn("3D model: UVs (TEXCOORD_0) missing. Texturing will be affected.");
-            if (!indices) console.warn("3D model: Indices missing. Indexed drawing will fail if pipeline expects it.");
-
             pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, targets: targetsData, shapeKeyNames };
             console.log("[LML_Clone 3DModel] Mesh data extracted via custom accessor parsing:", {
                 hasPos:!!positions, numPos:positions?.length/3, hasNorm:!!normals, numNorm:normals?.length/3,
@@ -360,9 +352,9 @@ export default function LipstickMirrorLive_Clone() {
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
         if (resizeObserverInternal && canvasRef.current) resizeObserverInternal.unobserve(canvasRef.current);
         if (resizeObserverInternal) resizeObserverInternal.disconnect();
-        const tracks = videoRef.current?.srcObject?.getTracks();
+        const tracks = videoRef.current?.srcObject?.getTracks(); // videoRef used here
         tracks?.forEach(track => track.stop());
-        if (videoRef.current) videoRef.current.srcObject = null;
+        if (videoRef.current) videoRef.current.srcObject = null; // videoRef used here
         const pState = pipelineStateRef.current;
         pState.aspectRatioUniformBuffer?.destroy(); pState.lipstickMaterialUniformBuffer?.destroy();
         pState.lightingUniformBuffer?.destroy(); pState.lipstickAlbedoTexture?.destroy();
@@ -370,12 +362,10 @@ export default function LipstickMirrorLive_Clone() {
         pState.lipModelIndexBuffer?.destroy();
         if (landmarkerRef.current && typeof landmarkerRef.current.close === 'function') { landmarkerRef.current.close(); }
         landmarkerRef.current = null; setLandmarkerState(null);
-        // Consider device.destroy() if appropriate for your app lifecycle, but it's often not needed for SPAs
-        // if (deviceRef.current) { deviceRef.current.destroy(); } 
         deviceRef.current = null; contextRef.current = null; formatRef.current = null;
         console.log("[LML_Clone 3DModel] Cleanup complete.");
     };
-  }, []); // Main useEffect
+  }, []);
 
   useEffect(() => { 
     if (error) { setDebugMessage(`Error: ${error.substring(0,50)}...`); }
@@ -396,7 +386,7 @@ export default function LipstickMirrorLive_Clone() {
       <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px', padding: '10px', backgroundColor: 'rgba(255, 255, 255, 0.2)', borderRadius: '10px', zIndex: 10 }}>
         {LIPSTICK_COLORS.map(color => ( <div key={color.name} title={color.name} onClick={() => setSelectedColorUI(color.value)} style={{ width: '40px', height: '40px', backgroundColor: `rgba(${color.value[0]*255}, ${color.value[1]*255}, ${color.value[2]*255}, ${color.value[3]})`, borderRadius: '50%', border: selectedColorUI === color.value ? '3px solid white' : '3px solid transparent', cursor: 'pointer', transition: 'border 0.2s ease-in-out' }} /> ))}
       </div>
-      <video ref={videoRef} style={{ display: 'none' }} width={640} height={480} autoPlay playsInline muted />
+      <video ref={videoRef} style={{ display: 'none' }} width={640} height={480} autoPlay playsInline muted /> {/* videoRef is defined by React here */}
       <canvas ref={canvasRef} width={640} height={480} style={{ width: '100%', height: '100%', display: 'block', background: 'lightpink' }} />
     </div>
   );
