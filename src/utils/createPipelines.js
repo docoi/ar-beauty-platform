@@ -1,117 +1,147 @@
 // src/utils/createPipelines.js
 
 import videoShaderSource from '@/shaders/videoBackground.wgsl?raw';
-import lipstickShaderSource from '@/shaders/lipstickEffect.wgsl?raw';
+import lipstickShaderSource from '@/shaders/lipstickEffect.wgsl?raw'; // This will serve as the shader for the 3D model
 
-async function createFullVideoPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout) {
-  // ... (This function remains unchanged) ...
-  const videoModule = device.createShaderModule({ label: 'Full Video Shader Module', code: videoShaderSource });
+// Pipeline for rendering the 2D video background
+async function createVideoBackgroundPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout) {
+  const videoModule = device.createShaderModule({ label: 'Video Background Shader Module', code: videoShaderSource });
   try {
     return await device.createRenderPipeline({
-      label: 'Full Video Background Pipeline',
+      label: 'Video Background Pipeline',
       layout: device.createPipelineLayout({ bindGroupLayouts: [videoBindGroupLayout, aspectRatioGroupLayout] }),
       vertex: { module: videoModule, entryPoint: 'vert_main' },
       fragment: { module: videoModule, entryPoint: 'frag_main', targets: [{ format }] },
       primitive: { topology: 'triangle-list' },
     });
-  } catch (e) { console.error("[createPipelines] ERROR creating Full Video Render Pipeline:", e); return null; }
+  } catch (e) { 
+    console.error("[createPipelines] ERROR creating Video Background Pipeline:", e);
+    return null; 
+  }
 }
 
-async function createLipstickPipeline(device, format, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
-  // ... (This function's signature and vertex buffer layout for normals are already correct from the previous "Lighting" step) ...
-  // ... (The pipeline layout with three bind groups is also correct) ...
-  let lipstickModule;
+// Pipeline for rendering the 3D Lip Model
+async function create3DLipModelPipeline(device, format, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
+  let modelShaderModule;
   try {
-    lipstickModule = device.createShaderModule({
-      label: 'Lipstick Shader Module (Normal Map)', // Updated label
-      code: lipstickShaderSource
+    modelShaderModule = device.createShaderModule({
+      label: '3D Lip Model Shader Module',
+      code: lipstickShaderSource // lipstickEffect.wgsl will be adapted
     });
-    console.log("[createPipelines] Lipstick shader module created.");
-  } catch (e) { console.error("[createPipelines] ERROR creating lipstick shader module:", e); return null; }
+    console.log("[createPipelines] 3D Lip Model shader module created using lipstickEffect.wgsl.");
+  } catch (e) { 
+    console.error("[createPipelines] ERROR creating 3D Lip Model shader module:", e); 
+    return null; 
+  }
 
   try {
     const pipeline = await device.createRenderPipeline({
-      label: 'Lipstick Overlay Pipeline (Normal Map)', // Updated label
-      layout: device.createPipelineLayout({ bindGroupLayouts: [aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout] }),
+      label: '3D Lip Model Pipeline',
+      layout: device.createPipelineLayout({ 
+        bindGroupLayouts: [
+            aspectRatioGroupLayout,      // Group 0: MVP Matrix (from a UBO that might also hold video dims)
+            lipstickMaterialGroupLayout, // Group 1: Material (Color tint, AlbedoTex, Sampler, NormalTex)
+            lightingGroupLayout          // Group 2: Lighting Uniforms
+        ] 
+      }),
       vertex: {
-        module: lipstickModule,
-        entryPoint: 'vert_main',
-        buffers: [
+        module: modelShaderModule,
+        entryPoint: 'vert_main_3d', // Needs to exist in lipstickEffect.wgsl
+        buffers: [ 
           {
-            arrayStride: 7 * 4, // Pos(2) + UV(2) + Normal(3) = 7 floats
+            // Interleaved: Pos(vec3f), Norm(vec3f), UV(vec2f)
+            arrayStride: (3 + 3 + 2) * 4, // 8 floats * 4 bytes/float = 32 bytes
             attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x2' },     // pos_ndc
-              { shaderLocation: 1, offset: 2 * 4, format: 'float32x2' }, // uv
-              { shaderLocation: 2, offset: 4 * 4, format: 'float32x3' }, // normal_in
+              { shaderLocation: 0, offset: 0, format: 'float32x3' },     // Position (model space)
+              { shaderLocation: 1, offset: 3 * 4, format: 'float32x3' }, // Normal (model space)
+              { shaderLocation: 2, offset: 6 * 4, format: 'float32x2' }, // UV
             ],
           },
         ],
       },
       fragment: {
-        module: lipstickModule,
-        entryPoint: 'frag_main',
+        module: modelShaderModule,
+        entryPoint: 'frag_main_3d', // Needs to exist in lipstickEffect.wgsl
         targets: [{
           format,
-          blend: {
+          blend: { 
             color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
             alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
           }
         }],
       },
       primitive: { topology: 'triangle-list' },
+      // TODO: Add depth stencil state for 3D rendering. This is CRITICAL for correct 3D.
+      // We will add this once the basic pipeline creation is confirmed.
+      // depthStencil: {
+      //   depthWriteEnabled: true,
+      //   depthCompare: 'less',
+      //   format: 'depth24plus', // This format needs to match the depth texture view's format
+      // },
     });
-    console.log("[createPipelines] Lipstick pipeline (with normal map support) created successfully.");
+    console.log("[createPipelines] 3D Lip Model pipeline created successfully.");
     return pipeline;
-  } catch (e) { console.error("[createPipelines] ERROR creating lipstick render pipeline (normal map):", e); return null; }
+  } catch (e) { 
+    console.error("[createPipelines] ERROR creating 3D Lip Model pipeline:", e); 
+    return null; 
+  }
 }
 
-export default async function createPipelines(device, format) {
-  const videoBindGroupLayout = device.createBindGroupLayout({ /* ... (unchanged) ... */
-    label: 'Video Texture Bind Group Layout', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }, { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} } ]
-  });
-  const aspectRatioGroupLayout = device.createBindGroupLayout({ /* ... (unchanged) ... */
-    label: 'Aspect Ratio Uniforms Bind Group Layout', entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' }}]
-  });
-  const lightingGroupLayout = device.createBindGroupLayout({ /* ... (unchanged from previous step) ... */
-    label: 'Lighting Uniforms Bind Group Layout', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } } ]
-  });
-
-
-  // MODIFIED: Lipstick Material Bind Group Layout for Normal Map
-  const lipstickMaterialGroupLayout = device.createBindGroupLayout({
-    label: 'Lipstick Material Bind Group Layout (Normal Map)', // Updated label
+export default async function createPipelines(device, format, is3DModelMode = false) {
+  // Common Bind Group Layouts definitions
+  const videoBindGroupLayout = device.createBindGroupLayout({
+    label: 'Video Texture BGL',
     entries: [
-      { // Binding 0: Uniform buffer for tint/alpha color
-        binding: 0,
-        visibility: GPUShaderStage.FRAGMENT,
-        buffer: { type: 'uniform' }
-      },
-      { // Binding 1: Albedo Texture
-        binding: 1,
-        visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'float' }
-      },
-      { // Binding 2: Sampler (for Albedo AND Normal Map)
-        binding: 2,
-        visibility: GPUShaderStage.FRAGMENT,
-        sampler: { type: 'filtering' }
-      },
-      { // Binding 3: Normal Map Texture
-        binding: 3,
-        visibility: GPUShaderStage.FRAGMENT,
-        texture: { sampleType: 'float' } // Assuming normal map is also 'float' filterable
-      }
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} }
     ]
   });
-  console.log("[createPipelines] All Bind Group Layouts (including Normal Map support) created.");
 
+  const aspectRatioGroupLayout = device.createBindGroupLayout({
+    label: 'Aspect Ratio / MVP BGL',
+    entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' }}]
+    // For video, frag shader uses it. For 3D model, vert shader uses it for MVP.
+    // To be flexible, visibility can be VERTEX | FRAGMENT, but for now, specific usage is fine.
+    // The UBO itself will be structured to hold video dims and then MVP matrix.
+  });
 
-  console.log("[createPipelines] Creating pipelines (with normal map support)...");
-  const videoPipeline = await createFullVideoPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout);
-  const lipstickPipeline = await createLipstickPipeline(device, format, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
+  const lipstickMaterialGroupLayout = device.createBindGroupLayout({
+    label: 'Lipstick Material BGL (Color, Albedo, Sampler, NormalMap)',
+    entries: [
+      { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }, 
+      { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }, 
+      { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }, 
+      { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }
+    ]
+  });
 
-  if (!videoPipeline) { console.error("[createPipelines] videoPipeline creation failed!"); }
-  if (!lipstickPipeline) { console.error("[createPipelines] lipstickPipeline creation failed!"); }
+  const lightingGroupLayout = device.createBindGroupLayout({
+    label: 'Lighting BGL',
+    entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } } ]
+  });
+  console.log("[createPipelines] All common Bind Group Layouts created.");
 
-  return { videoPipeline, lipstickPipeline, videoBindGroupLayout, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout };
+  const videoPipeline = await createVideoBackgroundPipeline(device, format, videoBindGroupLayout, aspectRatioGroupLayout);
+  if (!videoPipeline) {
+    console.error("[createPipelines] FATAL: Video background pipeline creation failed!");
+    // If video pipeline fails, we probably can't proceed meaningfully.
+  }
+
+  let lipModelPipeline = null;
+  if (is3DModelMode) {
+    console.log("[createPipelines] is3DModelMode is true. Attempting to create 3D Lip Model pipeline...");
+    lipModelPipeline = await create3DLipModelPipeline(device, format, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
+    if (!lipModelPipeline) {
+        console.error("[createPipelines] FATAL: 3D Lip Model pipeline creation failed! This will cause issues in initializeAll.");
+    }
+  }
+  
+  return { 
+    videoPipeline, 
+    lipModelPipeline, // This is now correctly named and will be null if not in 3D mode
+    videoBindGroupLayout, 
+    aspectRatioGroupLayout, 
+    lipstickMaterialGroupLayout, 
+    lightingGroupLayout 
+  };
 }
