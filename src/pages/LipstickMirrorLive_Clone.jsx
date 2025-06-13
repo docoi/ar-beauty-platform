@@ -1,7 +1,7 @@
 // src/pages/LipstickMirrorLive_Clone.jsx
 
 import React, { useEffect, useRef, useState } from 'react';
-import createPipelines from '@/utils/createPipelines';
+import createPipelines from '@/utils/createPipelines'; // Will need update for 3D model pipeline
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
@@ -22,66 +22,22 @@ async function loadImageBitmap(url) {
   return createImageBitmap(blob);
 }
 
-// Helper function to get typed array data from GLTF accessors
-function getTypedArrayFromGLTFAccessor(gltfJson, accessorIndex, mainBinaryBuffer) {
-    const accessor = gltfJson.accessors[accessorIndex];
-    if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`);
-    
-    const bufferView = gltfJson.bufferViews[accessor.bufferView];
-    if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`);
-
-    const componentType = accessor.componentType;
-    const type = accessor.type; // "SCALAR", "VEC2", "VEC3", "VEC4"
-    const count = accessor.count; 
-
-    let numComponents;
-    switch (type) {
-        case "SCALAR": numComponents = 1; break;
-        case "VEC2":   numComponents = 2; break;
-        case "VEC3":   numComponents = 3; break;
-        case "VEC4":   numComponents = 4; break;
-        default: throw new Error(`Unsupported accessor type: ${type}`);
-    }
-
-    let TypedArrayConstructor;
-    let componentByteSize = 0;
-    switch (componentType) {
-        case 5120: TypedArrayConstructor = Int8Array; componentByteSize = 1; break;
-        case 5121: TypedArrayConstructor = Uint8Array; componentByteSize = 1; break;
-        case 5122: TypedArrayConstructor = Int16Array; componentByteSize = 2; break;
-        case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break;
-        case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break;
-        case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break;
-        default: throw new Error(`Unsupported component type: ${componentType}`);
-    }
-    
-    const totalElements = count * numComponents; // Total number of individual float/short/byte values
-    const accessorByteLength = totalElements * componentByteSize;
-    const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
-
-    if (mainBinaryBuffer.byteLength < byteOffset + accessorByteLength) {
-        throw new Error(`Buffer access out of bounds for accessor ${accessorIndex}. Offset: ${byteOffset}, Length: ${accessorByteLength}, BufferSize: ${mainBinaryBuffer.byteLength}`);
-    }
-    
-    const bufferSlice = mainBinaryBuffer.slice(byteOffset, byteOffset + accessorByteLength);
-    return new TypedArrayConstructor(bufferSlice);
-}
-
-
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
   const animationFrameIdRef = useRef(null);
   const frameCounter = useRef(0);
   const resizeHandlerRef = useRef(null);
+
   const deviceRef = useRef(null);
   const contextRef = useRef(null);
   const formatRef = useRef(null);
   const landmarkerRef = useRef(null);
+
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
   const selectedColorForRenderRef = useRef(LIPSTICK_COLORS[0].value);
   const lightSettingsRef = useRef({
-    direction: [0.5, 0.5, 1.0],
+    direction: [0.5, 0.5, 1.0], // Example light direction
     ambientColor: [0.2, 0.2, 0.2, 1.0],
     diffuseColor: [0.8, 0.8, 0.8, 1.0],
   });
@@ -107,7 +63,7 @@ export default function LipstickMirrorLive_Clone() {
   useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect with @loaders.gl (updated parser logic).");
+    console.log("[LML_Clone 3DModel] Main useEffect with @loaders.gl (corrected parser access).");
     let deviceInternal = null; let contextInternal = null; let formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
     const canvasElement = canvasRef.current; const videoElement = videoRef.current;
@@ -129,7 +85,7 @@ export default function LipstickMirrorLive_Clone() {
     const render = async () => {
         const currentDevice = deviceRef.current; const currentContext = contextRef.current;
         const currentVideoEl = videoRef.current; const pState = pipelineStateRef.current;
-        // const activeLandmarker = landmarkerRef.current; // For deformation later
+        // const activeLandmarker = landmarkerRef.current; 
 
         if (!currentDevice || !currentContext || !pState.videoPipeline || (pState.lipModelData && !pState.lipModelPipeline) ) {
             animationFrameIdRef.current = requestAnimationFrame(render); return;
@@ -139,11 +95,17 @@ export default function LipstickMirrorLive_Clone() {
             animationFrameIdRef.current = requestAnimationFrame(render); return;
         }
         if (pState.aspectRatioUniformBuffer) {
-            // For 3D model, this buffer will hold Model-View-Projection Matrix
-            // For video, it holds dimensions. We might need two separate buffers or a more complex UBO for 3D.
-            // For now, let's assume video part is correct.
-            const aspectRatioData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height, /* Placeholder for MVP */ 0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0 ]);
-            currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 0, aspectRatioData);
+            // For 3D model, this buffer needs a Model-View-Projection matrix
+            // For video, it needs dimensions. For simplicity, using a larger buffer for now.
+            // TODO: Update this with actual MVP matrix for the 3D model later.
+            const mvpPlaceholder = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]; // Identity matrix
+            const videoDims = [currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height];
+            const combinedData = new Float32Array([...videoDims, ...mvpPlaceholder]); // Video dims first, then MVP
+            if (pState.aspectRatioUniformBuffer.size >= combinedData.byteLength) {
+                 currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 0, combinedData);
+            } else {
+                console.error("Aspect ratio uniform buffer too small for combined data.");
+            }
         }
         if (pState.lipstickMaterialUniformBuffer) {
             const colorData = new Float32Array(selectedColorForRenderRef.current);
@@ -154,30 +116,39 @@ export default function LipstickMirrorLive_Clone() {
             const lightingData = new Float32Array([ lightDir[0], lightDir[1], lightDir[2], 0.0, ambientCol[0], ambientCol[1], ambientCol[2], ambientCol[3], diffuseCol[0], diffuseCol[1], diffuseCol[2], diffuseCol[3] ]);
             currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData);
         }
+        
+        // --- Landmark processing & 3D Model Deformation (placeholder for later) ---
+
         let videoTextureGPU, frameBindGroupForTexture;
         try {
             videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl });
             if (pState.videoBindGroupLayout && pState.videoSampler) { frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{ binding: 0, resource: pState.videoSampler }, { binding: 1, resource: videoTextureGPU }] }); }
             else { animationFrameIdRef.current = requestAnimationFrame(render); return; }
         } catch (e) { console.error("Error importing video texture:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+        
         let currentGpuTexture, texView;
         try {
             currentGpuTexture = currentContext.getCurrentTexture(); texView = currentGpuTexture.createView();
         } catch (e) { console.warn("Error getting current texture", e); if (resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+        
         const cmdEnc = currentDevice.createCommandEncoder({label: "Main Render Encoder"});
-        const passEnc = cmdEnc.beginRenderPass({ colorAttachments: [{ view: texView, clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }]});
+        const passEnc = cmdEnc.beginRenderPass({ colorAttachments: [{ view: texView, clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }]}); // Add depthStencilAttachment later
         passEnc.setViewport(0, 0, currentGpuTexture.width, currentGpuTexture.height, 0, 1);
         passEnc.setScissorRect(0, 0, currentGpuTexture.width, currentGpuTexture.height);
+        
         if (pState.videoPipeline && frameBindGroupForTexture && pState.aspectRatioBindGroup) {
             passEnc.setPipeline(pState.videoPipeline); passEnc.setBindGroup(0, frameBindGroupForTexture); passEnc.setBindGroup(1, pState.aspectRatioBindGroup); passEnc.draw(6);
         }
+        
         if (pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelAspectRatioBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
             passEnc.setPipeline(pState.lipModelPipeline);
-            passEnc.setBindGroup(0, pState.lipModelAspectRatioBindGroup); passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup); passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);
+            passEnc.setBindGroup(0, pState.lipModelAspectRatioBindGroup); // Will contain MVP matrix
+            passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   // Albedo, Normal, Sampler, Tint
+            passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);   // Lighting params
             passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
             passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
             passEnc.drawIndexed(pState.lipModelNumIndices);
-             if(frameCounter.current % 240 === 1) console.log("Drawing 3D lip model, indices:", pState.lipModelNumIndices);
+            // if(frameCounter.current % 240 === 1) console.log("Drawing 3D lip model, indices:", pState.lipModelNumIndices);
         }
         passEnc.end(); currentDevice.queue.submit([cmdEnc.finish()]);
         animationFrameIdRef.current = requestAnimationFrame(render);
@@ -186,66 +157,79 @@ export default function LipstickMirrorLive_Clone() {
     const initializeAll = async () => {
         console.log("[LML_Clone 3DModel] Attempting to load /models/lips_model.glb using @loaders.gl/gltf");
         setDebugMessage("Loading 3D Lip Model...");
-        let gltfDataFromLoaders; 
+        let gltfData; 
         try {
-            gltfDataFromLoaders = await load('/models/lips_model.glb', GLTFLoader);
-            console.log("[LML_Clone 3DModel] GLB model loaded by @loaders.gl. Full data object:", gltfDataFromLoaders);
+            gltfData = await load('/models/lips_model.glb', GLTFLoader, {
+                gltf: {
+                    postProcess: true, // Crucial for getting typed arrays in attributes.value
+                    loadImages: false  // We load textures manually
+                }
+            });
+            console.log("[LML_Clone 3DModel] GLB model loaded by @loaders.gl. Full data object:", gltfData);
 
-            const gltfJson = gltfDataFromLoaders.json;
-            let mainBinaryBuffer = null;
-            if (gltfDataFromLoaders.buffers && gltfDataFromLoaders.buffers.length > 0 && gltfDataFromLoaders.buffers[0].buffer) {
-                mainBinaryBuffer = gltfDataFromLoaders.buffers[0].buffer;
-            } else if (gltfDataFromLoaders.bin) { // Fallback for some loaders.gl versions or direct GLB parsing
-                mainBinaryBuffer = gltfDataFromLoaders.bin;
+            let meshToUse = null;
+            if (gltfData.meshes && gltfData.meshes.length > 0) {
+                meshToUse = gltfData.meshes[0];
+                console.log("[LML_Clone 3DModel] Using mesh from gltfData.meshes[0].");
+            } else if (gltfData.scene && gltfData.scene.nodes) { // Fallback: try to find first mesh in default scene
+                const findMeshInNodeRecursive = (node) => {
+                    if (node.mesh) return node.mesh;
+                    if (node.children) {
+                        for (const child of node.children) {
+                            const meshInChild = findMeshInNodeRecursive(child);
+                            if (meshInChild) return meshInChild;
+                        }
+                    }
+                    return null;
+                };
+                for (const rootNode of gltfData.scene.nodes) {
+                    meshToUse = findMeshInNodeRecursive(rootNode);
+                    if (meshToUse) {
+                        console.log("[LML_Clone 3DModel] Found mesh via scene graph traversal:", meshToUse);
+                        break;
+                    }
+                }
             }
 
-
-            if (!gltfJson) throw new Error("GLTF JSON part not found in loaded data.");
-            if (!mainBinaryBuffer) throw new Error("Main binary buffer (BIN chunk or buffers[0].buffer) not found in loaded data.");
-
-            if (!gltfJson.meshes || gltfJson.meshes.length === 0) {
-                throw new Error("No meshes array found in GLTF JSON (gltfJson.meshes).");
-            }
+            if (!meshToUse) throw new Error("No suitable mesh found in GLTF data (checked gltfData.meshes and default scene nodes).");
+            if (!meshToUse.primitives || meshToUse.primitives.length === 0) throw new Error("Selected mesh has no primitives.");
             
-            const meshJson = gltfJson.meshes[0]; // Assuming first mesh
-            console.log("[LML_Clone 3DModel] Using mesh from json.meshes[0]:", meshJson);
-
-            if (!meshJson.primitives || meshJson.primitives.length === 0) {
-                throw new Error("No primitives found in the first mesh of GLTF JSON.");
-            }
-            const primitiveJson = meshJson.primitives[0]; // Assuming first primitive
-            console.log("[LML_Clone 3DModel] Using primitive from mesh.primitives[0]:", primitiveJson);
-
-            if (primitiveJson.attributes.POSITION === undefined) {
-                throw new Error("Mesh primitive is missing POSITION attribute accessor index.");
+            const primitive = meshToUse.primitives[0];
+            if (!primitive.attributes.POSITION || !primitive.attributes.POSITION.value) {
+                throw new Error("Mesh primitive is missing POSITION attribute or its .value (typed array).");
             }
 
-            const positions = getTypedArrayFromGLTFAccessor(gltfJson, primitiveJson.attributes.POSITION, mainBinaryBuffer);
-            const normals = primitiveJson.attributes.NORMAL !== undefined ? getTypedArrayFromGLTFAccessor(gltfJson, primitiveJson.attributes.NORMAL, mainBinaryBuffer) : null;
-            const uvs = primitiveJson.attributes.TEXCOORD_0 !== undefined ? getTypedArrayFromGLTFAccessor(gltfJson, primitiveJson.attributes.TEXCOORD_0, mainBinaryBuffer) : null;
-            const indices = primitiveJson.indices !== undefined ? getTypedArrayFromGLTFAccessor(gltfJson, primitiveJson.indices, mainBinaryBuffer) : null;
+            const positions = primitive.attributes.POSITION.value;
+            const normals = primitive.attributes.NORMAL ? primitive.attributes.NORMAL.value : null;
+            const uvs = primitive.attributes.TEXCOORD_0 ? primitive.attributes.TEXCOORD_0.value : null;
+            const indices = primitive.indices ? primitive.indices.value : null;
             
-            const targets = [];
-            const shapeKeyNames = meshJson.extras?.targetNames || primitiveJson.extras?.targetNames || [];
-            if (primitiveJson.targets) {
-                console.log(`[LML_Clone 3DModel] Found ${primitiveJson.targets.length} morph targets in primitive.`);
-                primitiveJson.targets.forEach((target, index) => {
-                    const targetPositions = target.POSITION !== undefined ? getTypedArrayFromGLTFAccessor(gltfJson, target.POSITION, mainBinaryBuffer) : null;
-                    targets.push({ positions: targetPositions, name: shapeKeyNames[index] || `target_${index}` });
+            const targetsData = [];
+            // Prefer targetNames from mesh.extras, then gltfData.extras, then raw gltfJson.meshes[0].extras
+            const shapeKeyNames = meshToUse.extras?.targetNames || gltfData.extras?.targetNames || 
+                                 (gltfData.json?.meshes[0]?.extras?.targetNames) || 
+                                 (gltfData.json?.meshes.find(m => m.name === meshToUse.name)?.extras?.targetNames) || [];
+
+            if (primitive.targets) {
+                console.log(`[LML_Clone 3DModel] Found ${primitive.targets.length} morph targets in primitive.`);
+                primitive.targets.forEach((target, index) => {
+                    targetsData.push({
+                        positions: target.POSITION ? target.POSITION.value : null,
+                        name: shapeKeyNames[index] || `target_${index}`
+                    });
                 });
             }
 
-            if (!positions) throw new Error("Parsed model data is missing positions after accessor processing.");
+            if (!positions) throw new Error("Parsed model data is missing positions TypedArray.");
             if (!normals) console.warn("3D model: Normals missing. Lighting will be affected.");
-            if (!uvs) console.warn("3D model: UVs (TEXCOORD_0) missing. Texturing will fail.");
-            if (!indices) console.warn("3D model: Indices missing. Indexed drawing will fail.");
+            if (!uvs) console.warn("3D model: UVs (TEXCOORD_0) missing. Texturing will be affected.");
+            if (!indices) console.warn("3D model: Indices missing. Indexed drawing will fail if pipeline expects it.");
 
-
-            pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, targets, shapeKeyNames };
-            console.log("[LML_Clone 3DModel] Mesh data extracted:", {
+            pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, targets: targetsData, shapeKeyNames };
+            console.log("[LML_Clone 3DModel] Mesh data extracted via @loaders.gl:", {
                 hasPos:!!positions, numPos:positions?.length, hasNorm:!!normals, numNorm:normals?.length,
                 hasUV:!!uvs, numUV:uvs?.length, hasIdx:!!indices, numIdx:indices?.length,
-                numTargets: targets.length, names: shapeKeyNames
+                numTargets: targetsData.length, names: shapeKeyNames
             });
             setDebugMessage("3D Model Parsed. Initializing GPU...");
 
@@ -273,14 +257,14 @@ export default function LipstickMirrorLive_Clone() {
             try { lipstickNormalImageBitmap = await loadImageBitmap('/textures/lipstick_normal.png'); } catch (e) { console.warn("Failed to load normal map.", e); }
 
             const p = pipelineStateRef.current;
-            const layoutsAndPipelines = await createPipelines(deviceInternal, formatInternal, true /* is3DModelMode */);
+            const layoutsAndPipelines = await createPipelines(deviceInternal, formatInternal, true /* is3DModelMode */); 
             if (!layoutsAndPipelines.videoPipeline || !layoutsAndPipelines.lipModelPipeline) throw new Error("Pipeline creation failed.");
             p.videoPipeline = layoutsAndPipelines.videoPipeline; p.lipModelPipeline = layoutsAndPipelines.lipModelPipeline;
             p.videoBindGroupLayout = layoutsAndPipelines.videoBindGroupLayout; p.aspectRatioGroupLayout = layoutsAndPipelines.aspectRatioGroupLayout;
             p.lipstickMaterialGroupLayout = layoutsAndPipelines.lipstickMaterialGroupLayout; p.lightingGroupLayout = layoutsAndPipelines.lightingGroupLayout;
 
-            p.aspectRatioUniformBuffer = deviceInternal.createBuffer({ label: "MVP Matrix UB", size: 16 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST }); // For mat4 MVP
-            p.aspectRatioBindGroup = deviceInternal.createBindGroup({ label: "Aspect Ratio BG (Video - uses only first 4 floats)", layout: p.aspectRatioGroupLayout, entries: [{binding:0, resource:{buffer: p.aspectRatioUniformBuffer}}]}); // Video might only use part of this
+            p.aspectRatioUniformBuffer = deviceInternal.createBuffer({ label: "MVP Matrix UB", size: 16 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            p.aspectRatioBindGroup = deviceInternal.createBindGroup({ label: "Aspect Ratio BG (Video)", layout: p.aspectRatioGroupLayout, entries: [{binding:0, resource:{buffer: p.aspectRatioUniformBuffer}}]});
             p.lipModelAspectRatioBindGroup = deviceInternal.createBindGroup({ label: "MVP Matrix BG (3D Model)", layout: p.aspectRatioGroupLayout, entries: [{binding:0, resource:{buffer: p.aspectRatioUniformBuffer}}]});
 
             p.lipstickMaterialUniformBuffer = deviceInternal.createBuffer({ label: "Material Tint UB", size: 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -327,7 +311,12 @@ export default function LipstickMirrorLive_Clone() {
                 p.lipModelIndexBuffer.unmap();
                 p.lipModelNumIndices = model.indices.length;
                 console.log(`[LML_Clone 3DModel] Created VB (${numVertices} verts) and IB (${p.lipModelNumIndices} indices, format ${p.lipModelIndexFormat}) for 3D model.`);
-            } else { throw new Error("Essential model data (pos, norm, uv, indices) missing after parse for GPU buffers."); }
+            } else { 
+                let missing = [];
+                if (!model?.positions) missing.push("positions"); if (!model?.normals) missing.push("normals");
+                if (!model?.uvs) missing.push("uvs"); if (!model?.indices) missing.push("indices");
+                throw new Error(`Essential model data (${missing.join(', ')}) missing after parse for GPU buffers.`); 
+            }
 
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
             videoElement.srcObject = stream;
@@ -337,7 +326,7 @@ export default function LipstickMirrorLive_Clone() {
             resizeObserverInternal.observe(canvasElement);
             if (resizeHandlerRef.current) resizeHandlerRef.current();
 
-            console.log("[LML_Clone 3DModel] GPU resources and video initialized using @loaders.gl (manual accessor processing).");
+            console.log("[LML_Clone 3DModel] GPU resources and video initialized using @loaders.gl (direct attribute access).");
             setDebugMessage("Ready (3D Model Mode).");
             if (!renderLoopStartedInternal) { render(); renderLoopStartedInternal = true; }
         } catch (err) {
