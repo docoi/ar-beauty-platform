@@ -1,139 +1,133 @@
 // src/shaders/lipstickEffect.wgsl
 
-// Group 0: Aspect Ratios
-@group(0) @binding(0) var<uniform> aspectRatiosUniform: AspectRatios;
-struct AspectRatios { /* ... */ videoDimensions: vec2f, canvasDimensions: vec2f };
+// --- Original 2D Lip Overlay Shaders (will be unused for 3D model) ---
+// @group(0) @binding(0) var<uniform> aspectRatiosUniform_2D: AspectRatios_2D;
+// @group(1) @binding(0) var<uniform> lipstickMaterialUniform_2D: LipstickMaterial_2D;
+// struct AspectRatios_2D { videoDimensions: vec2f, canvasDimensions: vec2f };
+// struct LipstickMaterial_2D { color: vec4f };
+// struct VertexInput_2D { @location(0) pos: vec2f };
+// struct VertexOutput_2D { @builtin(position) position: vec4f };
+
+// @vertex
+// fn vert_main(input: VertexInput_2D) -> VertexOutput_2D { /* ... original 2D vertex shader ... */ }
+// @fragment
+// fn frag_main() -> @location(0) vec4f { /* ... original 2D fragment shader ... */ }
+
+
+// --- NEW Shaders for 3D Lip Model ---
+
+// Group 0: MVP Matrix (and other view/projection related uniforms)
+@group(0) @binding(0) var<uniform> sceneUniforms: SceneUniforms;
+struct SceneUniforms {
+  // For video background (first 4 floats):
+  // videoDimensions: vec2f,
+  // canvasDimensions: vec2f, 
+  // For 3D model (next 16 floats, if combined, or separate UBO):
+  projectionMatrix: mat4x4f,
+  viewMatrix: mat4x4f,
+  modelMatrix: mat4x4f, 
+  // We'll need to decide how to pack/unpack these from the aspectRatioUniformBuffer
+  // For now, assume separate or correctly offset. Let's assume MVP is passed.
+  mvpMatrix: mat4x4f, // Model-View-Projection Matrix
+};
 
 // Group 1: Material Properties
-@group(1) @binding(0) var<uniform> lipstickMaterialUniform: LipstickMaterial;
-@group(1) @binding(1) var u_lipstickAlbedoTexture: texture_2d<f32>;
-@group(1) @binding(2) var u_lipstickSampler: sampler; // Renamed for clarity, used for both albedo and normal
-@group(1) @binding(3) var u_lipstickNormalTexture: texture_2d<f32>; // NEW: Normal Map
+@group(1) @binding(0) var<uniform> materialUniforms: MaterialUniforms;
+@group(1) @binding(1) var u_albedoTexture: texture_2d<f32>;
+@group(1) @binding(2) var u_sampler: sampler;
+@group(1) @binding(3) var u_normalTexture: texture_2d<f32>;
 
-struct LipstickMaterial { /* ... */ color: vec4f, };
+struct MaterialUniforms {
+  tintColor: vec4f, // Base color tint and alpha
+  // Add other material props like roughness, metallic here later
+};
 
 // Group 2: Lighting Properties
 @group(2) @binding(0) var<uniform> lightingUniforms: LightingParams;
-struct LightingParams { /* ... */ direction: vec3f, ambientColor: vec4f, diffuseColor: vec4f, };
-
-
-struct VertexInput {
-  @location(0) pos_ndc: vec2f,
-  @location(1) tex_coord: vec2f,
-  @location(2) normal_in: vec3f, // Vertex normal (placeholder)
+struct LightingParams {
+  direction: vec3f, 
+  // padded to vec4f in JS buffer, access .xyz
+  ambientColor: vec4f,
+  diffuseColor: vec4f,
+  // Add specularColor, lightPosition etc. later
 };
 
-struct VertexOutput {
-  @builtin(position) position: vec4f,
+struct VertexInput3D {
+  @location(0) position_model: vec3f, // Vertex position in model space
+  @location(1) normal_model: vec3f,   // Vertex normal in model space
+  @location(2) uv_in: vec2f,          // Vertex UV coordinates
+};
+
+struct VertexOutput3D {
+  @builtin(position) clip_position: vec4f,
   @location(0) uv: vec2f,
-  @location(1) view_normal: vec3f, // Interpolated vertex normal (our placeholder (0,0,1))
-  // For full tangent space normal mapping, we'd also pass Tangent and Bitangent vectors here.
-  // For simplicity, we'll try to work with the view_normal and perturb it.
+  @location(1) world_normal: vec3f, // Normal in world space (or view space)
+  @location(2) world_position: vec3f, // Position in world space (for specular, IBL etc.)
+  // Add world_tangent, world_bitangent if doing full TBN
 };
 
 @vertex
-fn vert_main(input: VertexInput) -> VertexOutput {
-  var out: VertexOutput;
-  // --- Aspect ratio correction for position (same as before) ---
-  let canvasW = aspectRatiosUniform.canvasDimensions.x; let canvasH = aspectRatiosUniform.canvasDimensions.y;
-  let videoW = aspectRatiosUniform.videoDimensions.x; let videoH = aspectRatiosUniform.videoDimensions.y;
-  var finalPos = input.pos_ndc;
-  if (canvasH != 0.0 && videoH != 0.0 && videoW != 0.0 && canvasW != 0.0) {
-    let screenAspect = canvasW / canvasH; let videoAspect = videoW / videoH;
-    if (videoAspect > screenAspect) { finalPos.y = input.pos_ndc.y * (screenAspect / videoAspect); }
-    else { finalPos.x = input.pos_ndc.x * (videoAspect / screenAspect); }
-  }
-  out.position = vec4f(finalPos, 0.0, 1.0);
-  // --- End aspect ratio correction ---
+fn vert_main_3d(input: VertexInput3D) -> VertexOutput3D {
+  var out: VertexOutput3D;
 
-  out.uv = input.tex_coord;
-  // We pass the placeholder normal. For actual TBN, this would be the N of the TBN matrix.
-  out.view_normal = normalize(input.normal_in);
+  // For now, assume mvpMatrix is correctly passed and combines model, view, projection
+  // Later, we might pass model, view, projection separately for more flexible lighting calcs
+  out.clip_position = sceneUniforms.mvpMatrix * vec4f(input.position_model, 1.0);
+  
+  out.uv = input.uv_in;
+
+  // Transform normal to world space (assuming modelMatrix is world transform)
+  // For non-uniform scaling in modelMatrix, (inverse(transpose(modelMatrix)) * normal) is needed.
+  // For now, assuming uniform scaling or no scaling in modelMatrix part of MVP.
+  // Let's pass a modelMatrix separately in sceneUniforms if we need accurate world normals.
+  // Placeholder: if modelMatrix is just identity for now, model_normal is world_normal.
+  // We will need to pass a proper normal matrix later (inverse transpose of model's upper 3x3)
+  // For now, assume normal is roughly in view/world and normalize. THIS IS A SIMPLIFICATION.
+  out.world_normal = normalize(input.normal_model); // THIS IS INCORRECT for a transformed model.
+                                                 // Will be corrected when we add transformations.
+  out.world_position = input.position_model; // Also needs modelMatrix transform.
+
   return out;
 }
 
-// Helper to construct TBN matrix (simplified: assumes view_normal is Z, needs proper Tangent for X)
-// For this iteration, we'll directly use the normal map as a view-space perturbation.
-// A more robust solution would involve passing a computed TBN matrix or T,B vectors from vertex shader.
-
-fn perturb_normal_approx(view_N: vec3f, normal_tex_sample: vec3f, strength: f32) -> vec3f {
-    // Assuming normal_tex_sample is in tangent space (X right, Y up, Z out from surface)
-    // And view_N is the geometric normal in view space (our current (0,0,1) placeholder)
-    // This is a very simplified perturbation, not true TBN transformation.
-    // It basically uses the texture's X and Y to "push" the view_N.
-    // The Z from texture can scale the original normal's Z component.
-
-    // Remap texture normal from [0,1] to [-1,1]
-    let tangent_norm = (normal_tex_sample * 2.0) - 1.0;
-
-    // A simple way to create a "sort of" tangent and bitangent if view_N is (0,0,1)
-    // This is NOT a generally correct TBN matrix construction.
-    // It's an approximation that might work for a flat surface facing the camera.
-    var T: vec3f;
-    if (abs(view_N.x) > abs(view_N.z)) { // If normal is more horizontal, cross with Y up
-        T = normalize(cross(vec3f(0.0, 1.0, 0.0), view_N));
-    } else { // If normal is more vertical, cross with X right
-        T = normalize(cross(view_N, vec3f(1.0, 0.0, 0.0)));
-    }
-    let B = normalize(cross(view_N, T));
-    
-    // Transform tangent-space normal to view-space like orientation
-    // This is effectively building a TBN matrix on the fly where N_geom is view_N
-    let perturbed_N = normalize(T * tangent_norm.x * strength + 
-                                B * tangent_norm.y * strength + 
-                                view_N * max(0.0, tangent_norm.z)); // Ensure Z doesn't invert view_N
-    
-    return normalize(view_N + (perturbed_N - view_N) * strength) ; // Blend original normal with perturbed
-    // A simpler, direct perturbation (less physically correct but might show effect):
-    // return normalize(view_N + vec3f(tangent_norm.x, tangent_norm.y, 0.0) * strength);
-}
-
-
 @fragment
-fn frag_main(input: VertexOutput) -> @location(0) vec4f {
-  let albedoTextureColor = textureSample(u_lipstickAlbedoTexture, u_lipstickSampler, input.uv);
-  let baseColor = albedoTextureColor.rgb * lipstickMaterialUniform.color.rgb;
-  let baseAlpha = albedoTextureColor.a * lipstickMaterialUniform.color.a;
+fn frag_main_3d(input: VertexOutput3D) -> @location(0) vec4f {
+  let albedoSample = textureSample(u_albedoTexture, u_sampler, input.uv);
+  let baseColor = albedoSample.rgb * materialUniforms.tintColor.rgb;
+  let baseAlpha = albedoSample.a * materialUniforms.tintColor.a;
 
-  // Sample the normal map
-  let normalMapSample = textureSample(u_lipstickNormalTexture, u_lipstickSampler, input.uv).rgb;
-
-  // --- Normal Processing ---
-  // Remap normal from [0,1] texture range to [-1,1] vector range
+  // Normal Mapping
+  let normalMapSample = textureSample(u_normalTexture, u_sampler, input.uv).rgb;
   let tangentSpaceNormal = normalize((normalMapSample * 2.0) - 1.0);
 
-  // For now, our interpolated `input.view_normal` is just (0,0,1) - i.e., facing camera in view space.
-  // We will use the tangentSpaceNormal to directly define the normal in lighting calculations.
-  // This assumes the normal map is authored such that its "up" (typically blue channel) corresponds
-  // to the surface facing directly out, and R/G channels provide X/Y deviations.
-  // This is a simplification; proper tangent space normal mapping requires a TBN matrix.
-  // Let's try using the tangentSpaceNormal directly for lighting. If it points in weird directions,
-  // we'll know the assumption is too simple.
-  // We assume the normal map IS the view-space normal for now. This is a common first-pass cheat.
-  var N_for_lighting = tangentSpaceNormal;
+  // --- Simplified Normal Usage (Placeholder - needs proper TBN) ---
+  // For now, assume input.world_normal is the geometric normal in a usable space (e.g., view space)
+  // And try to use tangentSpaceNormal as if it's directly perturbing that.
+  // This is a common simplification if TBN matrix isn't available.
+  // A better approach involves a TBN matrix to transform tangentSpaceNormal to world/view space.
+  // For now, let's use the tangentSpaceNormal more directly, assuming view direction is -Z
+  // and the surface is mostly facing the camera. This is a visual approximation.
+  // The normal from the map is treated as if it's already in view space.
+  let N = normalize(vec3f(tangentSpaceNormal.xy, tangentSpaceNormal.z)); 
+  // let N = normalize(input.world_normal); // Use this if not using normal map yet or normal map is problematic
 
-  // If your normal map is a "world space" or "object space" normal map, you might use it more directly.
-  // Most are "tangent space".
-  // If the above line gives bad results (e.g. lighting seems inverted or sideways),
-  // it means we need to correctly transform it from tangent space to view/world space using TBN.
-  // For now, let's try this simple interpretation, assuming the normal map is directly usable as view-space normals for a surface facing the camera.
-  // A slightly more involved, but still simplified approach without full TBN from vertex:
-  // N_for_lighting = perturb_normal_approx(input.view_normal, normalMapSample, 1.0);
-  // Let's try the most direct use first:
-  // The default normal (0,0,1) from the texture is "straight out".
-  // The R and G channels encode deviations. For a surface facing camera,
-  // these deviations can be directly used for x and y components of the view-space normal.
-   N_for_lighting = normalize(vec3f(tangentSpaceNormal.xy, tangentSpaceNormal.z));
-   // Ensure Z is positive if it's supposed to be "pointing out" of the surface generally towards camera
-   // For many tangent space normal maps, Z component (blue channel) is mostly > 0.5 (meaning > 0 after remapping)
-   // N_for_lighting.z = max(N_for_lighting.z, 0.001); // Avoid zero Z if it causes issues
 
-  // --- Lighting Calculation ---
-  let L = normalize(lightingUniforms.direction.xyz);
+  // --- Lighting ---
+  let L = normalize(lightingUniforms.direction.xyz); // Light direction
   let ambient = lightingUniforms.ambientColor.rgb * baseColor;
-  let lambertFactor = max(dot(N_for_lighting, L), 0.0);
+  let lambertFactor = max(dot(N, L), 0.0);
   let diffuse = lightingUniforms.diffuseColor.rgb * baseColor * lambertFactor;
-  let finalRgb = clamp(ambient + diffuse, vec3f(0.0), vec3f(1.0));
+  
+  var finalRgb = ambient + diffuse;
+
+  // Placeholder for specular (needs view direction)
+  // let V = normalize(cameraPosition_world - input.world_position); // cameraPosition needs to be a uniform
+  // let R = reflect(-L, N);
+  // let specFactor = pow(max(dot(R, V), 0.0), 32.0); // 32.0 is shininess
+  // let specular = vec3f(0.5, 0.5, 0.5) * specFactor; // Assuming white specular color
+  // finalRgb += specular;
+
+  finalRgb = clamp(finalRgb, vec3f(0.0), vec3f(1.0));
 
   return vec4f(finalRgb, baseAlpha);
 }
