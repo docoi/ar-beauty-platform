@@ -1,7 +1,7 @@
 // src/utils/createPipelines.js
 
 import videoShaderSource from '@/shaders/videoBackground.wgsl?raw';
-import lipstickShaderSource from '@/shaders/lipstickEffect.wgsl?raw';
+import lipstickShaderSource from '@/shaders/lipstickEffect.wgsl?raw'; // Contains vert_main_3d, frag_main_3d
 
 // Pipeline for rendering the 2D video background
 async function createVideoBackgroundPipeline(device, format, videoBindGroupLayout, sceneUniformsGroupLayout) {
@@ -100,9 +100,6 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
     ]
   });
 
-  // A single layout for a uniform buffer at binding 0.
-  // The video pipeline will use this for its aspect ratio data.
-  // The 3D model pipeline will use this for its MVP/scene matrix data.
   const sceneUniformsGroupLayout = device.createBindGroupLayout({
     label: 'Scene Uniforms BGL (MVP / AspectRatio)',
     entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' }}]

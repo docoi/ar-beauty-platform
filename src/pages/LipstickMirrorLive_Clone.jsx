@@ -5,7 +5,7 @@ import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
-import { mat4, mat3, vec3 } from 'gl-matrix';
+import { mat4, vec3 } from 'gl-matrix';
 
 const LIPSTICK_COLORS = [
   { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] },
@@ -49,7 +49,7 @@ export default function LipstickMirrorLive_Clone() {
     videoPipeline: null, videoBindGroupLayout: null, videoSampler: null,
     sceneUniformsGroupLayout: null, videoAspectRatioUBO: null, videoAspectRatioBindGroup: null,
     lipstickMaterialGroupLayout: null, lipstickMaterialUniformBuffer: null,
-    lightingGroupLayout: null, lightingUniformBuffer: null,
+    lightingGroupLayout: null, lightingUniformBuffer: null, lipModelLightingBindGroup: null,
     lipstickAlbedoTexture: null, lipstickAlbedoTextureView: null,
     lipstickNormalTexture: null, lipstickNormalTextureView: null,
     lipstickAlbedoSampler: null,
@@ -57,7 +57,6 @@ export default function LipstickMirrorLive_Clone() {
     lipModelIndexFormat: 'uint16', lipModelNumIndices: 0,
     lipModelPipeline: null, lipModelMaterialBindGroup: null,
     lipModelMatrixUBO: null, lipModelMatrixBindGroup: null,
-    lipModelLightingBindGroup: null, 
     depthTexture: null, depthTextureView: null,
   });
 
@@ -104,32 +103,26 @@ export default function LipstickMirrorLive_Clone() {
         
         const now = performance.now();
         const landmarkerResult = activeLandmarker?.detectForVideo(currentVideoEl, now);
+        const hasFace = landmarkerResult && landmarkerResult.faceLandmarks.length > 0 && landmarkerResult.facialTransformationMatrixes?.length > 0;
 
         if (pState.videoAspectRatioUBO) {
             const videoDimData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]);
             currentDevice.queue.writeBuffer(pState.videoAspectRatioUBO, 0, videoDimData);
         }
         
-        let hasFace = landmarkerResult && landmarkerResult.faceLandmarks.length > 0;
         if (pState.lipModelMatrixUBO && hasFace) {
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
             const projectionMatrix = mat4.create();
             mat4.perspective(projectionMatrix, 75 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
 
-            // Use the transformation matrix from MediaPipe
-            const modelMatrix = landmarkerResult.facialTransformationMatrixes[0].data;
-
-            // Simple view matrix, looking at the origin from a bit back.
-            // In a true 3D scene, this would be your camera's matrix.
             const viewMatrix = mat4.create();
             mat4.lookAt(viewMatrix, vec3.fromValues(0,0,1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
             
-            // We need to invert the Y and Z axes of the model matrix from MediaPipe to match WebGL/WebGPU's coordinate system
-            const flipYZ = mat4.fromValues(1, 0, 0, 0, 0, -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1);
+            let modelMatrix = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+            const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
             mat4.multiply(modelMatrix, flipYZ, modelMatrix);
             
-            // Combine matrices
-            const finalMatrices = new Float32Array(16 * 3); // 3 matrices
+            const finalMatrices = new Float32Array(16 * 3); // 3 mat4s
             finalMatrices.set(projectionMatrix, 0);
             finalMatrices.set(viewMatrix, 16);
             finalMatrices.set(modelMatrix, 32);
@@ -152,6 +145,7 @@ export default function LipstickMirrorLive_Clone() {
         passEnc.setViewport(0, 0, currentGpuTexture.width, currentGpuTexture.height, 0, 1);
         passEnc.setScissorRect(0, 0, currentGpuTexture.width, currentGpuTexture.height);
         
+        // Re-enable video drawing
         if (pState.videoPipeline && frameBindGroupForTexture && pState.videoAspectRatioBindGroup) {
             passEnc.setPipeline(pState.videoPipeline);
             passEnc.setBindGroup(0, frameBindGroupForTexture);
@@ -159,6 +153,7 @@ export default function LipstickMirrorLive_Clone() {
             passEnc.draw(6);
         }
         
+        // Draw 3D Lip Model if a face is detected
         if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelMatrixBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
@@ -239,7 +234,6 @@ export default function LipstickMirrorLive_Clone() {
             if (lipstickAlbedoImageBitmap) { p.lipstickAlbedoTexture = deviceInternal.createTexture({label:"AlbedoTex", size:[lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); deviceInternal.queue.copyExternalImageToTexture({source:lipstickAlbedoImageBitmap}, {texture:p.lipstickAlbedoTexture}, [lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height]); p.lipstickAlbedoTextureView = p.lipstickAlbedoTexture.createView(); }
             p.lipstickAlbedoSampler = deviceInternal.createSampler({label:"MaterialSampler", magFilter:'linear', minFilter:'linear', addressModeU:'repeat', addressModeV:'repeat'});
             if (lipstickNormalImageBitmap) { p.lipstickNormalTexture = deviceInternal.createTexture({label:"NormalTex", size:[lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); deviceInternal.queue.copyExternalImageToTexture({source:lipstickNormalImageBitmap}, {texture:p.lipstickNormalTexture}, [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height]); p.lipstickNormalTextureView = p.lipstickNormalTexture.createView(); }
-            
             const materialEntries = [{binding:0, resource:{buffer:p.lipstickMaterialUniformBuffer}}];
             if (p.lipstickAlbedoTextureView) materialEntries.push({binding:1, resource:p.lipstickAlbedoTextureView}); else console.warn("AlbedoTV missing for MatBG");
             if (p.lipstickAlbedoSampler) materialEntries.push({binding:2, resource:p.lipstickAlbedoSampler}); else console.warn("Sampler missing for MatBG");
@@ -251,7 +245,6 @@ export default function LipstickMirrorLive_Clone() {
                 const numVertices = model.positions.length / 3;
                 const interleavedBufferData = new Float32Array(numVertices * 8); 
                 for (let i = 0; i < numVertices; i++) { let offset = i * 8; interleavedBufferData[offset++] = model.positions[i*3+0]; interleavedBufferData[offset++] = model.positions[i*3+1]; interleavedBufferData[offset++] = model.positions[i*3+2]; interleavedBufferData[offset++] = model.normals[i*3+0]; interleavedBufferData[offset++] = model.normals[i*3+1]; interleavedBufferData[offset++] = model.normals[i*3+2]; interleavedBufferData[offset++] = model.uvs[i*2+0]; interleavedBufferData[offset++] = model.uvs[i*2+1]; }
-                
                 p.lipModelVertexBuffer = deviceInternal.createBuffer({ label: "3DLipVB", size: interleavedBufferData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
                 deviceInternal.queue.writeBuffer(p.lipModelVertexBuffer, 0, interleavedBufferData);
                 let indicesData = model.indices; let dataToWriteToGpu = indicesData; let finalIndexByteLength = indicesData.byteLength;
@@ -261,7 +254,7 @@ export default function LipstickMirrorLive_Clone() {
                 if (model.indices instanceof Uint16Array) { p.lipModelIndexFormat = 'uint16'; } else if (model.indices instanceof Uint32Array) { p.lipModelIndexFormat = 'uint32'; } else { throw new Error("Unsupported index type."); }
                 p.lipModelNumIndices = model.indices.length;
                 console.log(`[LML_Clone 3DModel] Created VB (${numVertices}v) & IB (${p.lipModelNumIndices}i, ${p.lipModelIndexFormat})`);
-            } else { let m=[]; if(!model?.positions)m.push("pos");if(!model?.normals)m.push("norm");if(!model?.uvs)m.push("uv");if(!model?.indices)m.push("idx"); throw new Error(`Essential model data (${m.join()}) missing for GPU buffers.`); }
+            } else { let m=[]; if(!model?.positions)m.push("pos");if(!model?.normals)m.push("norm");if(!model?.uvs)m.push("uv");if(!model?.indices)m.push("idx"); throw new Error(`Essential model data (${m.join()}) missing for GPU buffers.`);  }
             
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); videoElement.srcObject = stream; await new Promise((res, rej) => { videoElement.onloadedmetadata = res; videoElement.onerror = () => rej(new Error("Video metadata error."));}); await videoElement.play();
             resizeObserverInternal = new ResizeObserver(resizeHandlerRef.current); resizeObserverInternal.observe(canvasElement);

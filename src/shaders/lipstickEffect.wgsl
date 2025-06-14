@@ -1,16 +1,16 @@
 // src/shaders/lipstickEffect.wgsl
 
-// Group 0: Scene Uniforms
+// Group 0: Scene Uniforms (for vertex shader)
 @group(0) @binding(0) var<uniform> sceneUniforms: SceneUniforms3D;
 struct SceneUniforms3D {
-  // We need separate matrices for correct lighting calculations in world space
   projectionMatrix: mat4x4f,
   viewMatrix: mat4x4f, 
-  // The 'modelMatrix' will be the transformation matrix from MediaPipe to place the lips
   modelMatrix: mat4x4f,
+  // For correct lighting on non-uniformly scaled models, a normalMatrix is better.
+  // normalMatrix: mat3x3f,
 };
 
-// Group 1: Material Properties
+// Group 1: Material Properties (for fragment shader)
 @group(1) @binding(0) var<uniform> materialUniforms: MaterialUniforms3D;
 @group(1) @binding(1) var u_albedoTexture: texture_2d<f32>;
 @group(1) @binding(2) var u_sampler: sampler;
@@ -20,15 +20,15 @@ struct MaterialUniforms3D {
   tintColor: vec4f,
 };
 
-// Group 2: Lighting Properties
+// Group 2: Lighting Properties (for fragment shader)
 @group(2) @binding(0) var<uniform> lightingUniforms: LightingParams3D;
 struct LightingParams3D {
-  lightDirection: vec3f, // Expect a direction FROM the light source
+  lightDirection: vec3f, // Direction FROM the light source
   ambientColor: vec4f,
   diffuseColor: vec4f,
-  // NEW: Camera position for specular highlights
-  cameraWorldPosition: vec3f,
+  cameraWorldPosition: vec3f, // For specular highlights
 };
+
 
 struct VertexInput3D {
   @location(0) position_model: vec3f,
@@ -47,24 +47,22 @@ struct VertexOutput3D {
 fn vert_main_3d(input: VertexInput3D) -> VertexOutput3D {
   var out: VertexOutput3D;
 
-  // Calculate world position by transforming model position with the model matrix
   let worldPos4 = sceneUniforms.modelMatrix * vec4f(input.position_model, 1.0);
   out.world_position = worldPos4.xyz;
 
-  // Calculate final clip space position
   let viewPos4 = sceneUniforms.viewMatrix * worldPos4;
   out.clip_position = sceneUniforms.projectionMatrix * viewPos4;
   
-  // To correctly transform normals, we should use the inverse transpose of the model matrix.
-  // This handles non-uniform scaling. For now, we simplify, assuming uniform scaling.
-  // A proper implementation would pass a mat3x3f 'normalMatrix'.
+  // To correctly transform normals for lighting, especially with non-uniform scaling,
+  // we should use the inverse transpose of the model matrix.
+  // For now, we simplify and assume uniform scaling, using just the rotation part.
+  // A proper solution would pass a pre-computed normalMatrix: mat3x3f.
   out.world_normal = normalize((sceneUniforms.modelMatrix * vec4f(input.normal_model, 0.0)).xyz);
   
   out.uv = input.uv_in;
 
   return out;
 }
-
 
 @fragment
 fn frag_main_3d(input: VertexOutput3D) -> @location(0) vec4f {
@@ -80,19 +78,16 @@ fn frag_main_3d(input: VertexOutput3D) -> @location(0) vec4f {
   // Remap normal from [0,1] texture range to [-1,1] vector range
   let tangentSpaceNormal = normalize((normalMapSample * 2.0) - 1.0);
 
-  // Use the interpolated geometric normal from the model as the base
-  let N_geom = normalize(input.world_normal);
-
-  // For now, we will use the geometric normal for lighting.
-  // The next step for ultra-realism would be to create a TBN matrix
-  // from the geometric normal, tangents, and bitangents, and use it
-  // to transform the tangentSpaceNormal into world space.
-  let N = N_geom; 
+  // Use the interpolated geometric normal from the model as the base for lighting.
+  // The next step for ultra-realism would be to create a TBN matrix in the vertex shader
+  // from the geometric normal, tangents, and bitangents, and use it here
+  // to transform the tangentSpaceNormal into world space. For now, this is a good step.
+  let N = normalize(input.world_normal); 
 
   // --- Lighting Calculation ---
-  let L = normalize(lightingUniforms.lightDirection); // Direction TO the light
-  let V = normalize(lightingUniforms.cameraWorldPosition - input.world_position); // Direction TO the camera
-  let H = normalize(L + V); // Halfway vector for Blinn-Phong specular
+  let L = normalize(lightingUniforms.lightDirection);
+  let V = normalize(lightingUniforms.cameraWorldPosition - input.world_position);
+  let H = normalize(L + V);
 
   // Ambient light
   let ambient = lightingUniforms.ambientColor.rgb * baseColor;
@@ -102,15 +97,14 @@ fn frag_main_3d(input: VertexOutput3D) -> @location(0) vec4f {
   let diffuse = lightingUniforms.diffuseColor.rgb * baseColor * lambertFactor;
   
   // Specular light (Blinn-Phong)
-  let specFactor = pow(max(dot(N, H), 0.0), 128.0); // Shininess factor (e.g., 32.0 for satin, 128.0 for gloss)
-  let specular = lightingUniforms.diffuseColor.rgb * specFactor * 0.5; // Modulate specular intensity
+  let specFactor = pow(max(dot(N, H), 0.0), 128.0); // High shininess factor
+  let specular = lightingUniforms.diffuseColor.rgb * specFactor * 0.7; // Modulate specular intensity
   
   var finalRgb = ambient + diffuse + specular;
 
-  // Basic gamma correction
+  // Simple gamma correction for a more realistic look
   finalRgb = pow(finalRgb, vec3f(1.0/2.2));
 
-  // Clamp to prevent oversaturation, though tone mapping is a better long-term solution
   finalRgb = clamp(finalRgb, vec3f(0.0), vec3f(1.0));
 
   return vec4f(finalRgb, baseAlpha);
