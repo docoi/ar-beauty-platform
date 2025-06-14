@@ -5,7 +5,7 @@ import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
-import { mat4, vec3 } from 'gl-matrix'; // Ensure gl-matrix is installed
+import { mat4, vec3 } from 'gl-matrix'; 
 
 const LIPSTICK_COLORS = [
   { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] },
@@ -50,8 +50,7 @@ export default function LipstickMirrorLive_Clone() {
 
   useEffect(() => {
     console.log("[LML_Clone 3DModel] Main useEffect (Final buffer write & depth texture).");
-    let deviceInternal = null; let contextInternal = null; let formatInternal = null;
-    let resizeObserverInternal = null; let renderLoopStartedInternal = false;
+    let deviceInternal = null, contextInternal = null, formatInternal = null; let resizeObserverInternal = null, renderLoopStartedInternal = false;
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
     if (!canvasElement || !videoElement) { setError("Canvas or Video element not found."); return; }
 
@@ -85,22 +84,17 @@ export default function LipstickMirrorLive_Clone() {
         if (pState.depthTexture.width !== currentContext.canvas.width || pState.depthTexture.height !== currentContext.canvas.height) { configureCanvasAndDepthTexture(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
 
         if (pState.aspectRatioUniformBuffer) {
+            // For video shader, write video dimensions to the start of the buffer
             const videoDimData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]);
             currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 0, videoDimData);
             
+            // For 3D model, write MVP matrix to an offset in the same buffer
             const projectionMatrix = mat4.create(); const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
-            mat4.perspective(projectionMatrix, (2 * Math.PI) / 5, canvasAspectRatio, 0.1, 100.0); // Basic perspective
+            mat4.perspective(projectionMatrix, (2 * Math.PI) / 5, canvasAspectRatio, 0.1, 100.0);
             const viewMatrix = mat4.create(); mat4.lookAt(viewMatrix, vec3.fromValues(0,0,1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
-            const modelMatrix = mat4.create(); // Identity model matrix - model at origin
-            
-            const mvpMatrix = mat4.create();
-            mat4.multiply(mvpMatrix, viewMatrix, modelMatrix);
-            mat4.multiply(mvpMatrix, projectionMatrix, mvpMatrix);
-
-            // Our UBO layout for aspectRatioGroupLayout uses a mat4x4<f32> which starts at offset 0.
-            // We need a separate UBO for video dimensions if they are structured differently.
-            // For now, let's just write the MVP matrix to the buffer assigned to the 3D model.
-            currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 0, mvpMatrix);
+            const modelMatrix = mat4.create(); 
+            const mvpMatrix = mat4.create(); mat4.multiply(mvpMatrix, viewMatrix, modelMatrix); mat4.multiply(mvpMatrix, projectionMatrix, mvpMatrix);
+            currentDevice.queue.writeBuffer(pState.aspectRatioUniformBuffer, 16 * Float32Array.BYTES_PER_ELEMENT, mvpMatrix); // Offset by 16 floats (placeholder for future split)
         }
         if (pState.lipstickMaterialUniformBuffer) { const colorData = new Float32Array(selectedColorForRenderRef.current); currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData); }
         if (pState.lightingUniformBuffer) { const lightDir = lightSettingsRef.current.direction; const ambientCol = lightSettingsRef.current.ambientColor; const diffuseCol = lightSettingsRef.current.diffuseColor; const lightingData = new Float32Array([ lightDir[0], lightDir[1], lightDir[2], 0.0, ambientCol[0], ambientCol[1], ambientCol[2], ambientCol[3], diffuseCol[0], diffuseCol[1], diffuseCol[2], diffuseCol[3] ]); currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData); }
@@ -113,7 +107,6 @@ export default function LipstickMirrorLive_Clone() {
         passEnc.setViewport(0, 0, currentGpuTexture.width, currentGpuTexture.height, 0, 1); passEnc.setScissorRect(0, 0, currentGpuTexture.width, currentGpuTexture.height);
         
         if (pState.videoPipeline && frameBindGroupForTexture && pState.aspectRatioBindGroup) { passEnc.setPipeline(pState.videoPipeline); passEnc.setBindGroup(0, frameBindGroupForTexture); passEnc.setBindGroup(1, pState.aspectRatioBindGroup); passEnc.draw(6); }
-        
         if (pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelAspectRatioBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelAspectRatioBindGroup); 
@@ -149,7 +142,7 @@ export default function LipstickMirrorLive_Clone() {
             if (primitiveJson.targets) { primitiveJson.targets.forEach((target, index) => { const targetPositions = target.POSITION !== undefined ? getAccessorDataFromGLTF(gltfJson, target.POSITION, mainBinaryBuffer) : null; targetsData.push({ positions: targetPositions, name: shapeKeyNames[index] || `target_${index}` }); }); }
             if (!positions) throw new Error("Positions missing after parse.");
             pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, targets: targetsData, shapeKeyNames };
-            console.log("[LML_Clone 3DModel] Mesh data extracted:", { numPos:positions?.length/3, numNorm:normals?.length/3, numUV:uvs?.length/2, numIdx:indices?.length });
+            console.log("[LML_Clone 3DModel] Mesh data extracted:", { hasPos:!!positions, numPos:positions?.length/3, hasNorm:!!normals, numNorm:normals?.length/3, hasUV:!!uvs, numUV:uvs?.length/2, hasIdx:!!indices, numIdx:indices?.length, numTargets: targetsData.length, names: shapeKeyNames });
             setDebugMessage("3D Model Parsed. Initializing GPU...");
         } catch (modelLoadError) { console.error("[LML_Clone 3DModel] Error loading/processing lip model:", modelLoadError); setError(`Model Load: ${modelLoadError.message.substring(0, 100)}`); setDebugMessage("Error: Model Load"); return;  }
 
@@ -178,18 +171,9 @@ export default function LipstickMirrorLive_Clone() {
             p.videoBindGroupLayout = layoutsAndPipelines.videoBindGroupLayout; p.aspectRatioGroupLayout = layoutsAndPipelines.aspectRatioGroupLayout;
             p.lipstickMaterialGroupLayout = layoutsAndPipelines.lipstickMaterialGroupLayout; p.lightingGroupLayout = layoutsAndPipelines.lightingGroupLayout;
             
-            // For simplicity, let's use a single UBO for the MVP matrix for the 3D model, as the video shader doesn't need it.
-            // The video aspect ratio logic will be handled differently or we use a separate UBO if needed.
-            // The pipeline layout for video only uses one bind group, so it won't conflict with the 3D model's UBO at group 0.
-            p.aspectRatioUniformBuffer = deviceInternal.createBuffer({ label: "MVP Matrix UB", size: 16 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            p.aspectRatioUniformBuffer = deviceInternal.createBuffer({ label: "VideoDim_MVP_UB", size: 20 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            p.aspectRatioBindGroup = deviceInternal.createBindGroup({ label: "VideoDim_BG", layout: p.aspectRatioGroupLayout, entries: [{binding:0, resource:{buffer: p.aspectRatioUniformBuffer}}]});
             p.lipModelAspectRatioBindGroup = deviceInternal.createBindGroup({ label: "MVP_Matrix_BG", layout: p.aspectRatioGroupLayout, entries: [{binding:0, resource:{buffer: p.aspectRatioUniformBuffer}}]});
-            
-            // We still need a separate UBO for the video aspect ratio if the video shader needs it at a different group.
-            // Let's create a separate simple UBO for the video.
-            const videoAspectRatioUBO = deviceInternal.createBuffer({label: "Video Aspect UBO", size: 4*4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST});
-            p.aspectRatioBindGroup = deviceInternal.createBindGroup({ label: "VideoDim_BG", layout: layoutsAndPipelines.aspectRatioGroupLayout, entries: [{binding:0, resource:{buffer: videoAspectRatioUBO}}]});
-
-
             p.lipstickMaterialUniformBuffer = deviceInternal.createBuffer({ label: "MaterialTint_UB", size: 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             p.lightingUniformBuffer = deviceInternal.createBuffer({ label: "Lighting_UB", size: 12 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             p.lipModelLightingBindGroup = deviceInternal.createBindGroup({ label: "Lighting_BG", layout: p.lightingGroupLayout, entries: [{binding:0, resource:{buffer:p.lightingUniformBuffer}}]});
@@ -212,15 +196,30 @@ export default function LipstickMirrorLive_Clone() {
                 p.lipModelVertexBuffer = deviceInternal.createBuffer({ label: "3DLipVB", size: interleavedBufferData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
                 deviceInternal.queue.writeBuffer(p.lipModelVertexBuffer, 0, interleavedBufferData);
 
-                p.lipModelIndexBuffer = deviceInternal.createBuffer({ label: "3DLipIB", size: model.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
-                deviceInternal.queue.writeBuffer(p.lipModelIndexBuffer, 0, model.indices);
+                // FINAL CORRECTED INDEX BUFFER HANDLING
+                let indicesData = model.indices;
+                let dataToWriteToGpu = indicesData;
+                let finalIndexByteLength = indicesData.byteLength;
+
+                if (indicesData.byteLength % 4 !== 0) {
+                    finalIndexByteLength = Math.ceil(indicesData.byteLength / 4) * 4;
+                    const paddedBuffer = new Uint8Array(finalIndexByteLength);
+                    paddedBuffer.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength));
+                    dataToWriteToGpu = paddedBuffer;
+                }
+
+                p.lipModelIndexBuffer = deviceInternal.createBuffer({ label: "3DLipIB", size: finalIndexByteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+                deviceInternal.queue.writeBuffer(p.lipModelIndexBuffer, 0, dataToWriteToGpu, 0, finalIndexByteLength);
 
                 if (model.indices instanceof Uint16Array) { p.lipModelIndexFormat = 'uint16'; } 
                 else if (model.indices instanceof Uint32Array) { p.lipModelIndexFormat = 'uint32'; } 
                 else { throw new Error("Unsupported index type for model.indices."); }
                 p.lipModelNumIndices = model.indices.length;
-                console.log(`[LML_Clone 3DModel] Created VB (${numVertices}v) & IB (${p.lipModelNumIndices}i, ${p.lipModelIndexFormat}) using writeBuffer.`);
-            } else { let missing=[]; if(!model?.positions)missing.push("pos");if(!model?.normals)missing.push("norm");if(!model?.uvs)missing.push("uv");if(!model?.indices)missing.push("idx"); throw new Error(`Essential model data (${missing.join()}) missing for GPU buffers.`);  }
+                console.log(`[LML_Clone 3DModel] Created VB (${numVertices}v) & IB (${p.lipModelNumIndices}i, format ${p.lipModelIndexFormat}) using writeBuffer. Padded IB size: ${finalIndexByteLength}`);
+            } else { 
+                let missing=[]; if(!model?.positions)missing.push("pos");if(!model?.normals)missing.push("norm");if(!model?.uvs)missing.push("uv");if(!model?.indices)missing.push("idx"); 
+                throw new Error(`Essential model data (${missing.join()}) missing for GPU buffers.`);  
+            }
             
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); videoElement.srcObject = stream; await new Promise((res, rej) => { videoElement.onloadedmetadata = res; videoElement.onerror = () => rej(new Error("Video metadata error."));}); await videoElement.play();
             resizeObserverInternal = new ResizeObserver(resizeHandlerRef.current); resizeObserverInternal.observe(canvasElement);
