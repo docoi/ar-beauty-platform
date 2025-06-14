@@ -9,7 +9,8 @@ async function createVideoBackgroundPipeline(device, format, videoBindGroupLayou
   try {
     return await device.createRenderPipeline({
       label: 'Video Background Pipeline',
-      // Group 0 for video texture, Group 1 for its aspect ratio data (from the scene UBO)
+      // Group 0 for video texture/sampler
+      // Group 1 for scene uniforms (which will contain video dimensions for this pipeline)
       layout: device.createPipelineLayout({ bindGroupLayouts: [videoBindGroupLayout, sceneUniformsGroupLayout] }),
       vertex: { module: videoModule, entryPoint: 'vert_main' },
       fragment: { module: videoModule, entryPoint: 'frag_main', targets: [{ format }] },
@@ -40,8 +41,8 @@ async function create3DLipModelPipeline(device, canvasFormat, sceneUniformsGroup
       label: '3D Lip Model Pipeline',
       layout: device.createPipelineLayout({ 
         bindGroupLayouts: [
-            sceneUniformsGroupLayout,      // Group 0: Scene Uniforms (MVP etc.)
-            lipstickMaterialGroupLayout, // Group 1: Material (Color tint, Textures, Sampler)
+            sceneUniformsGroupLayout,      // Group 0: Scene Uniforms (Matrices)
+            lipstickMaterialGroupLayout, // Group 1: Material (Color, Textures, Sampler)
             lightingGroupLayout          // Group 2: Lighting Uniforms
         ] 
       }),
@@ -99,8 +100,9 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
     ]
   });
 
-  // This single layout will be used for the UBO at group 0 for the 3D model (MVP)
-  // and at group 1 for the 2D video (aspect ratio)
+  // A single layout for a uniform buffer at binding 0.
+  // The video pipeline will use this for its aspect ratio data.
+  // The 3D model pipeline will use this for its MVP/scene matrix data.
   const sceneUniformsGroupLayout = device.createBindGroupLayout({
     label: 'Scene Uniforms BGL (MVP / AspectRatio)',
     entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' }}]
@@ -142,8 +144,7 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
     videoPipeline, 
     lipModelPipeline, 
     videoBindGroupLayout, 
-    // Return a single layout for scene uniforms that both pipelines can use
-    sceneUniformsGroupLayout, 
+    sceneUniformsGroupLayout,
     lipstickMaterialGroupLayout, 
     lightingGroupLayout 
   };
