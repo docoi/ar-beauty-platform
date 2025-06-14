@@ -1,79 +1,31 @@
 // src/shaders/lipstickEffect.wgsl
 
-//--------------------------------------------------------------------
-// Placeholder/Original 2D Shaders (Currently Unused for 3D Model)
-// We might remove these later or keep them if we ever need a 2D fallback.
-//--------------------------------------------------------------------
-/*
-struct AspectRatios_2D_DEPRECATED {
-    videoDimensions: vec2f,
-    canvasDimensions: vec2f
-};
-@group(0) @binding(0) var<uniform> aspectRatiosUniform_2D_DEPRECATED: AspectRatios_2D_DEPRECATED;
-
-struct LipstickMaterial_2D_DEPRECATED {
-    color: vec4f,
-};
-@group(1) @binding(0) var<uniform> lipstickMaterialUniform_2D_DEPRECATED: LipstickMaterial_2D_DEPRECATED;
-
-struct VertexInput_2D_DEPRECATED {
-  @location(0) pos: vec2f,
-};
-struct VertexOutput_2D_DEPRECATED {
-  @builtin(position) position: vec4f,
-};
-
-@vertex
-fn vert_main_2d_placeholder(input: VertexInput_2D_DEPRECATED) -> VertexOutput_2D_DEPRECATED {
-  var out: VertexOutput_2D_DEPRECATED;
-  // Basic pass-through for 2D vertices, aspect correction if needed
-  // This is not the 3D model path
-  out.position = vec4f(input.pos, 0.0, 1.0);
-  return out;
-}
-
-@fragment
-fn frag_main_2d_placeholder() -> @location(0) vec4f {
-  // return lipstickMaterialUniform_2D_DEPRECATED.color;
-  return vec4f(0.0, 1.0, 1.0, 0.7); // Cyan, if ever used
-}
-*/
-
-//--------------------------------------------------------------------
-// NEW Shaders for 3D Lip Model
-//--------------------------------------------------------------------
-
 // Group 0: Scene Uniforms (for vertex shader)
-// This will contain the Model-View-Projection matrix.
-// In createPipelines.js, this group will use 'aspectRatioGroupLayout'.
-// In LipstickMirrorLive_Clone.jsx, 'aspectRatioUniformBuffer' will hold this data.
 @group(0) @binding(0) var<uniform> sceneUniforms: SceneUniforms3D;
 struct SceneUniforms3D {
-  mvpMatrix: mat4x4f, // Model-View-Projection Matrix
-  // We could also put modelMatrix, viewMatrix, projectionMatrix separately if needed
-  // For more complex lighting (e.g., in world space)
+  projectionMatrix: mat4x4f,
+  viewMatrix: mat4x4f,
+  modelMatrix: mat4x4f,
 };
 
 // Group 1: Material Properties (for fragment shader)
-// This will contain tint color, albedo texture, sampler, normal texture.
-// In createPipelines.js, this group will use 'lipstickMaterialGroupLayout'.
 @group(1) @binding(0) var<uniform> materialUniforms: MaterialUniforms3D;
 @group(1) @binding(1) var u_albedoTexture: texture_2d<f32>;
-@group(1) @binding(2) var u_sampler: sampler; // Sampler for albedo and normal map
+@group(1) @binding(2) var u_sampler: sampler;
 @group(1) @binding(3) var u_normalTexture: texture_2d<f32>;
 
 struct MaterialUniforms3D {
-  tintColor: vec4f, 
+  tintColor: vec4f,
 };
 
 // Group 2: Lighting Properties (for fragment shader)
-// In createPipelines.js, this group will use 'lightingGroupLayout'.
 @group(2) @binding(0) var<uniform> lightingUniforms: LightingParams3D;
 struct LightingParams3D {
   direction: vec3f, 
   ambientColor: vec4f,
   diffuseColor: vec4f,
 };
+
 
 // Input attributes for the 3D model's vertex shader
 struct VertexInput3D {
@@ -86,9 +38,8 @@ struct VertexInput3D {
 struct VertexOutput3D {
   @builtin(position) clip_position: vec4f,
   @location(0) uv: vec2f,
-  // For simplified shading initially, we might not pass normals if fragment shader doesn't use them
-  // @location(1) world_normal: vec3f, 
-  // @location(2) world_position: vec3f,
+  @location(1) world_normal: vec3f,
+  @location(2) world_position: vec3f,
 };
 
 // --- Vertex Shader for 3D Model ---
@@ -96,49 +47,81 @@ struct VertexOutput3D {
 fn vert_main_3d(input: VertexInput3D) -> VertexOutput3D {
   var out: VertexOutput3D;
 
-  // Transform vertex position by MVP matrix
-  out.clip_position = sceneUniforms.mvpMatrix * vec4f(input.position_model, 1.0);
+  // Calculate world position
+  let worldPos4 = sceneUniforms.modelMatrix * vec4f(input.position_model, 1.0);
+  out.world_position = worldPos4.xyz;
+
+  // Calculate clip space position
+  let viewPos4 = sceneUniforms.viewMatrix * worldPos4;
+  out.clip_position = sceneUniforms.projectionMatrix * viewPos4;
+  
+  // Calculate world normal
+  // Use inverse-transpose of model matrix for normals to handle non-uniform scaling correctly.
+  // For now, we assume uniform scaling and just use the model matrix's rotation part.
+  // This is a common simplification but can be improved.
+  // A proper solution would be to pass a pre-computed normalMatrix.
+  out.world_normal = normalize((sceneUniforms.modelMatrix * vec4f(input.normal_model, 0.0)).xyz);
   
   // Pass through UV coordinates
   out.uv = input.uv_in;
 
-  // For this simplified test, we are not passing normals or world positions yet,
-  // as the fragment shader will output a solid color.
-  // We will re-add these when we implement proper lighting for the 3D model.
-  // out.world_normal = normalize((sceneUniforms.modelMatrix * vec4f(input.normal_model, 0.0)).xyz);
-  // out.world_position = (sceneUniforms.modelMatrix * vec4f(input.position_model, 1.0)).xyz;
-
   return out;
 }
 
-// --- Fragment Shader for 3D Model (Simplified for testing geometry) ---
+// --- Fragment Shader for 3D Model (Full PBR-like shading) ---
 @fragment
 fn frag_main_3d(input: VertexOutput3D) -> @location(0) vec4f {
-  // For initial testing, just output a solid bright color to see if the mesh renders.
-  // We ignore textures, lighting, and UVs for this first test.
-  return vec4f(1.0, 0.0, 1.0, 1.0); // Bright Magenta, fully opaque
-  
-  // ---- Later, we will re-enable this full shading: ----
-  /*
+  // Sample the albedo (base color) texture
   let albedoSample = textureSample(u_albedoTexture, u_sampler, input.uv);
   let baseColor = albedoSample.rgb * materialUniforms.tintColor.rgb;
   let baseAlpha = albedoSample.a * materialUniforms.tintColor.a;
 
+  // Sample the normal map and convert from [0,1] texture range to [-1,1] vector range
   let normalMapSample = textureSample(u_normalTexture, u_sampler, input.uv).rgb;
   let tangentSpaceNormal = normalize((normalMapSample * 2.0) - 1.0);
-  
-  // TODO: Proper TBN transformation for tangentSpaceNormal to get N_for_lighting
-  // For now, using a placeholder or simplified assumption if input.world_normal was passed
-  let N_for_lighting = normalize(input.world_normal); // Or derived from tangentSpaceNormal
 
-  let L = normalize(lightingUniforms.direction.xyz);
+  // --- Normal Processing ---
+  // For now, we are using a simplified assumption that the normal map can be used directly
+  // as if it's in view/world space for a camera-facing object.
+  // This is the area to improve with a full TBN matrix for perfect lighting.
+  // We'll use the geometric normal passed from the vertex shader, perturbed by the map.
+  // Since our base normal is just the model normal transformed, let's use that as the base.
+  let N_geom = normalize(input.world_normal);
+
+  // A very simplified perturbation. A proper implementation needs TBN matrix.
+  // Let's assume the geometric normal (N_geom) is mostly pointing along some Z axis,
+  // and we'll use the normal map to push it along X and Y.
+  // This is a VISUAL APPROXIMATION.
+  // For a robust solution, we would build a TBN matrix in the vertex shader.
+  // For now, we'll try a simpler approach that may work for our setup.
+  // Let's directly use the transformed geometric normal for now, and apply normal map later if this works.
+  let N = N_geom; // Use the vertex normal for now to ensure lighting works first.
+  
+  // Once the above works, we can try to use the tangentSpaceNormal.
+  // let N = tangentSpaceNormal; // This is a common "cheat" that assumes object is camera-aligned.
+
+  // --- Lighting Calculation ---
+  let L = normalize(lightingUniforms.direction.xyz); // Light direction
+  let V = normalize(vec3f(0.0, 0.0, 1.0) - input.world_position); // View direction (assuming camera at 0,0,1 in view space, needs camera position uniform for world space)
+  
+  // Ambient light
   let ambient = lightingUniforms.ambientColor.rgb * baseColor;
-  let lambertFactor = max(dot(N_for_lighting, L), 0.0);
+
+  // Diffuse light (Lambertian)
+  let lambertFactor = max(dot(N, L), 0.0);
   let diffuse = lightingUniforms.diffuseColor.rgb * baseColor * lambertFactor;
   
-  var finalRgb = ambient + diffuse;
+  // Specular light (Blinn-Phong)
+  let H = normalize(L + V); // Halfway vector
+  let specFactor = pow(max(dot(N, H), 0.0), 64.0); // 64.0 is shininess factor
+  let specular = lightingUniforms.diffuseColor.rgb * specFactor; // Specular highlights are often white/light color
+  
+  var finalRgb = ambient + diffuse + specular;
+
+  // Simple gamma correction approximation
+  finalRgb = pow(finalRgb, vec3f(1.0/2.2));
+
   finalRgb = clamp(finalRgb, vec3f(0.0), vec3f(1.0));
 
   return vec4f(finalRgb, baseAlpha);
-  */
 }
