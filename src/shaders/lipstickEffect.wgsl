@@ -6,8 +6,6 @@ struct SceneUniforms3D {
   projectionMatrix: mat4x4f,
   viewMatrix: mat4x4f, 
   modelMatrix: mat4x4f,
-  // For correct lighting on non-uniformly scaled models, a normalMatrix is better.
-  // normalMatrix: mat3x3f,
 };
 
 // Group 1: Material Properties (for fragment shader)
@@ -23,12 +21,13 @@ struct MaterialUniforms3D {
 // Group 2: Lighting Properties (for fragment shader)
 @group(2) @binding(0) var<uniform> lightingUniforms: LightingParams3D;
 struct LightingParams3D {
-  lightDirection: vec3f, // Direction FROM the light source
+  lightDirection: vec3f,
+  // vec3 is padded to 16 bytes, so we add a dummy float in JS
   ambientColor: vec4f,
   diffuseColor: vec4f,
-  cameraWorldPosition: vec3f, // For specular highlights
+  cameraWorldPosition: vec3f,
+  // Another dummy float for padding
 };
-
 
 struct VertexInput3D {
   @location(0) position_model: vec3f,
@@ -53,10 +52,9 @@ fn vert_main_3d(input: VertexInput3D) -> VertexOutput3D {
   let viewPos4 = sceneUniforms.viewMatrix * worldPos4;
   out.clip_position = sceneUniforms.projectionMatrix * viewPos4;
   
-  // To correctly transform normals for lighting, especially with non-uniform scaling,
-  // we should use the inverse transpose of the model matrix.
-  // For now, we simplify and assume uniform scaling, using just the rotation part.
-  // A proper solution would pass a pre-computed normalMatrix: mat3x3f.
+  // To correctly transform normals for lighting, we should use the inverse transpose of the model matrix.
+  // For now, we simplify and assume uniform scaling, using just the model matrix's rotation.
+  // A proper solution passes a pre-computed normalMatrix: mat3x3f.
   out.world_normal = normalize((sceneUniforms.modelMatrix * vec4f(input.normal_model, 0.0)).xyz);
   
   out.uv = input.uv_in;
@@ -78,33 +76,25 @@ fn frag_main_3d(input: VertexOutput3D) -> @location(0) vec4f {
   // Remap normal from [0,1] texture range to [-1,1] vector range
   let tangentSpaceNormal = normalize((normalMapSample * 2.0) - 1.0);
 
-  // Use the interpolated geometric normal from the model as the base for lighting.
-  // The next step for ultra-realism would be to create a TBN matrix in the vertex shader
-  // from the geometric normal, tangents, and bitangents, and use it here
-  // to transform the tangentSpaceNormal into world space. For now, this is a good step.
+  // For now, use the geometric normal for stability. Normal map perturbation is a later refinement.
   let N = normalize(input.world_normal); 
-
+  
   // --- Lighting Calculation ---
-  let L = normalize(lightingUniforms.lightDirection);
-  let V = normalize(lightingUniforms.cameraWorldPosition - input.world_position);
-  let H = normalize(L + V);
+  let L = normalize(lightingUniforms.lightDirection); // Direction TO the light
+  let V = normalize(lightingUniforms.cameraWorldPosition - input.world_position); // Direction TO the camera
+  let H = normalize(L + V); // Halfway vector for Blinn-Phong specular
 
-  // Ambient light
   let ambient = lightingUniforms.ambientColor.rgb * baseColor;
-
-  // Diffuse light (Lambertian)
   let lambertFactor = max(dot(N, L), 0.0);
   let diffuse = lightingUniforms.diffuseColor.rgb * baseColor * lambertFactor;
   
-  // Specular light (Blinn-Phong)
-  let specFactor = pow(max(dot(N, H), 0.0), 128.0); // High shininess factor
+  let specFactor = pow(max(dot(N, H), 0.0), 128.0); // High shininess
   let specular = lightingUniforms.diffuseColor.rgb * specFactor * 0.7; // Modulate specular intensity
   
   var finalRgb = ambient + diffuse + specular;
 
-  // Simple gamma correction for a more realistic look
+  // Simple gamma correction
   finalRgb = pow(finalRgb, vec3f(1.0/2.2));
-
   finalRgb = clamp(finalRgb, vec3f(0.0), vec3f(1.0));
 
   return vec4f(finalRgb, baseAlpha);
