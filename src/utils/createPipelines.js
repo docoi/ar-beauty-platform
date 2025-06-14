@@ -70,12 +70,14 @@ async function create3DLipModelPipeline(device, canvasFormat, aspectRatioGroupLa
           }
         }],
       },
-      primitive: { topology: 'triangle-list' },
+      primitive: { 
+        topology: 'triangle-list',
+        cullMode: 'back', // Standard for 3D: don't render back-facing triangles
+      },
       depthStencil: {
         depthWriteEnabled: true,
         depthCompare: 'less', // Standard depth comparison
-        format: 'depth24plus', // Common depth format. Ensure render pass uses this.
-        // format: 'depth32float', // Alternative if higher precision is needed and supported
+        format: 'depth24plus', // Must match the format of the depth texture view
       },
     });
     console.log("[createPipelines] 3D Lip Model pipeline CREATED successfully.");
@@ -87,6 +89,7 @@ async function create3DLipModelPipeline(device, canvasFormat, aspectRatioGroupLa
 }
 
 export default async function createPipelines(device, canvasFormat, is3DModelMode = false) {
+  // Common Bind Group Layouts definitions
   const videoBindGroupLayout = device.createBindGroupLayout({
     label: 'Video Texture BGL',
     entries: [
@@ -96,7 +99,7 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
   });
 
   const aspectRatioGroupLayout = device.createBindGroupLayout({
-    label: 'Aspect Ratio / MVP BGL',
+    label: 'Aspect Ratio / MVP BGL', // Used for video dims OR MVP matrix
     entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' }}]
   });
 
@@ -126,12 +129,10 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
     console.log("[createPipelines] is3DModelMode is true. Attempting to create 3D Lip Model pipeline...");
     lipModelPipeline = await create3DLipModelPipeline(device, canvasFormat, aspectRatioGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
     if (!lipModelPipeline) {
-        // This log is important if it still fails
         console.error("[createPipelines] FATAL: 3D Lip Model pipeline creation returned null/undefined!");
     }
   }
   
-  // Log what is being returned for lipModelPipeline
   console.log("[createPipelines] Returning lipModelPipeline:", lipModelPipeline ? "Pipeline Object" : lipModelPipeline);
 
   return { 
