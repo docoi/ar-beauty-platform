@@ -101,7 +101,7 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
   });
 
   const sceneUniformsGroupLayout = device.createBindGroupLayout({
-    label: 'Scene Uniforms BGL (MVP / AspectRatio)',
+    label: 'Scene Uniforms BGL (Matrices / AspectRatio)',
     entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' }}]
   });
 
