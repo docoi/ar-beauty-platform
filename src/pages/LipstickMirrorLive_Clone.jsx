@@ -64,7 +64,7 @@ export default function LipstickMirrorLive_Clone() {
   useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect (Final static render attempt).");
+    console.log("[LML_Clone 3DModel] Main useEffect (Simplified MVP for visibility test).");
     let deviceInternal = null, contextInternal = null, formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
@@ -103,26 +103,28 @@ export default function LipstickMirrorLive_Clone() {
         
         const now = performance.now();
         const landmarkerResult = activeLandmarker?.detectForVideo(currentVideoEl, now);
-        const hasFace = landmarkerResult && landmarkerResult.faceLandmarks.length > 0 && landmarkerResult.facialTransformationMatrixes?.length > 0;
+        const hasFace = landmarkerResult && landmarkerResult.faceLandmarks.length > 0;
 
+        // Update video aspect ratio UBO
         if (pState.videoAspectRatioUBO) {
             const videoDimData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]);
             currentDevice.queue.writeBuffer(pState.videoAspectRatioUBO, 0, videoDimData);
         }
         
-        if (pState.lipModelMatrixUBO && hasFace) {
-            const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
+        // Update 3D model MVP matrix UBO
+        if (pState.lipModelMatrixUBO) {
             const projectionMatrix = mat4.create();
-            mat4.perspective(projectionMatrix, 75 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
-
+            const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
+            mat4.perspective(projectionMatrix, 75 * Math.PI / 180, canvasAspectRatio, 0.01, 100.0);
+            
             const viewMatrix = mat4.create();
-            mat4.lookAt(viewMatrix, vec3.fromValues(0,0,1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
+            mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 0.1), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
             
-            let modelMatrix = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-            const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
-            mat4.multiply(modelMatrix, flipYZ, modelMatrix);
+            // DEBUGGING: Use a simple identity matrix to place the model at the world origin
+            const modelMatrix = mat4.create(); 
+            mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.3, 0.3, 0.3));
             
-            const sceneMatrices = new Float32Array(16 * 3); // 3 mat4s
+            const sceneMatrices = new Float32Array(16 * 3);
             sceneMatrices.set(projectionMatrix, 0);
             sceneMatrices.set(viewMatrix, 16);
             sceneMatrices.set(modelMatrix, 32);
@@ -145,6 +147,7 @@ export default function LipstickMirrorLive_Clone() {
         passEnc.setViewport(0, 0, currentGpuTexture.width, currentGpuTexture.height, 0, 1);
         passEnc.setScissorRect(0, 0, currentGpuTexture.width, currentGpuTexture.height);
         
+        // Re-enable video drawing
         if (pState.videoPipeline && frameBindGroupForTexture && pState.videoAspectRatioBindGroup) {
             passEnc.setPipeline(pState.videoPipeline);
             passEnc.setBindGroup(0, frameBindGroupForTexture);
@@ -152,7 +155,8 @@ export default function LipstickMirrorLive_Clone() {
             passEnc.draw(6);
         }
         
-        if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelMatrixBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
+        // Draw 3D Lip Model. We draw it even if no face is detected for this debug step.
+        if (pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelMatrixBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
             passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
@@ -195,6 +199,7 @@ export default function LipstickMirrorLive_Clone() {
         setDebugMessage("Initializing WebGPU...");
         try {
             const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+            // We need facialTransformationMatrixes for tracking
             const lmInstance = await FaceLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: '/models/face_landmarker.task', delegate: 'GPU' }, outputFaceLandmarks: true, outputFacialTransformationMatrixes: true, runningMode: 'VIDEO', numFaces: 1 });
             landmarkerRef.current = lmInstance; setLandmarkerState(lmInstance);
             const adapter = await navigator.gpu.requestAdapter(); if (!adapter) throw new Error("No adapter.");
@@ -218,12 +223,13 @@ export default function LipstickMirrorLive_Clone() {
             p.lipstickMaterialGroupLayout = layoutsAndPipelines.lipstickMaterialGroupLayout;
             p.lightingGroupLayout = layoutsAndPipelines.lightingGroupLayout;
             
+            // Separate UBOs for clarity
             p.videoAspectRatioUBO = deviceInternal.createBuffer({ label: "Video Aspect UBO", size: 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             p.videoAspectRatioBindGroup = deviceInternal.createBindGroup({ label: "VideoDim_BG", layout: p.sceneUniformsGroupLayout, entries: [{binding:0, resource:{buffer: p.videoAspectRatioUBO}}]});
             
             p.lipModelMatrixUBO = deviceInternal.createBuffer({ label: "Scene Matrix UB", size: (16 + 16 + 16) * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             p.lipModelMatrixBindGroup = deviceInternal.createBindGroup({ label: "SceneMatrix_BG", layout: p.sceneUniformsGroupLayout, entries: [{binding:0, resource:{buffer: p.lipModelMatrixUBO}}]});
-            
+
             p.lipstickMaterialUniformBuffer = deviceInternal.createBuffer({ label: "MaterialTint_UB", size: 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             p.lightingUniformBuffer = deviceInternal.createBuffer({ label: "Lighting_UB", size: (4 + 4 + 4) * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             p.lipModelLightingBindGroup = deviceInternal.createBindGroup({ label: "Lighting_BG", layout: p.lightingGroupLayout, entries: [{binding:0, resource:{buffer:p.lightingUniformBuffer}}]});
