@@ -121,9 +121,9 @@ export default function LipstickMirrorLive_Clone() {
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(modelMatrix, flipYZ, mediaPipeMatrix);
                 const localAdjustmentMatrix = mat4.create();
-                const scaleFactor = 0.055;
+                const scaleFactor = 0.007;
                 mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0, -0.04, 0.05));
+                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0.0, -5.0, 10.0));
                 mat4.multiply(modelMatrix, modelMatrix, localAdjustmentMatrix);
             }
             
