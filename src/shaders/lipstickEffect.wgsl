@@ -22,7 +22,7 @@ struct MaterialUniforms3D {
 @group(2) @binding(0) var<uniform> lightingUniforms: LightingParams3D;
 struct LightingParams3D {
   lightDirection: vec3f,
-  // vec3 is padded to 16 bytes in JS, so there's a 4-byte gap here
+  // Note: vec3 is padded to 16 bytes in JS, so there's a 4-byte gap here
   ambientColor: vec4f,
   diffuseColor: vec4f,
   cameraWorldPosition: vec3f,
@@ -52,8 +52,8 @@ fn vert_main_3d(input: VertexInput3D) -> VertexOutput3D {
   let viewPos4 = sceneUniforms.viewMatrix * worldPos4;
   out.clip_position = sceneUniforms.projectionMatrix * viewPos4;
   
-  // To correctly transform normals for lighting, we should use the inverse transpose of the model matrix.
-  // For now, we simplify and assume uniform scaling, using just the model matrix's rotation part.
+  // To correctly transform normals, a mat3x3f normalMatrix (inverse transpose of model) is best.
+  // For now, assuming uniform scaling allows this simplification.
   out.world_normal = normalize((sceneUniforms.modelMatrix * vec4f(input.normal_model, 0.0)).xyz);
   
   out.uv = input.uv_in;
@@ -63,31 +63,27 @@ fn vert_main_3d(input: VertexInput3D) -> VertexOutput3D {
 
 @fragment
 fn frag_main_3d(input: VertexOutput3D) -> @location(0) vec4f {
-  // Sample textures
   let albedoSample = textureSample(u_albedoTexture, u_sampler, input.uv);
-  let normalMapSample = textureSample(u_normalTexture, u_sampler, input.uv).rgb;
-
-  // Combine albedo texture with tint color from the color swatch
   let baseColor = albedoSample.rgb * materialUniforms.tintColor.rgb;
   let baseAlpha = albedoSample.a * materialUniforms.tintColor.a;
 
-  // Use the interpolated geometric normal from the model for lighting.
+  // For this test, we will use the geometric normal from the model for lighting stability.
+  // The next step for more realism would be to use the normal map.
   let N = normalize(input.world_normal); 
 
-  // --- Lighting Calculation ---
-  let L = normalize(lightingUniforms.lightDirection); // Direction TO the light
-  let V = normalize(lightingUniforms.cameraWorldPosition - input.world_position); // Direction TO the camera
-  let H = normalize(L + V); // Halfway vector for Blinn-Phong specular
+  let L = normalize(lightingUniforms.lightDirection);
+  let V = normalize(lightingUniforms.cameraWorldPosition - input.world_position);
+  let H = normalize(L + V);
 
   let ambient = lightingUniforms.ambientColor.rgb * baseColor;
   let lambertFactor = max(dot(N, L), 0.0);
   let diffuse = lightingUniforms.diffuseColor.rgb * baseColor * lambertFactor;
   
-  let specFactor = pow(max(dot(N, H), 0.0), 128.0); // High shininess factor
+  let specFactor = pow(max(dot(N, H), 0.0), 128.0);
   let specular = lightingUniforms.diffuseColor.rgb * specFactor * 0.7;
   
   var finalRgb = ambient + diffuse + specular;
-  finalRgb = pow(finalRgb, vec3f(1.0/2.2)); // Gamma correction
+  finalRgb = pow(finalRgb, vec3f(1.0/2.2));
   finalRgb = clamp(finalRgb, vec3f(0.0), vec3f(1.0));
 
   return vec4f(finalRgb, baseAlpha);

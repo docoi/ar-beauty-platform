@@ -3,6 +3,7 @@
 import videoShaderSource from '@/shaders/videoBackground.wgsl?raw';
 import lipstickShaderSource from '@/shaders/lipstickEffect.wgsl?raw';
 
+// Pipeline for rendering the 2D video background
 async function createVideoBackgroundPipeline(device, format, videoBindGroupLayout, videoAspectRatioGroupLayout) {
   const videoModule = device.createShaderModule({ label: 'Video BG Shader Module', code: videoShaderSource });
   try {
@@ -12,10 +13,17 @@ async function createVideoBackgroundPipeline(device, format, videoBindGroupLayou
       vertex: { module: videoModule, entryPoint: 'vert_main' },
       fragment: { module: videoModule, entryPoint: 'frag_main', targets: [{ format }] },
       primitive: { topology: 'triangle-list' },
+      // CRITICAL FIX: Add depthStencil state to make it compatible with the render pass
+      depthStencil: {
+        depthWriteEnabled: false, // The background shouldn't write to the depth buffer
+        depthCompare: 'always',   // Always draw the background
+        format: 'depth24plus',
+      },
     });
   } catch (e) { console.error("ERROR creating Video BG Pipeline:", e); return null; }
 }
 
+// Pipeline for rendering the 3D Lip Model
 async function create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
   let modelShaderModule;
   try {
@@ -50,6 +58,7 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
   const lipModelMatrixGroupLayout = device.createBindGroupLayout({ label: 'Lip Model Matrix BGL', entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' }}] });
   const lipstickMaterialGroupLayout = device.createBindGroupLayout({ label: 'Lipstick Material BGL', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }, { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }, { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }, { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } } ] });
   const lightingGroupLayout = device.createBindGroupLayout({ label: 'Lighting BGL', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } } ] });
+  
   console.log("[createPipelines] All Bind Group Layouts created.");
 
   const videoPipeline = await createVideoBackgroundPipeline(device, canvasFormat, videoBindGroupLayout, videoAspectRatioGroupLayout);
@@ -58,6 +67,8 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
     lipModelPipeline = await create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
   }
   
+  console.log("[createPipelines] Returning pipelines. Lip Model Pipeline is:", lipModelPipeline ? "OK" : "null");
+
   return { 
     videoPipeline, lipModelPipeline, videoBindGroupLayout, videoAspectRatioGroupLayout,
     lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout 
