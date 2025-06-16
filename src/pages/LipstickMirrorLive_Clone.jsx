@@ -52,9 +52,7 @@ export default function LipstickMirrorLive_Clone() {
     lipstickAlbedoTexture: null, lipstickAlbedoTextureView: null,
     lipstickNormalTexture: null, lipstickNormalTextureView: null,
     lipstickAlbedoSampler: null,
-    lipModelData: null, 
-    lipModelVertexBuffer: null, // This will become an object: { positions, normals, uvs }
-    lipModelIndexBuffer: null,
+    lipModelData: null, lipModelVertexBuffer: null, lipModelIndexBuffer: null,
     lipModelIndexFormat: 'uint16', lipModelNumIndices: 0,
     lipModelPipeline: null, lipModelMaterialBindGroup: null,
     lipModelMatrixGroupLayout: null, lipModelMatrixUBO: null, lipModelMatrixBindGroup: null,
@@ -65,7 +63,7 @@ export default function LipstickMirrorLive_Clone() {
   useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect (Separate Vertex Buffers Test).");
+    console.log("[LML_Clone 3DModel] Main useEffect (Corrected Matrix Multiplication Order).");
     let deviceInternal = null, contextInternal = null, formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
@@ -112,19 +110,31 @@ export default function LipstickMirrorLive_Clone() {
             const projectionMatrix = mat4.create();
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
             mat4.perspective(projectionMatrix, 75 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
+            
             const viewMatrix = mat4.create();
-            mat4.lookAt(viewMatrix, vec3.fromValues(0,0,0.1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
+            mat4.lookAt(viewMatrix, vec3.fromValues(0,0,1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
             
             let modelMatrix = mat4.create();
             if(hasFace) {
-                const mediaPipeMatrix = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+                const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+                
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
-                mat4.multiply(modelMatrix, flipYZ, mediaPipeMatrix);
-                const localAdjustmentMatrix = mat4.create();
-                const scaleFactor = 0.007;
-                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0.0, -5.0, 10.0));
-                mat4.multiply(modelMatrix, modelMatrix, localAdjustmentMatrix);
+                mat4.multiply(faceTransform, flipYZ, faceTransform);
+
+                // --- CORRECTED ADJUSTMENT LOGIC ---
+                const scaleMatrix = mat4.create();
+                const translationMatrix = mat4.create();
+
+                // 1. Scale the model down FIRST.
+                const scaleFactor = 0.06;
+                mat4.fromScaling(scaleMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
+                
+                // 2. Translate the model.
+                mat4.fromTranslation(translationMatrix, vec3.fromValues(0.0, -0.04, 0));
+
+                // 3. Combine transformations: Final = FacePose * Translation * Scale
+                mat4.multiply(modelMatrix, translationMatrix, scaleMatrix);
+                mat4.multiply(modelMatrix, faceTransform, modelMatrix);
             }
             
             const sceneMatrices = new Float32Array(16 * 3);
@@ -158,12 +168,9 @@ export default function LipstickMirrorLive_Clone() {
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
             passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
             passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);   
-            
-            // Set the 3 separate vertex buffers
             passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer.positions);
             passEnc.setVertexBuffer(1, pState.lipModelVertexBuffer.normals);
             passEnc.setVertexBuffer(2, pState.lipModelVertexBuffer.uvs);
-
             passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
             passEnc.drawIndexed(pState.lipModelNumIndices);
         }
@@ -250,13 +257,10 @@ export default function LipstickMirrorLive_Clone() {
             if (model && model.positions && model.normals && model.uvs && model.indices) {
                 const positionBuffer = deviceInternal.createBuffer({ label: "3DLip_PositionBuffer", size: model.positions.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
                 deviceInternal.queue.writeBuffer(positionBuffer, 0, model.positions);
-
                 const normalBuffer = deviceInternal.createBuffer({ label: "3DLip_NormalBuffer", size: model.normals.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
                 deviceInternal.queue.writeBuffer(normalBuffer, 0, model.normals);
-
                 const uvBuffer = deviceInternal.createBuffer({ label: "3DLip_UVBuffer", size: model.uvs.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
                 deviceInternal.queue.writeBuffer(uvBuffer, 0, model.uvs);
-                
                 p.lipModelVertexBuffer = { positions: positionBuffer, normals: normalBuffer, uvs: uvBuffer };
                 
                 let indicesData = model.indices; let dataToWriteToGpu = indicesData; let finalIndexByteLength = indicesData.byteLength;
