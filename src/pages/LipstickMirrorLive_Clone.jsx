@@ -54,14 +54,23 @@ export default function LipstickMirrorLive_Clone() {
             let modelMatrix = mat4.create();
             if(hasFace) {
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+                
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(faceTransform, flipYZ, faceTransform);
-                const translationMatrix = mat4.create(); mat4.fromTranslation(translationMatrix, vec3.fromValues(0.0, -0.04, 0));
-                const scaleMatrix = mat4.create(); const scaleFactor = 0.06;
+
+                const translationMatrix = mat4.create();
+                // Move it down slightly to where lips would be. Tweak this Y value.
+                mat4.fromTranslation(translationMatrix, vec3.fromValues(0.0, -0.04, 0));
+
+                const scaleMatrix = mat4.create();
+                // This is the most important value. If still spiky, make it smaller.
+                const scaleFactor = 0.06; 
                 mat4.fromScaling(scaleMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-                const localAdjustmentMatrix = mat4.create();
-                mat4.multiply(localAdjustmentMatrix, translationMatrix, scaleMatrix);
-                mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
+                
+                // Correct order: Final Matrix = FacePose * Translation * Scale
+                const localTransform = mat4.create();
+                mat4.multiply(localTransform, translationMatrix, scaleMatrix);
+                mat4.multiply(modelMatrix, faceTransform, localTransform);
             }
             const sceneMatrices = new Float32Array(16 * 3);
             sceneMatrices.set(projectionMatrix, 0); sceneMatrices.set(viewMatrix, 16); sceneMatrices.set(modelMatrix, 32);
