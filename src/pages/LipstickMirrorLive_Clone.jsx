@@ -63,7 +63,7 @@ export default function LipstickMirrorLive_Clone() {
   useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect (Corrected Matrix Multiplication Order).");
+    console.log("[LML_Clone 3DModel] Main useEffect (Corrected Interleaved Buffer).");
     let deviceInternal = null, contextInternal = null, formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
@@ -121,23 +121,16 @@ export default function LipstickMirrorLive_Clone() {
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(faceTransform, flipYZ, faceTransform);
 
-                // --- REVISED and CORRECTED Adjustment Logic ---
-                const scaleMatrix = mat4.create();
                 const translationMatrix = mat4.create();
-                const localAdjustmentMatrix = mat4.create();
+                mat4.fromTranslation(translationMatrix, vec3.fromValues(0.0, -0.04, 0));
 
-                // 1. Define the local adjustments
-                // Tweak this scale factor. If it's still spiky, make it much smaller (e.g., 0.01)
+                const scaleMatrix = mat4.create();
                 const scaleFactor = 0.06;
                 mat4.fromScaling(scaleMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 
-                // Tweak this translation to position the lips correctly on the face.
-                mat4.fromTranslation(translationMatrix, vec3.fromValues(0.0, -0.04, 0));
-
-                // 2. Combine local adjustments: Translation * Scale
+                const localAdjustmentMatrix = mat4.create();
                 mat4.multiply(localAdjustmentMatrix, translationMatrix, scaleMatrix);
 
-                // 3. Combine with face tracking: Final Model Matrix = Face Transform * Local Adjustments
                 mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
             }
             
@@ -172,9 +165,7 @@ export default function LipstickMirrorLive_Clone() {
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
             passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
             passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);   
-            passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer.positions);
-            passEnc.setVertexBuffer(1, pState.lipModelVertexBuffer.normals);
-            passEnc.setVertexBuffer(2, pState.lipModelVertexBuffer.uvs);
+            passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
             passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
             passEnc.drawIndexed(pState.lipModelNumIndices);
         }
@@ -259,13 +250,14 @@ export default function LipstickMirrorLive_Clone() {
             
             const model = p.lipModelData;
             if (model && model.positions && model.normals && model.uvs && model.indices) {
-                const positionBuffer = deviceInternal.createBuffer({ label: "3DLip_PositionBuffer", size: model.positions.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-                deviceInternal.queue.writeBuffer(positionBuffer, 0, model.positions);
-                const normalBuffer = deviceInternal.createBuffer({ label: "3DLip_NormalBuffer", size: model.normals.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-                deviceInternal.queue.writeBuffer(normalBuffer, 0, model.normals);
-                const uvBuffer = deviceInternal.createBuffer({ label: "3DLip_UVBuffer", size: model.uvs.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-                deviceInternal.queue.writeBuffer(uvBuffer, 0, model.uvs);
-                p.lipModelVertexBuffer = { positions: positionBuffer, normals: normalBuffer, uvs: uvBuffer };
+                p.lipModelVertexBuffer = {
+                    positions: deviceInternal.createBuffer({ label: "3DLip_PositionBuffer", size: model.positions.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }),
+                    normals: deviceInternal.createBuffer({ label: "3DLip_NormalBuffer", size: model.normals.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }),
+                    uvs: deviceInternal.createBuffer({ label: "3DLip_UVBuffer", size: model.uvs.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }),
+                };
+                deviceInternal.queue.writeBuffer(p.lipModelVertexBuffer.positions, 0, model.positions);
+                deviceInternal.queue.writeBuffer(p.lipModelVertexBuffer.normals, 0, model.normals);
+                deviceInternal.queue.writeBuffer(p.lipModelVertexBuffer.uvs, 0, model.uvs);
                 
                 let indicesData = model.indices; let dataToWriteToGpu = indicesData; let finalIndexByteLength = indicesData.byteLength;
                 if (indicesData.byteLength % 4 !== 0) { finalIndexByteLength = Math.ceil(indicesData.byteLength / 4) * 4; const paddedBuffer = new Uint8Array(finalIndexByteLength); paddedBuffer.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength)); dataToWriteToGpu = paddedBuffer; }
@@ -277,7 +269,7 @@ export default function LipstickMirrorLive_Clone() {
                 else { throw new Error("Unsupported index type."); }
                 p.lipModelNumIndices = model.indices.length;
                 console.log(`[LML_Clone 3DModel] Created SEPARATE VBs and IB (${p.lipModelNumIndices}i)`);
-            } else { let m=[]; if(!model?.positions)m.push("pos");if(!model?.normals)m.push("norm");if(!model?.uvs)missing.push("uv");if(!model?.indices)m.push("idx"); throw new Error(`Essential model data (${m.join()}) missing for GPU buffers.`);  }
+            } else { let m=[]; if(!model?.positions)m.push("pos");if(!model?.normals)m.push("norm");if(!model?.uvs)m.push("uv");if(!model?.indices)m.push("idx"); throw new Error(`Essential model data (${m.join()}) missing for GPU buffers.`);  }
             
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); videoElement.srcObject = stream; await new Promise((res, rej) => { videoElement.onloadedmetadata = res; videoElement.onerror = () => rej(new Error("Video metadata error."));}); await videoElement.play();
             resizeObserverInternal = new ResizeObserver(resizeHandlerRef.current); resizeObserverInternal.observe(canvasElement);
