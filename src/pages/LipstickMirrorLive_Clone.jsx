@@ -121,20 +121,24 @@ export default function LipstickMirrorLive_Clone() {
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(faceTransform, flipYZ, faceTransform);
 
-                // --- CORRECTED ADJUSTMENT LOGIC ---
+                // --- REVISED and CORRECTED Adjustment Logic ---
                 const scaleMatrix = mat4.create();
                 const translationMatrix = mat4.create();
+                const localAdjustmentMatrix = mat4.create();
 
-                // 1. Scale the model down FIRST.
+                // 1. Define the local adjustments
+                // Tweak this scale factor. If it's still spiky, make it much smaller (e.g., 0.01)
                 const scaleFactor = 0.06;
                 mat4.fromScaling(scaleMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 
-                // 2. Translate the model.
+                // Tweak this translation to position the lips correctly on the face.
                 mat4.fromTranslation(translationMatrix, vec3.fromValues(0.0, -0.04, 0));
 
-                // 3. Combine transformations: Final = FacePose * Translation * Scale
-                mat4.multiply(modelMatrix, translationMatrix, scaleMatrix);
-                mat4.multiply(modelMatrix, faceTransform, modelMatrix);
+                // 2. Combine local adjustments: Translation * Scale
+                mat4.multiply(localAdjustmentMatrix, translationMatrix, scaleMatrix);
+
+                // 3. Combine with face tracking: Final Model Matrix = Face Transform * Local Adjustments
+                mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
             }
             
             const sceneMatrices = new Float32Array(16 * 3);
