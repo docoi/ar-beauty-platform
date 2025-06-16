@@ -129,7 +129,7 @@ export default function LipstickMirrorLive_Clone() {
                 // --- 1. Adjust Scale ---
                 // If model is too big/spiky, make this number SMALLER (e.g., 0.01, 0.005)
                 // If model is too small, make this number LARGER (e.g., 0.08)
-                const scaleFactor = 0.001; 
+                const scaleFactor = 0.15; 
                 mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 
                 // --- 2. Adjust Position (X, Y, Z) ---
