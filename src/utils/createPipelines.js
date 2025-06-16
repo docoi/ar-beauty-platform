@@ -19,41 +19,23 @@ async function createVideoBackgroundPipeline(device, format, videoBindGroupLayou
 
 async function create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
   let modelShaderModule;
-  try {
-    modelShaderModule = device.createShaderModule({ label: '3D Lip Model Shader Module', code: lipstickShaderSource });
+  try { modelShaderModule = device.createShaderModule({ label: '3D Lip Model Shader Module', code: lipstickShaderSource });
   } catch (e) { console.error("ERROR creating 3D Lip Model shader module:", e); return null; }
 
   try {
     const pipeline = await device.createRenderPipeline({
       label: '3D Lip Model Pipeline',
-      layout: device.createPipelineLayout({ 
-        bindGroupLayouts: [ lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout ] 
-      }),
+      layout: device.createPipelineLayout({ bindGroupLayouts: [ lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout ] }),
       vertex: {
-        module: modelShaderModule,
-        entryPoint: 'vert_main_3d',
-        // CRITICAL CHANGE: Define 3 separate buffers
+        module: modelShaderModule, entryPoint: 'vert_main_3d',
         buffers: [
-          // Buffer 0: Positions
-          {
-            arrayStride: 3 * 4, // vec3f
-            attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' } ], // @location(0) position_model
-          },
-          // Buffer 1: Normals
-          {
-            arrayStride: 3 * 4, // vec3f
-            attributes: [ { shaderLocation: 1, offset: 0, format: 'float32x3' } ], // @location(1) normal_model
-          },
-          // Buffer 2: UVs
-          {
-            arrayStride: 2 * 4, // vec2f
-            attributes: [ { shaderLocation: 2, offset: 0, format: 'float32x2' } ], // @location(2) uv_in
-          },
+          { arrayStride: 3 * 4, attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' } ] }, // Buffer 0: Positions
+          { arrayStride: 3 * 4, attributes: [ { shaderLocation: 1, offset: 0, format: 'float32x3' } ] }, // Buffer 1: Normals
+          { arrayStride: 2 * 4, attributes: [ { shaderLocation: 2, offset: 0, format: 'float32x2' } ] }, // Buffer 2: UVs
         ],
       },
       fragment: {
-        module: modelShaderModule,
-        entryPoint: 'frag_main_3d',
+        module: modelShaderModule, entryPoint: 'frag_main_3d',
         targets: [{ format: canvasFormat, blend: { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } } }],
       },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
@@ -72,13 +54,11 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
   const lightingGroupLayout = device.createBindGroupLayout({ label: 'Lighting BGL', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } } ] });
   
   console.log("[createPipelines] All Bind Group Layouts created.");
-
   const videoPipeline = await createVideoBackgroundPipeline(device, canvasFormat, videoBindGroupLayout, videoAspectRatioGroupLayout);
   let lipModelPipeline = null;
   if (is3DModelMode) {
     lipModelPipeline = await create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
   }
-  
   return { 
     videoPipeline, lipModelPipeline, videoBindGroupLayout, videoAspectRatioGroupLayout,
     lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout 
