@@ -5,7 +5,7 @@ import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
-import { mat4, vec3 } from 'gl-matrix';
+import { mat4, vec3, quat } from 'gl-matrix';
 
 const LIPSTICK_COLORS = [
   { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] },
@@ -121,12 +121,34 @@ export default function LipstickMirrorLive_Clone() {
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(modelMatrix, flipYZ, mediaPipeMatrix);
 
+                // ===================================================================
+                // === HIGHLIGHTED AREA: TWEAK THESE VALUES TO FIT THE MODEL ===
+                // ===================================================================
                 const localAdjustmentMatrix = mat4.create();
-                const scaleFactor = 0.055;
-                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0, -0.04, 0.05));
                 
+                // --- 1. Adjust Scale ---
+                // If model is too big/spiky, make this number SMALLER (e.g., 0.01, 0.005)
+                // If model is too small, make this number LARGER (e.g., 0.08)
+                const scaleFactor = 0.055; 
+                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
+                
+                // --- 2. Adjust Position (X, Y, Z) ---
+                // Y-axis: Negative is down, Positive is up.
+                // X-axis: Negative is left, Positive is right.
+                // Z-axis: Negative is backward, Positive is forward.
+                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0.0, -0.04, 0.05));
+                
+                // --- 3. (Optional) Adjust Rotation if needed ---
+                // const rotationQuat = quat.create();
+                // quat.setAxisAngle(rotationQuat, vec3.fromValues(1, 0, 0), 90 * Math.PI / 180); // Example: Rotate 90 deg on X
+                // const rotationMatrix = mat4.fromQuat(mat4.create(), rotationQuat);
+                // mat4.multiply(localAdjustmentMatrix, localAdjustmentMatrix, rotationMatrix);
+
+                // Combine face tracking matrix with our local adjustments
                 mat4.multiply(modelMatrix, modelMatrix, localAdjustmentMatrix);
+                // ===================================================================
+                // === END OF HIGHLIGHTED AREA ===
+                // ===================================================================
             }
             
             const sceneMatrices = new Float32Array(16 * 3);
@@ -138,11 +160,7 @@ export default function LipstickMirrorLive_Clone() {
         }
 
         if (pState.lipstickMaterialUniformBuffer) { const colorData = new Float32Array(selectedColorForRenderRef.current); currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData); }
-        if (pState.lightingUniformBuffer) {
-            const { lightDirection, ambientColor, diffuseColor, cameraWorldPosition } = lightSettingsRef.current;
-            const lightingData = new Float32Array([ ...lightDirection, 0.0, ...ambientColor, ...diffuseColor, ...cameraWorldPosition, 0.0 ]);
-            currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData);
-        }
+        if (pState.lightingUniformBuffer) { const { lightDirection, ambientColor, diffuseColor, cameraWorldPosition } = lightSettingsRef.current; const lightingData = new Float32Array([ ...lightDirection, 0.0, ...ambientColor, ...diffuseColor, ...cameraWorldPosition, 0.0 ]); currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData); }
         
         let videoTextureGPU, frameBindGroupForTexture; try { videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl }); if (pState.videoBindGroupLayout && pState.videoSampler) { frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{ binding: 0, resource: pState.videoSampler }, { binding: 1, resource: videoTextureGPU }] }); } else { animationFrameIdRef.current = requestAnimationFrame(render); return; } } catch (e) { console.error("Error importing video texture:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
         let currentGpuTexture, currentTextureView; try { currentGpuTexture = currentContext.getCurrentTexture(); currentTextureView = currentGpuTexture.createView(); } catch (e) { console.warn("Error getting current texture", e); if (resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
@@ -266,7 +284,7 @@ export default function LipstickMirrorLive_Clone() {
                 else { throw new Error("Unsupported index type."); }
                 p.lipModelNumIndices = model.indices.length;
                 console.log(`[LML_Clone 3DModel] Created VB (${numVertices}v) & IB (${p.lipModelNumIndices}i, ${p.lipModelIndexFormat})`);
-            } else { let m=[]; if(!model?.positions)m.push("pos");if(!model?.normals)m.push("norm");if(!model?.uvs)m.push("uv");if(!model?.indices)missing.push("idx"); throw new Error(`Essential model data (${m.join()}) missing for GPU buffers.`);  }
+            } else { let m=[]; if(!model?.positions)m.push("pos");if(!model?.normals)m.push("norm");if(!model?.uvs)missing.push("uv");if(!model?.indices)missing.push("idx"); throw new Error(`Essential model data (${m.join()}) missing for GPU buffers.`);  }
             
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); videoElement.srcObject = stream; await new Promise((res, rej) => { videoElement.onloadedmetadata = res; videoElement.onerror = () => rej(new Error("Video metadata error."));}); await videoElement.play();
             resizeObserverInternal = new ResizeObserver(resizeHandlerRef.current); resizeObserverInternal.observe(canvasElement);
