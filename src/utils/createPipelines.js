@@ -3,7 +3,6 @@
 import videoShaderSource from '@/shaders/videoBackground.wgsl?raw';
 import lipstickShaderSource from '@/shaders/lipstickEffect.wgsl?raw';
 
-// Pipeline for rendering the 2D video background
 async function createVideoBackgroundPipeline(device, format, videoBindGroupLayout, videoAspectRatioGroupLayout) {
   const videoModule = device.createShaderModule({ label: 'Video BG Shader Module', code: videoShaderSource });
   try {
@@ -13,17 +12,11 @@ async function createVideoBackgroundPipeline(device, format, videoBindGroupLayou
       vertex: { module: videoModule, entryPoint: 'vert_main' },
       fragment: { module: videoModule, entryPoint: 'frag_main', targets: [{ format }] },
       primitive: { topology: 'triangle-list' },
-      // CRITICAL FIX: Add depthStencil state to make it compatible with the render pass
-      depthStencil: {
-        depthWriteEnabled: false, // The background shouldn't write to the depth buffer
-        depthCompare: 'always',   // Always draw the background
-        format: 'depth24plus',
-      },
+      depthStencil: { depthWriteEnabled: false, depthCompare: 'always', format: 'depth24plus' },
     });
   } catch (e) { console.error("ERROR creating Video BG Pipeline:", e); return null; }
 }
 
-// Pipeline for rendering the 3D Lip Model
 async function create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
   let modelShaderModule;
   try {
@@ -37,17 +30,36 @@ async function create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGrou
         bindGroupLayouts: [ lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout ] 
       }),
       vertex: {
-        module: modelShaderModule, entryPoint: 'vert_main_3d',
-        buffers: [ { arrayStride: (3 + 3 + 2) * 4, attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' }, { shaderLocation: 1, offset: 3 * 4, format: 'float32x3' }, { shaderLocation: 2, offset: 6 * 4, format: 'float32x2' }, ], } ],
+        module: modelShaderModule,
+        entryPoint: 'vert_main_3d',
+        // CRITICAL CHANGE: Define 3 separate buffers
+        buffers: [
+          // Buffer 0: Positions
+          {
+            arrayStride: 3 * 4, // vec3f
+            attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' } ], // @location(0) position_model
+          },
+          // Buffer 1: Normals
+          {
+            arrayStride: 3 * 4, // vec3f
+            attributes: [ { shaderLocation: 1, offset: 0, format: 'float32x3' } ], // @location(1) normal_model
+          },
+          // Buffer 2: UVs
+          {
+            arrayStride: 2 * 4, // vec2f
+            attributes: [ { shaderLocation: 2, offset: 0, format: 'float32x2' } ], // @location(2) uv_in
+          },
+        ],
       },
       fragment: {
-        module: modelShaderModule, entryPoint: 'frag_main_3d',
+        module: modelShaderModule,
+        entryPoint: 'frag_main_3d',
         targets: [{ format: canvasFormat, blend: { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } } }],
       },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
-    console.log("[createPipelines] 3D Lip Model pipeline CREATED successfully.");
+    console.log("[createPipelines] 3D Lip Model pipeline CREATED successfully (using separate vertex buffers).");
     return pipeline;
   } catch (e) { console.error("ERROR creating 3D Lip Model pipeline:", e); return null; }
 }
@@ -67,8 +79,6 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
     lipModelPipeline = await create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
   }
   
-  console.log("[createPipelines] Returning pipelines. Lip Model Pipeline is:", lipModelPipeline ? "OK" : "null");
-
   return { 
     videoPipeline, lipModelPipeline, videoBindGroupLayout, videoAspectRatioGroupLayout,
     lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout 

@@ -52,7 +52,9 @@ export default function LipstickMirrorLive_Clone() {
     lipstickAlbedoTexture: null, lipstickAlbedoTextureView: null,
     lipstickNormalTexture: null, lipstickNormalTextureView: null,
     lipstickAlbedoSampler: null,
-    lipModelData: null, lipModelVertexBuffer: null, lipModelIndexBuffer: null,
+    lipModelData: null, 
+    lipModelVertexBuffer: null, // This will become an object: { positions, normals, uvs }
+    lipModelIndexBuffer: null,
     lipModelIndexFormat: 'uint16', lipModelNumIndices: 0,
     lipModelPipeline: null, lipModelMaterialBindGroup: null,
     lipModelMatrixGroupLayout: null, lipModelMatrixUBO: null, lipModelMatrixBindGroup: null,
@@ -63,7 +65,7 @@ export default function LipstickMirrorLive_Clone() {
   useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect (Final Render with Tracking).");
+    console.log("[LML_Clone 3DModel] Main useEffect (Separate Vertex Buffers Test).");
     let deviceInternal = null, contextInternal = null, formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
@@ -110,45 +112,19 @@ export default function LipstickMirrorLive_Clone() {
             const projectionMatrix = mat4.create();
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
             mat4.perspective(projectionMatrix, 75 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
-            
             const viewMatrix = mat4.create();
-            mat4.lookAt(viewMatrix, vec3.fromValues(0,0,1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
+            mat4.lookAt(viewMatrix, vec3.fromValues(0,0,0.1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
             
             let modelMatrix = mat4.create();
             if(hasFace) {
                 const mediaPipeMatrix = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-                
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(modelMatrix, flipYZ, mediaPipeMatrix);
-
-                // ===================================================================
-                // === HIGHLIGHTED AREA: TWEAK THESE VALUES TO FIT THE MODEL ===
-                // ===================================================================
                 const localAdjustmentMatrix = mat4.create();
-                
-                // --- 1. Adjust Scale ---
-                // If model is too big/spiky, make this number SMALLER (e.g., 0.01, 0.005)
-                // If model is too small, make this number LARGER (e.g., 0.08)
-                const scaleFactor = 0.05; 
+                const scaleFactor = 0.055;
                 mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-                
-                // --- 2. Adjust Position (X, Y, Z) ---
-                // Y-axis: Negative is down, Positive is up.
-                // X-axis: Negative is left, Positive is right.
-                // Z-axis: Negative is backward, Positive is forward.
-                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0.0, -0.04, 0.05));
-                
-                // --- 3. (Optional) Adjust Rotation if needed ---
-                // const rotationQuat = quat.create();
-                // quat.setAxisAngle(rotationQuat, vec3.fromValues(1, 0, 0), 90 * Math.PI / 180); // Example: Rotate 90 deg on X
-                // const rotationMatrix = mat4.fromQuat(mat4.create(), rotationQuat);
-                // mat4.multiply(localAdjustmentMatrix, localAdjustmentMatrix, rotationMatrix);
-
-                // Combine face tracking matrix with our local adjustments
+                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0, -0.04, 0.05));
                 mat4.multiply(modelMatrix, modelMatrix, localAdjustmentMatrix);
-                // ===================================================================
-                // === END OF HIGHLIGHTED AREA ===
-                // ===================================================================
             }
             
             const sceneMatrices = new Float32Array(16 * 3);
@@ -182,7 +158,12 @@ export default function LipstickMirrorLive_Clone() {
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
             passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
             passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);   
-            passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
+            
+            // Set the 3 separate vertex buffers
+            passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer.positions);
+            passEnc.setVertexBuffer(1, pState.lipModelVertexBuffer.normals);
+            passEnc.setVertexBuffer(2, pState.lipModelVertexBuffer.uvs);
+
             passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
             passEnc.drawIndexed(pState.lipModelNumIndices);
         }
@@ -267,12 +248,16 @@ export default function LipstickMirrorLive_Clone() {
             
             const model = p.lipModelData;
             if (model && model.positions && model.normals && model.uvs && model.indices) {
-                const numVertices = model.positions.length / 3;
-                const interleavedBufferData = new Float32Array(numVertices * 8); 
-                for (let i = 0; i < numVertices; i++) { let offset = i * 8; interleavedBufferData[offset++] = model.positions[i*3+0]; interleavedBufferData[offset++] = model.positions[i*3+1]; interleavedBufferData[offset++] = model.positions[i*3+2]; interleavedBufferData[offset++] = model.normals[i*3+0]; interleavedBufferData[offset++] = model.normals[i*3+1]; interleavedBufferData[offset++] = model.normals[i*3+2]; interleavedBufferData[offset++] = model.uvs[i*2+0]; interleavedBufferData[offset++] = model.uvs[i*2+1]; }
+                const positionBuffer = deviceInternal.createBuffer({ label: "3DLip_PositionBuffer", size: model.positions.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+                deviceInternal.queue.writeBuffer(positionBuffer, 0, model.positions);
+
+                const normalBuffer = deviceInternal.createBuffer({ label: "3DLip_NormalBuffer", size: model.normals.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+                deviceInternal.queue.writeBuffer(normalBuffer, 0, model.normals);
+
+                const uvBuffer = deviceInternal.createBuffer({ label: "3DLip_UVBuffer", size: model.uvs.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+                deviceInternal.queue.writeBuffer(uvBuffer, 0, model.uvs);
                 
-                p.lipModelVertexBuffer = deviceInternal.createBuffer({ label: "3DLipVB", size: interleavedBufferData.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-                deviceInternal.queue.writeBuffer(p.lipModelVertexBuffer, 0, interleavedBufferData);
+                p.lipModelVertexBuffer = { positions: positionBuffer, normals: normalBuffer, uvs: uvBuffer };
                 
                 let indicesData = model.indices; let dataToWriteToGpu = indicesData; let finalIndexByteLength = indicesData.byteLength;
                 if (indicesData.byteLength % 4 !== 0) { finalIndexByteLength = Math.ceil(indicesData.byteLength / 4) * 4; const paddedBuffer = new Uint8Array(finalIndexByteLength); paddedBuffer.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength)); dataToWriteToGpu = paddedBuffer; }
@@ -283,8 +268,8 @@ export default function LipstickMirrorLive_Clone() {
                 else if (model.indices instanceof Uint32Array) { p.lipModelIndexFormat = 'uint32'; } 
                 else { throw new Error("Unsupported index type."); }
                 p.lipModelNumIndices = model.indices.length;
-                console.log(`[LML_Clone 3DModel] Created VB (${numVertices}v) & IB (${p.lipModelNumIndices}i, ${p.lipModelIndexFormat})`);
-            } else { let m=[]; if(!model?.positions)m.push("pos");if(!model?.normals)m.push("norm");if(!model?.uvs)missing.push("uv");if(!model?.indices)missing.push("idx"); throw new Error(`Essential model data (${m.join()}) missing for GPU buffers.`);  }
+                console.log(`[LML_Clone 3DModel] Created SEPARATE VBs and IB (${p.lipModelNumIndices}i)`);
+            } else { let m=[]; if(!model?.positions)m.push("pos");if(!model?.normals)m.push("norm");if(!model?.uvs)missing.push("uv");if(!model?.indices)m.push("idx"); throw new Error(`Essential model data (${m.join()}) missing for GPU buffers.`);  }
             
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); videoElement.srcObject = stream; await new Promise((res, rej) => { videoElement.onloadedmetadata = res; videoElement.onerror = () => rej(new Error("Video metadata error."));}); await videoElement.play();
             resizeObserverInternal = new ResizeObserver(resizeHandlerRef.current); resizeObserverInternal.observe(canvasElement);
@@ -308,7 +293,8 @@ export default function LipstickMirrorLive_Clone() {
         pS.videoAspectRatioUBO?.destroy(); pS.lipModelMatrixUBO?.destroy();
         pS.lipstickMaterialUniformBuffer?.destroy();
         pS.lightingUniformBuffer?.destroy(); pS.lipstickAlbedoTexture?.destroy();
-        pS.lipstickNormalTexture?.destroy(); pS.lipModelVertexBuffer?.destroy();
+        pS.lipstickNormalTexture?.destroy();
+        pS.lipModelVertexBuffer?.positions?.destroy(); pS.lipModelVertexBuffer?.normals?.destroy(); pS.lipModelVertexBuffer?.uvs?.destroy();
         pS.lipModelIndexBuffer?.destroy(); pS.depthTexture?.destroy(); 
         if (landmarkerRef.current?.close) landmarkerRef.current.close(); 
         landmarkerRef.current=null; setLandmarkerState(null); 
