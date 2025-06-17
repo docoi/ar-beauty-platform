@@ -64,7 +64,7 @@ export default function LipstickMirrorLive_Clone() {
 
                 const scaleMatrix = mat4.create();
                 // This is the most important value. If still spiky, make it smaller.
-                const scaleFactor = 0.1; 
+                const scaleFactor = 0.14; 
                 mat4.fromScaling(scaleMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 
                 // Correct order: Final Matrix = FacePose * Translation * Scale
