@@ -104,35 +104,52 @@ export default function LipstickMirrorLive_Clone() {
         const landmarkerResult = activeLandmarker?.detectForVideo(currentVideoEl, now);
         const hasFace = landmarkerResult && landmarkerResult.faceLandmarks.length > 0 && landmarkerResult.facialTransformationMatrixes?.length > 0;
 
-        if (pState.videoAspectRatioUBO) { const videoDimData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]); currentDevice.queue.writeBuffer(pState.videoAspectRatioUBO, 0, videoDimData); }
-        
         if (pState.lipModelMatrixUBO) {
             const projectionMatrix = mat4.create();
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
-            mat4.perspective(projectionMatrix, 75 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
+            // A field of view of 45-60 degrees is more standard than 75
+            mat4.perspective(projectionMatrix, 50 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
             
+            // This view matrix places the camera at (0, 0, 1) looking at the origin.
+            // This is a standard setup for AR where the model is brought to the camera.
             const viewMatrix = mat4.create();
             mat4.lookAt(viewMatrix, vec3.fromValues(0,0,1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
             
-            let modelMatrix = mat4.create();
+            let modelMatrix = mat4.create(); // Start with identity
             if(hasFace) {
+                // 1. Get the face transformation matrix from MediaPipe
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
                 
+                // 2. Correct MediaPipe's coordinate system to match WebGL/WebGPU's
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(faceTransform, flipYZ, faceTransform);
 
-                // --- NEW ADJUSTMENT VALUES FOR DEBUGGING ---
+                // ===================================================================
+                // === NEW, FINAL, and CORRECT Adjustment Logic ===
+                // ===================================================================
+                
+                // Create a separate matrix for our local adjustments
                 const localAdjustmentMatrix = mat4.create();
 
-                // 1. Let's try a much smaller scale factor
-                const scaleFactor = 0.007;
+                // a) Scale the model down to a reasonable size FIRST.
+                // This is the most critical value. Let's start very small.
+                const scaleFactor = 0.06;
                 mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-
-                // 2. Adjust translation AFTER scaling
-                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0, -5.0, 10.0));
                 
-                // 3. Combine the transforms
+                // b) Apply any necessary local rotation AFTER scaling.
+                // For example, if the model is exported facing the wrong way.
+                // mat4.rotateX(localAdjustmentMatrix, localAdjustmentMatrix, Math.PI / 2); // Rotate 90 degrees around X
+
+                // c) Apply any local translation LAST.
+                // This moves the scaled, rotated model to the correct position relative to the face's center.
+                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0, -0.04, 0.05));
+
+                // d) Combine the transformations: modelMatrix = faceTransform * localAdjustmentMatrix
                 mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
+
+            } else {
+                // If no face, make the model invisible by scaling to 0
+                mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0,0,0));
             }
             
             const sceneMatrices = new Float32Array(16 * 3);
