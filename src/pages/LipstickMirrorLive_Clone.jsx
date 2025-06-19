@@ -69,25 +69,7 @@ export default function LipstickMirrorLive_Clone() {
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
     if (!canvasElement || !videoElement) { setError("Canvas or Video element not found."); return; }
 
-    const configureCanvasAndDepthTexture = () => {
-        if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) { return; }
-        const currentCanvas = canvasRef.current;
-        const dpr = window.devicePixelRatio || 1;
-        const cw = currentCanvas.clientWidth; const ch = currentCanvas.clientHeight;
-        if (cw === 0 || ch === 0) { return; }
-        const targetWidth = Math.floor(cw * dpr); const targetHeight = Math.floor(ch * dpr);
-        let needsReconfigure = false;
-        if (currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight) { currentCanvas.width = targetWidth; currentCanvas.height = targetHeight; needsReconfigure = true; }
-        try { contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } 
-        catch (e) { setError("Error config context: " + e.message); console.error("Error config context:", e); return; }
-        const pState = pipelineStateRef.current;
-        if (needsReconfigure || !pState.depthTexture || pState.depthTexture.width !== targetWidth || pState.depthTexture.height !== targetHeight) {
-            pState.depthTexture?.destroy(); 
-            pState.depthTexture = deviceInternal.createTexture({ size: [targetWidth, targetHeight], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT, label: "Depth Texture" });
-            pState.depthTextureView = pState.depthTexture.createView({ label: "Depth Texture View"});
-            console.log(`[LML_Clone 3DModel] Canvas configured (${targetWidth}x${targetHeight}), Depth texture (re)created.`);
-        }
-    };
+    const configureCanvasAndDepthTexture = () => { if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) { return; } const currentCanvas = canvasRef.current; const dpr = window.devicePixelRatio || 1; const cw = currentCanvas.clientWidth; const ch = currentCanvas.clientHeight; if (cw === 0 || ch === 0) { return; } const targetWidth = Math.floor(cw * dpr); const targetHeight = Math.floor(ch * dpr); let needsReconfigure = false; if (currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight) { currentCanvas.width = targetWidth; currentCanvas.height = targetHeight; needsReconfigure = true; } try { contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } catch (e) { setError("Error config context: " + e.message); console.error("Error config context:", e); return; } const pState = pipelineStateRef.current; if (needsReconfigure || !pState.depthTexture || pState.depthTexture.width !== targetWidth || pState.depthTexture.height !== targetHeight) { pState.depthTexture?.destroy(); pState.depthTexture = deviceInternal.createTexture({ size: [targetWidth, targetHeight], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT, label: "Depth Texture" }); pState.depthTextureView = pState.depthTexture.createView({ label: "Depth Texture View"}); console.log(`[LML_Clone 3DModel] Canvas configured (${targetWidth}x${targetHeight}), Depth texture (re)created.`); } };
     resizeHandlerRef.current = configureCanvasAndDepthTexture;
 
     const render = async () => {
@@ -109,27 +91,31 @@ export default function LipstickMirrorLive_Clone() {
         if (pState.lipModelMatrixUBO) {
             const projectionMatrix = mat4.create();
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
-            mat4.perspective(projectionMatrix, 75 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
+            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
             
             const viewMatrix = mat4.create();
             mat4.lookAt(viewMatrix, vec3.fromValues(0,0,1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
             
-            let modelMatrix = mat4.create();
+            let modelMatrix = mat4.create(); // This will be our final model matrix
             if(hasFace) {
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(faceTransform, flipYZ, faceTransform);
 
-                const translationMatrix = mat4.create();
-                mat4.fromTranslation(translationMatrix, vec3.fromValues(0.0, -0.04, 0));
-                
-                const scaleMatrix = mat4.create();
-                const scaleFactor = 0.06;
-                mat4.fromScaling(scaleMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-                
-                const localAdjustmentMatrix = mat4.create();
-                mat4.multiply(localAdjustmentMatrix, translationMatrix, scaleMatrix);
+                // --- CORRECTED ADJUSTMENT LOGIC BASED ON STANDARD 3D HIERARCHY ---
+                const localAdjustmentMatrix = mat4.create(); // Start with identity
 
+                // 1. Scale the model first. This is the most critical value.
+                const scaleFactor = 0.06;
+                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
+
+                // 2. Rotate if necessary (e.g. if the model is oriented incorrectly).
+                // mat4.rotateX(localAdjustmentMatrix, localAdjustmentMatrix, -Math.PI / 2); // Example rotation
+
+                // 3. Translate the scaled and rotated model to the correct position.
+                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0.0, -0.65, 0.8)); // Values based on common adjustments
+                
+                // 4. Combine: Final Model Matrix = Face Pose * Local Adjustments
                 mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
             }
             
@@ -137,6 +123,7 @@ export default function LipstickMirrorLive_Clone() {
             sceneMatrices.set(projectionMatrix, 0);
             sceneMatrices.set(viewMatrix, 16);
             sceneMatrices.set(modelMatrix, 32);
+
             currentDevice.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
         }
 
