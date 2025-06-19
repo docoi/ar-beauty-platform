@@ -7,15 +7,58 @@ import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
 import { mat4, vec3, quat } from 'gl-matrix';
 
-const LIPSTICK_COLORS = [ { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] }, { name: 'Classic Red', value: [200/255, 0/255, 0/255, 0.9] }, { name: 'Deep Plum', value: [100/255, 20/255, 50/255, 0.85] }, { name: 'Coral Burst', value: [255/255, 100/255, 80/255, 0.8] }, { name: 'Soft Mauve', value: [180/255, 120/255, 150/255, 0.8] }, { name: 'Highlight Gloss', value: [1.0, 1.0, 1.0, 0.3] }, ];
-async function loadImageBitmap(url) { const response = await fetch(url); if (!response.ok) { throw new Error(`Failed to fetch image ${url}: ${response.statusText}`); } const blob = await response.blob(); return createImageBitmap(blob); }
-function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) { const accessor = gltfJson.accessors[accessorIndex]; if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`); const bufferView = gltfJson.bufferViews[accessor.bufferView]; if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`); const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; let numComponents; switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported accessor type: ${type}`);} let TypedArrayConstructor; let componentByteSize = 0; switch (componentType) { case 5120: TypedArrayConstructor = Int8Array; componentByteSize = 1; break; case 5121: TypedArrayConstructor = Uint8Array; componentByteSize = 1; break; case 5122: TypedArrayConstructor = Int16Array; componentByteSize = 2; break; case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);} const totalElements = count * numComponents; const accessorByteLength = totalElements * componentByteSize; const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0); if (mainBinaryBuffer.byteLength < byteOffset + accessorByteLength) { throw new Error( `Buffer access out of bounds for accessor ${accessorIndex}. Offset: ${byteOffset}, Length: ${accessorByteLength}, BufferSize: ${mainBinaryBuffer.byteLength}. BV target: ${bufferView.target || 'N/A'}, bvLength: ${bufferView.byteLength}` ); } const bufferSlice = mainBinaryBuffer.slice(byteOffset, byteOffset + accessorByteLength); return new TypedArrayConstructor(bufferSlice); }
+const LIPSTICK_COLORS = [
+  { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] },
+  { name: 'Classic Red', value: [200/255, 0/255, 0/255, 0.9] },
+  { name: 'Deep Plum', value: [100/255, 20/255, 50/255, 0.85] },
+  { name: 'Coral Burst', value: [255/255, 100/255, 80/255, 0.8] },
+  { name: 'Soft Mauve', value: [180/255, 120/255, 150/255, 0.8] },
+  { name: 'Highlight Gloss', value: [1.0, 1.0, 1.0, 0.3] },
+];
+
+async function loadImageBitmap(url) {
+  const response = await fetch(url);
+  if (!response.ok) { throw new Error(`Failed to fetch image ${url}: ${response.statusText}`); }
+  const blob = await response.blob();
+  return createImageBitmap(blob);
+}
+
+function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) {
+    const accessor = gltfJson.accessors[accessorIndex];
+    if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`);
+    const bufferView = gltfJson.bufferViews[accessor.bufferView];
+    if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`);
+    const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; 
+    let numComponents;
+    switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported accessor type: ${type}`);}
+    let TypedArrayConstructor; let componentByteSize = 0;
+    switch (componentType) { case 5120: TypedArrayConstructor = Int8Array; componentByteSize = 1; break; case 5121: TypedArrayConstructor = Uint8Array; componentByteSize = 1; break; case 5122: TypedArrayConstructor = Int16Array; componentByteSize = 2; break; case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);}
+    const totalElements = count * numComponents; const accessorByteLength = totalElements * componentByteSize;
+    const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+    if (mainBinaryBuffer.byteLength < byteOffset + accessorByteLength) { throw new Error( `Buffer access out of bounds for accessor ${accessorIndex}. Offset: ${byteOffset}, Length: ${accessorByteLength}, BufferSize: ${mainBinaryBuffer.byteLength}. BV target: ${bufferView.target || 'N/A'}, bvLength: ${bufferView.byteLength}` ); }
+    const bufferSlice = mainBinaryBuffer.slice(byteOffset, byteOffset + accessorByteLength);
+    return new TypedArrayConstructor(bufferSlice);
+}
 
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null); const videoRef = useRef(null); const animationFrameIdRef = useRef(null); const frameCounter = useRef(0); const resizeHandlerRef = useRef(null); const deviceRef = useRef(null); const contextRef = useRef(null); const formatRef = useRef(null); const landmarkerRef = useRef(null);
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value); const selectedColorForRenderRef = useRef(LIPSTICK_COLORS[0].value);
   const lightSettingsRef = useRef({ lightDirection: [0.2, 0.5, 0.8], ambientColor: [0.1, 0.1, 0.1, 1.0], diffuseColor: [0.9, 0.9, 0.9, 1.0], cameraWorldPosition: [0, 0, 1.0] });
-  const pipelineStateRef = useRef({ videoPipeline: null, videoBindGroupLayout: null, videoSampler: null, videoAspectRatioGroupLayout: null, videoAspectRatioUBO: null, videoAspectRatioBindGroup: null, lipstickMaterialGroupLayout: null, lipstickMaterialUniformBuffer: null, lightingGroupLayout: null, lightingUniformBuffer: null, lipModelLightingBindGroup: null, lipstickAlbedoTexture: null, lipstickAlbedoTextureView: null, lipstickNormalTexture: null, lipstickNormalTextureView: null, lipstickAlbedoSampler: null, lipModelData: null, lipModelVertexBuffer: null, lipModelIndexBuffer: null, lipModelIndexFormat: 'uint16', lipModelNumIndices: 0, lipModelPipeline: null, lipModelMaterialBindGroup: null, lipModelMatrixGroupLayout: null, lipModelMatrixUBO: null, lipModelMatrixBindGroup: null, depthTexture: null, depthTextureView: null, });
+  
+  const pipelineStateRef = useRef({
+    videoPipeline: null, videoBindGroupLayout: null, videoSampler: null, videoAspectRatioGroupLayout: null, videoAspectRatioUBO: null, videoAspectRatioBindGroup: null,
+    lipstickMaterialGroupLayout: null, lipstickMaterialUniformBuffer: null,
+    lightingGroupLayout: null, lightingUniformBuffer: null, lipModelLightingBindGroup: null,
+    lipstickAlbedoTexture: null, lipstickAlbedoTextureView: null,
+    lipstickNormalTexture: null, lipstickNormalTextureView: null,
+    lipstickAlbedoSampler: null,
+    lipModelData: null, lipModelVertexBuffer: null, lipModelIndexBuffer: null,
+    lipModelIndexFormat: 'uint16', lipModelNumIndices: 0,
+    lipModelPipeline: null, lipModelMaterialBindGroup: null,
+    lipModelMatrixGroupLayout: null, lipModelMatrixUBO: null, lipModelMatrixBindGroup: null,
+    depthTexture: null, depthTextureView: null,
+  });
+
   const [landmarkerState, setLandmarkerState] = useState(null); const [error, setError] = useState(null); const [debugMessage, setDebugMessage] = useState('Initializing...');
   useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
@@ -26,7 +69,25 @@ export default function LipstickMirrorLive_Clone() {
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
     if (!canvasElement || !videoElement) { setError("Canvas or Video element not found."); return; }
 
-    const configureCanvasAndDepthTexture = () => { if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) { return; } const currentCanvas = canvasRef.current; const dpr = window.devicePixelRatio || 1; const cw = currentCanvas.clientWidth; const ch = currentCanvas.clientHeight; if (cw === 0 || ch === 0) { return; } const targetWidth = Math.floor(cw * dpr); const targetHeight = Math.floor(ch * dpr); let needsReconfigure = false; if (currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight) { currentCanvas.width = targetWidth; currentCanvas.height = targetHeight; needsReconfigure = true; } try { contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } catch (e) { setError("Error config context: " + e.message); console.error("Error config context:", e); return; } const pState = pipelineStateRef.current; if (needsReconfigure || !pState.depthTexture || pState.depthTexture.width !== targetWidth || pState.depthTexture.height !== targetHeight) { pState.depthTexture?.destroy(); pState.depthTexture = deviceInternal.createTexture({ size: [targetWidth, targetHeight], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT, label: "Depth Texture" }); pState.depthTextureView = pState.depthTexture.createView({ label: "Depth Texture View"}); console.log(`[LML_Clone 3DModel] Canvas configured (${targetWidth}x${targetHeight}), Depth texture (re)created.`); } };
+    const configureCanvasAndDepthTexture = () => {
+        if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) { return; }
+        const currentCanvas = canvasRef.current;
+        const dpr = window.devicePixelRatio || 1;
+        const cw = currentCanvas.clientWidth; const ch = currentCanvas.clientHeight;
+        if (cw === 0 || ch === 0) { return; }
+        const targetWidth = Math.floor(cw * dpr); const targetHeight = Math.floor(ch * dpr);
+        let needsReconfigure = false;
+        if (currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight) { currentCanvas.width = targetWidth; currentCanvas.height = targetHeight; needsReconfigure = true; }
+        try { contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } 
+        catch (e) { setError("Error config context: " + e.message); console.error("Error config context:", e); return; }
+        const pState = pipelineStateRef.current;
+        if (needsReconfigure || !pState.depthTexture || pState.depthTexture.width !== targetWidth || pState.depthTexture.height !== targetHeight) {
+            pState.depthTexture?.destroy(); 
+            pState.depthTexture = deviceInternal.createTexture({ size: [targetWidth, targetHeight], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT, label: "Depth Texture" });
+            pState.depthTextureView = pState.depthTexture.createView({ label: "Depth Texture View"});
+            console.log(`[LML_Clone 3DModel] Canvas configured (${targetWidth}x${targetHeight}), Depth texture (re)created.`);
+        }
+    };
     resizeHandlerRef.current = configureCanvasAndDepthTexture;
 
     const render = async () => {
@@ -56,25 +117,28 @@ export default function LipstickMirrorLive_Clone() {
             let modelMatrix = mat4.create();
             if(hasFace) {
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-                
                 const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
                 mat4.multiply(faceTransform, flipYZ, faceTransform);
 
-                // --- NEW and CORRECTED Adjustment Logic ---
                 const translationMatrix = mat4.create();
-                // Move it down slightly to where lips would be. Tweak this Y value.
                 mat4.fromTranslation(translationMatrix, vec3.fromValues(0.0, -0.04, 0));
-
+                
                 const scaleMatrix = mat4.create();
-                // This is the most important value. If still spiky, make it smaller.
-                const scaleFactor = 0.06; 
+                const scaleFactor = 0.06;
                 mat4.fromScaling(scaleMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 
-                // Correct order: Final Matrix = FacePose * Translation * Scale
-                const localTransform = mat4.create();
-                mat4.multiply(localTransform, translationMatrix, scaleMatrix); // local = T * S
-                mat4.multiply(modelMatrix, faceTransform, localTransform);      // final = Face * local
+                const localAdjustmentMatrix = mat4.create();
+                mat4.multiply(localAdjustmentMatrix, translationMatrix, scaleMatrix);
+
+                mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
             }
+            
+            const sceneMatrices = new Float32Array(16 * 3);
+            sceneMatrices.set(projectionMatrix, 0);
+            sceneMatrices.set(viewMatrix, 16);
+            sceneMatrices.set(modelMatrix, 32);
+            currentDevice.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
+        }
 
         if (pState.lipstickMaterialUniformBuffer) { const colorData = new Float32Array(selectedColorForRenderRef.current); currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData); }
         if (pState.lightingUniformBuffer) { const { lightDirection, ambientColor, diffuseColor, cameraWorldPosition } = lightSettingsRef.current; const lightingData = new Float32Array([ ...lightDirection, 0.0, ...ambientColor, ...diffuseColor, ...cameraWorldPosition, 0.0 ]); currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData); }
@@ -176,9 +240,9 @@ export default function LipstickMirrorLive_Clone() {
             if (lipstickNormalImageBitmap) { p.lipstickNormalTexture = deviceInternal.createTexture({label:"NormalTex", size:[lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); deviceInternal.queue.copyExternalImageToTexture({source:lipstickNormalImageBitmap}, {texture:p.lipstickNormalTexture}, [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height]); p.lipstickNormalTextureView = p.lipstickNormalTexture.createView(); }
             
             const materialEntries = [{binding:0, resource:{buffer:p.lipstickMaterialUniformBuffer}}];
-            if (p.lipstickAlbedoTextureView) materialEntries.push({binding:1, resource:p.lipstickAlbedoTextureView}); else console.warn("AlbedoTV missing for MatBG");
-            if (p.lipstickAlbedoSampler) materialEntries.push({binding:2, resource:p.lipstickAlbedoSampler}); else console.warn("Sampler missing for MatBG");
-            if (p.lipstickNormalTextureView) materialEntries.push({binding:3, resource:p.lipstickNormalTextureView}); else console.warn("NormalTV missing for MatBG");
+            if (p.lipstickAlbedoTextureView) materialEntries.push({binding:1, resource:p.lipstickAlbedoTextureView}); else console.warn("AlbedoTV missing");
+            if (p.lipstickAlbedoSampler) materialEntries.push({binding:2, resource:p.lipstickAlbedoSampler}); else console.warn("Sampler missing");
+            if (p.lipstickNormalTextureView) materialEntries.push({binding:3, resource:p.lipstickNormalTextureView}); else console.warn("NormalTV missing");
             if (p.lipstickMaterialGroupLayout && p.lipstickMaterialUniformBuffer ) { p.lipModelMaterialBindGroup = deviceInternal.createBindGroup({label:"3DLipMatBG", layout:p.lipstickMaterialGroupLayout, entries: materialEntries}); } else { throw new Error("Material BG creation failed."); }
             
             const model = p.lipModelData;
@@ -232,7 +296,7 @@ export default function LipstickMirrorLive_Clone() {
         deviceRef.current=null; contextRef.current=null; formatRef.current=null; 
         console.log("[LML_Clone 3DModel] Cleanup complete."); 
     };
-  }, [];
+  }, []);
 
   useEffect(() => { 
     if (error) { setDebugMessage(`Error: ${error.substring(0,50)}`); } 
