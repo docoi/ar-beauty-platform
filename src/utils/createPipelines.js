@@ -17,31 +17,31 @@ async function createVideoBackgroundPipeline(device, format, videoBindGroupLayou
   } catch (e) { console.error("ERROR creating Video BG Pipeline:", e); return null; }
 }
 
-async function create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
+async function create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout) {
   let modelShaderModule;
-  try { modelShaderModule = device.createShaderModule({ label: '3D Lip Model Shader Module', code: lipstickShaderSource });
+  try {
+    modelShaderModule = device.createShaderModule({ label: '3D Lip Model Shader Module', code: lipstickShaderSource });
   } catch (e) { console.error("ERROR creating 3D Lip Model shader module:", e); return null; }
 
   try {
     const pipeline = await device.createRenderPipeline({
       label: '3D Lip Model Pipeline',
-      layout: device.createPipelineLayout({ bindGroupLayouts: [ lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout ] }),
+      layout: device.createPipelineLayout({ bindGroupLayouts: [ lipModelMatrixGroupLayout ] }),
       vertex: {
         module: modelShaderModule, entryPoint: 'vert_main_3d',
-        buffers: [
-          { arrayStride: 3 * 4, attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' } ] }, // Buffer 0: Positions
-          { arrayStride: 3 * 4, attributes: [ { shaderLocation: 1, offset: 0, format: 'float32x3' } ] }, // Buffer 1: Normals
-          { arrayStride: 2 * 4, attributes: [ { shaderLocation: 2, offset: 0, format: 'float32x2' } ] }, // Buffer 2: UVs
-        ],
+        buffers: [ {
+            arrayStride: (3 + 3 + 2) * 4, // Still use full stride of interleaved data
+            attributes: [ { shaderLocation: 0, offset: 0, format: 'float32x3' } ], // But only read position
+        } ],
       },
       fragment: {
         module: modelShaderModule, entryPoint: 'frag_main_3d',
-        targets: [{ format: canvasFormat, blend: { color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' }, alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' } } }],
+        targets: [{ format: canvasFormat }],
       },
       primitive: { topology: 'triangle-list', cullMode: 'back' },
       depthStencil: { depthWriteEnabled: true, depthCompare: 'less', format: 'depth24plus' },
     });
-    console.log("[createPipelines] 3D Lip Model pipeline CREATED successfully (using separate vertex buffers).");
+    console.log("[createPipelines] 3D Lip Model pipeline CREATED successfully (Simplified).");
     return pipeline;
   } catch (e) { console.error("ERROR creating 3D Lip Model pipeline:", e); return null; }
 }
@@ -50,17 +50,12 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
   const videoBindGroupLayout = device.createBindGroupLayout({ label: 'Video Texture BGL', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }, { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} } ] });
   const videoAspectRatioGroupLayout = device.createBindGroupLayout({ label: 'Video Aspect Ratio BGL', entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' }}] });
   const lipModelMatrixGroupLayout = device.createBindGroupLayout({ label: 'Lip Model Matrix BGL', entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' }}] });
-  const lipstickMaterialGroupLayout = device.createBindGroupLayout({ label: 'Lipstick Material BGL', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }, { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } }, { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } }, { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } } ] });
-  const lightingGroupLayout = device.createBindGroupLayout({ label: 'Lighting BGL', entries: [ { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } } ] });
   
-  console.log("[createPipelines] All Bind Group Layouts created.");
   const videoPipeline = await createVideoBackgroundPipeline(device, canvasFormat, videoBindGroupLayout, videoAspectRatioGroupLayout);
   let lipModelPipeline = null;
   if (is3DModelMode) {
-    lipModelPipeline = await create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
+    lipModelPipeline = await create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout);
   }
-  return { 
-    videoPipeline, lipModelPipeline, videoBindGroupLayout, videoAspectRatioGroupLayout,
-    lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout 
-  };
+  
+  return { videoPipeline, lipModelPipeline, videoBindGroupLayout, videoAspectRatioGroupLayout, lipModelMatrixGroupLayout };
 }
