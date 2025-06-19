@@ -232,7 +232,7 @@ export default function LipstickMirrorLive_Clone() {
         deviceRef.current=null; contextRef.current=null; formatRef.current=null; 
         console.log("[LML_Clone 3DModel] Cleanup complete."); 
     };
-  }, []);
+  }, [];
 
   useEffect(() => { 
     if (error) { setDebugMessage(`Error: ${error.substring(0,50)}`); } 
