@@ -7,117 +7,55 @@ import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
 import { mat4, vec3, quat } from 'gl-matrix';
 
-const LIPSTICK_COLORS = [
-  { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] },
-  { name: 'Classic Red', value: [200/255, 0/255, 0/255, 0.9] },
-  { name: 'Deep Plum', value: [100/255, 20/255, 50/255, 0.85] },
-  { name: 'Coral Burst', value: [255/255, 100/255, 80/255, 0.8] },
-  { name: 'Soft Mauve', value: [180/255, 120/255, 150/255, 0.8] },
-  { name: 'Highlight Gloss', value: [1.0, 1.0, 1.0, 0.3] },
-];
-
-async function loadImageBitmap(url) {
-  const response = await fetch(url);
-  if (!response.ok) { throw new Error(`Failed to fetch image ${url}: ${response.statusText}`); }
-  const blob = await response.blob();
-  return createImageBitmap(blob);
-}
-
-function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) {
-    const accessor = gltfJson.accessors[accessorIndex];
-    if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`);
-    const bufferView = gltfJson.bufferViews[accessor.bufferView];
-    if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`);
-    const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; 
-    let numComponents;
-    switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported accessor type: ${type}`);}
-    let TypedArrayConstructor; let componentByteSize = 0;
-    switch (componentType) { case 5120: TypedArrayConstructor = Int8Array; componentByteSize = 1; break; case 5121: TypedArrayConstructor = Uint8Array; componentByteSize = 1; break; case 5122: TypedArrayConstructor = Int16Array; componentByteSize = 2; break; case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);}
-    const totalElements = count * numComponents; const accessorByteLength = totalElements * componentByteSize;
-    const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
-    if (mainBinaryBuffer.byteLength < byteOffset + accessorByteLength) { throw new Error( `Buffer access out of bounds for accessor ${accessorIndex}. Offset: ${byteOffset}, Length: ${accessorByteLength}, BufferSize: ${mainBinaryBuffer.byteLength}. BV target: ${bufferView.target || 'N/A'}, bvLength: ${bufferView.byteLength}` ); }
-    const bufferSlice = mainBinaryBuffer.slice(byteOffset, byteOffset + accessorByteLength);
-    return new TypedArrayConstructor(bufferSlice);
-}
+const LIPSTICK_COLORS = [ { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] }, { name: 'Classic Red', value: [200/255, 0/255, 0/255, 0.9] }, { name: 'Deep Plum', value: [100/255, 20/255, 50/255, 0.85] }, { name: 'Coral Burst', value: [255/255, 100/255, 80/255, 0.8] }, { name: 'Soft Mauve', value: [180/255, 120/255, 150/255, 0.8] }, { name: 'Highlight Gloss', value: [1.0, 1.0, 1.0, 0.3] }, ];
+async function loadImageBitmap(url) { const response = await fetch(url); if (!response.ok) { throw new Error(`Failed to fetch image ${url}: ${response.statusText}`); } const blob = await response.blob(); return createImageBitmap(blob); }
+function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) { const accessor = gltfJson.accessors[accessorIndex]; if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`); const bufferView = gltfJson.bufferViews[accessor.bufferView]; if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`); const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; let numComponents; switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported accessor type: ${type}`);} let TypedArrayConstructor; let componentByteSize = 0; switch (componentType) { case 5120: TypedArrayConstructor = Int8Array; componentByteSize = 1; break; case 5121: TypedArrayConstructor = Uint8Array; componentByteSize = 1; break; case 5122: TypedArrayConstructor = Int16Array; componentByteSize = 2; break; case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);} const totalElements = count * numComponents; const accessorByteLength = totalElements * componentByteSize; const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0); if (mainBinaryBuffer.byteLength < byteOffset + accessorByteLength) { throw new Error( `Buffer access out of bounds for accessor ${accessorIndex}. Offset: ${byteOffset}, Length: ${accessorByteLength}, BufferSize: ${mainBinaryBuffer.byteLength}. BV target: ${bufferView.target || 'N/A'}, bvLength: ${bufferView.byteLength}` ); } const bufferSlice = mainBinaryBuffer.slice(byteOffset, byteOffset + accessorByteLength); return new TypedArrayConstructor(bufferSlice); }
 
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null); const videoRef = useRef(null); const animationFrameIdRef = useRef(null); const frameCounter = useRef(0); const resizeHandlerRef = useRef(null); const deviceRef = useRef(null); const contextRef = useRef(null); const formatRef = useRef(null); const landmarkerRef = useRef(null);
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value); const selectedColorForRenderRef = useRef(LIPSTICK_COLORS[0].value);
   const lightSettingsRef = useRef({ lightDirection: [0.2, 0.5, 0.8], ambientColor: [0.1, 0.1, 0.1, 1.0], diffuseColor: [0.9, 0.9, 0.9, 1.0], cameraWorldPosition: [0, 0, 1.0] });
-  
-  const pipelineStateRef = useRef({
-    videoPipeline: null, videoBindGroupLayout: null, videoSampler: null, videoAspectRatioGroupLayout: null, videoAspectRatioUBO: null, videoAspectRatioBindGroup: null,
-    lipstickMaterialGroupLayout: null, lipstickMaterialUniformBuffer: null,
-    lightingGroupLayout: null, lightingUniformBuffer: null, lipModelLightingBindGroup: null,
-    lipstickAlbedoTexture: null, lipstickAlbedoTextureView: null,
-    lipstickNormalTexture: null, lipstickNormalTextureView: null,
-    lipstickAlbedoSampler: null,
-    lipModelData: null, lipModelVertexBuffer: null, lipModelIndexBuffer: null,
-    lipModelIndexFormat: 'uint16', lipModelNumIndices: 0,
-    lipModelPipeline: null, lipModelMaterialBindGroup: null,
-    lipModelMatrixGroupLayout: null, lipModelMatrixUBO: null, lipModelMatrixBindGroup: null,
-    depthTexture: null, depthTextureView: null,
-  });
-
+  const pipelineStateRef = useRef({ videoPipeline: null, videoBindGroupLayout: null, videoSampler: null, videoAspectRatioGroupLayout: null, videoAspectRatioUBO: null, videoAspectRatioBindGroup: null, lipstickMaterialGroupLayout: null, lipstickMaterialUniformBuffer: null, lightingGroupLayout: null, lightingUniformBuffer: null, lipModelLightingBindGroup: null, lipstickAlbedoTexture: null, lipstickAlbedoTextureView: null, lipstickNormalTexture: null, lipstickNormalTextureView: null, lipstickAlbedoSampler: null, lipModelData: null, lipModelVertexBuffer: null, lipModelIndexBuffer: null, lipModelIndexFormat: 'uint16', lipModelNumIndices: 0, lipModelPipeline: null, lipModelMaterialBindGroup: null, lipModelMatrixGroupLayout: null, lipModelMatrixUBO: null, lipModelMatrixBindGroup: null, depthTexture: null, depthTextureView: null, });
   const [landmarkerState, setLandmarkerState] = useState(null); const [error, setError] = useState(null); const [debugMessage, setDebugMessage] = useState('Initializing...');
   useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect (Final Render with Tracking).");
+    console.log("[LML_Clone 3DModel] Main useEffect (Static Model Rotation Test).");
     let deviceInternal = null, contextInternal = null, formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
     if (!canvasElement || !videoElement) { setError("Canvas or Video element not found."); return; }
 
-    const configureCanvasAndDepthTexture = () => { if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) { return; } const currentCanvas = canvasRef.current; const dpr = window.devicePixelRatio || 1; const cw = currentCanvas.clientWidth; const ch = currentCanvas.clientHeight; if (cw === 0 || ch === 0) { return; } const targetWidth = Math.floor(cw * dpr); const targetHeight = Math.floor(ch * dpr); let needsReconfigure = false; if (currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight) { currentCanvas.width = targetWidth; currentCanvas.height = targetHeight; needsReconfigure = true; } try { contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } catch (e) { setError("Error config context: " + e.message); console.error("Error config context:", e); return; } const pState = pipelineStateRef.current; if (needsReconfigure || !pState.depthTexture || pState.depthTexture.width !== targetWidth || pState.depthTexture.height !== targetHeight) { pState.depthTexture?.destroy(); pState.depthTexture = deviceInternal.createTexture({ size: [targetWidth, targetHeight], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT, label: "Depth Texture" }); pState.depthTextureView = pState.depthTexture.createView({ label: "Depth Texture View"}); console.log(`[LML_Clone 3DModel] Canvas configured (${targetWidth}x${targetHeight}), Depth texture (re)created.`); } };
+    const configureCanvasAndDepthTexture = () => { if (!deviceInternal || !contextInternal || !formatInternal || !canvasRef.current) { return; } const currentCanvas = canvasRef.current; const dpr = window.devicePixelRatio || 1; const cw = currentCanvas.clientWidth; const ch = currentCanvas.clientHeight; if (cw === 0 || ch === 0) { return; } const targetWidth = Math.floor(cw * dpr); const targetHeight = Math.floor(ch * dpr); let needsReconfigure = false; if (currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight) { currentCanvas.width = targetWidth; currentCanvas.height = targetHeight; needsReconfigure = true; } try { contextInternal.configure({ device: deviceInternal, format: formatInternal, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } catch (e) { setError("Error config context: " + e.message); console.error("Error config context:", e); return; } const pState = pipelineStateRef.current; if (needsReconfigure || !pState.depthTexture || pState.depthTexture.width !== targetWidth || pState.depthTexture.height !== targetHeight) { pState.depthTexture?.destroy(); pState.depthTexture = deviceInternal.createTexture({ size: [targetWidth, targetHeight], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT, label: "Depth Texture" }); pState.depthTextureView = pState.depthTexture.createView({ label: "Depth Texture View"}); } };
     resizeHandlerRef.current = configureCanvasAndDepthTexture;
 
     const render = async () => {
         const currentDevice = deviceRef.current; const currentContext = contextRef.current;
         const currentVideoEl = videoRef.current; const pState = pipelineStateRef.current;
-        const activeLandmarker = landmarkerRef.current;
 
         if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.depthTextureView || (pState.lipModelData && !pState.lipModelPipeline) ) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
         frameCounter.current++;
         if (!currentVideoEl || currentVideoEl.readyState < currentVideoEl.HAVE_ENOUGH_DATA || currentVideoEl.videoWidth === 0 || currentVideoEl.videoHeight === 0) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
         if (pState.depthTexture.width !== currentContext.canvas.width || pState.depthTexture.height !== currentContext.canvas.height) { configureCanvasAndDepthTexture(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
         
-        const now = performance.now();
-        const landmarkerResult = activeLandmarker?.detectForVideo(currentVideoEl, now);
-        const hasFace = landmarkerResult && landmarkerResult.faceLandmarks.length > 0 && landmarkerResult.facialTransformationMatrixes?.length > 0;
-
         if (pState.videoAspectRatioUBO) { const videoDimData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]); currentDevice.queue.writeBuffer(pState.videoAspectRatioUBO, 0, videoDimData); }
         
         if (pState.lipModelMatrixUBO) {
             const projectionMatrix = mat4.create();
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
-            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
+            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.01, 100.0);
             
             const viewMatrix = mat4.create();
-            mat4.lookAt(viewMatrix, vec3.fromValues(0,0,1), vec3.fromValues(0,0,0), vec3.fromValues(0,1,0));
+            mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 0.15), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
             
-            let modelMatrix = mat4.create(); // This will be our final model matrix
-            if(hasFace) {
-                const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-                const flipYZ = mat4.fromValues(1,0,0,0, 0,-1,0,0, 0,0,-1,0, 0,0,0,1);
-                mat4.multiply(faceTransform, flipYZ, faceTransform);
-
-                // --- CORRECTED ADJUSTMENT LOGIC BASED ON STANDARD 3D HIERARCHY ---
-                const localAdjustmentMatrix = mat4.create(); // Start with identity
-
-                // 1. Scale the model first. This is the most critical value.
-                const scaleFactor = 0.06;
-                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-
-                // 2. Rotate if necessary (e.g. if the model is oriented incorrectly).
-                // mat4.rotateX(localAdjustmentMatrix, localAdjustmentMatrix, -Math.PI / 2); // Example rotation
-
-                // 3. Translate the scaled and rotated model to the correct position.
-                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(0.0, -0.65, 0.8)); // Values based on common adjustments
-                
-                // 4. Combine: Final Model Matrix = Face Pose * Local Adjustments
-                mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
-            }
+            // --- DEBUGGING: IGNORE MEDIAPIPE MATRIX ---
+            // Create a simple rotating model matrix to test if the geometry is coherent.
+            const modelMatrix = mat4.create();
+            const rotationY = frameCounter.current * 0.01;
+            mat4.rotate(modelMatrix, modelMatrix, rotationY, [0, 1, 0]); // Rotate around Y axis
+            
+            // Apply a small scale so it fits in the view
+            mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.06, 0.06, 0.06));
             
             const sceneMatrices = new Float32Array(16 * 3);
             sceneMatrices.set(projectionMatrix, 0);
@@ -145,7 +83,8 @@ export default function LipstickMirrorLive_Clone() {
             passEnc.draw(6);
         }
         
-        if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelMatrixBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
+        // Draw the model regardless of face detection for this test
+        if (pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer) {
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
             passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
@@ -177,7 +116,7 @@ export default function LipstickMirrorLive_Clone() {
             const uvs = getAccessorDataFromGLTF(gltfJson, primitiveJson.attributes.TEXCOORD_0, mainBinaryBuffer);
             const indices = getAccessorDataFromGLTF(gltfJson, primitiveJson.indices, mainBinaryBuffer);
             if (!positions || !normals || !uvs || !indices) { throw new Error("Essential mesh attributes are missing after parse."); }
-            pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, targets: [], shapeKeyNames: [] };
+            pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices };
             console.log("[LML_Clone 3DModel] Mesh data extracted:", { numPos:positions?.length/3, numNorm:normals?.length/3, numUV:uvs?.length/2, numIdx:indices?.length });
             setDebugMessage("3D Model Parsed. Initializing GPU...");
         } catch (modelLoadError) { console.error("[LML_Clone 3DModel] Error loading/processing lip model:", modelLoadError); setError(`Model Load: ${modelLoadError.message.substring(0, 100)}`); setDebugMessage("Error: Model Load"); return;  }
@@ -214,7 +153,7 @@ export default function LipstickMirrorLive_Clone() {
             p.videoAspectRatioUBO = deviceInternal.createBuffer({ label: "Video Aspect UBO", size: 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             p.videoAspectRatioBindGroup = deviceInternal.createBindGroup({ label: "VideoDim_BG", layout: p.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer: p.videoAspectRatioUBO}}]});
             
-            p.lipModelMatrixUBO = deviceInternal.createBuffer({ label: "Scene Matrix UB", size: (16 + 16 + 16) * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            p.lipModelMatrixUBO = deviceInternal.createBuffer({ label: "Scene Matrix UB", size: (16) * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             p.lipModelMatrixBindGroup = deviceInternal.createBindGroup({ label: "SceneMatrix_BG", layout: p.lipModelMatrixGroupLayout, entries: [{binding:0, resource:{buffer: p.lipModelMatrixUBO}}]});
             
             p.lipstickMaterialUniformBuffer = deviceInternal.createBuffer({ label: "MaterialTint_UB", size: 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
