@@ -6,23 +6,9 @@ import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
-// This helper is still needed to parse the GLB file
-function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) {
-    const accessor = gltfJson.accessors[accessorIndex];
-    if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`);
-    const bufferView = gltfJson.bufferViews[accessor.bufferView];
-    if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`);
-    const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; 
-    let numComponents;
-    switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported accessor type: ${type}`);}
-    let TypedArrayConstructor; let componentByteSize = 0;
-    switch (componentType) { case 5120: TypedArrayConstructor = Int8Array; componentByteSize = 1; break; case 5121: TypedArrayConstructor = Uint8Array; componentByteSize = 1; break; case 5122: TypedArrayConstructor = Int16Array; componentByteSize = 2; break; case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);}
-    const totalElements = count * numComponents; const accessorByteLength = totalElements * componentByteSize;
-    const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
-    if (mainBinaryBuffer.byteLength < byteOffset + accessorByteLength) { throw new Error( `Buffer access out of bounds for accessor ${accessorIndex}. Offset: ${byteOffset}, Length: ${accessorByteLength}, BufferSize: ${mainBinaryBuffer.byteLength}. BV target: ${bufferView.target || 'N/A'}, bvLength: ${bufferView.byteLength}` ); }
-    const bufferSlice = mainBinaryBuffer.slice(byteOffset, byteOffset + accessorByteLength);
-    return new TypedArrayConstructor(bufferSlice);
-}
+const LIPSTICK_COLORS = [ { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] }, { name: 'Classic Red', value: [200/255, 0/255, 0/255, 0.9] }, { name: 'Deep Plum', value: [100/255, 20/255, 50/255, 0.85] }, { name: 'Coral Burst', value: [255/255, 100/255, 80/255, 0.8] }, { name: 'Soft Mauve', value: [180/255, 120/255, 150/255, 0.8] }, { name: 'Highlight Gloss', value: [1.0, 1.0, 1.0, 0.3] }, ];
+async function loadImageBitmap(url) { const response = await fetch(url); if (!response.ok) { throw new Error(`Failed to fetch image ${url}: ${response.statusText}`); } const blob = await response.blob(); return createImageBitmap(blob); }
+function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) { const accessor = gltfJson.accessors[accessorIndex]; if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`); const bufferView = gltfJson.bufferViews[accessor.bufferView]; if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`); const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; let numComponents; switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported accessor type: ${type}`);} let TypedArrayConstructor; let componentByteSize = 0; switch (componentType) { case 5120: TypedArrayConstructor = Int8Array; componentByteSize = 1; break; case 5121: TypedArrayConstructor = Uint8Array; componentByteSize = 1; break; case 5122: TypedArrayConstructor = Int16Array; componentByteSize = 2; break; case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);} const totalElements = count * numComponents; const accessorByteLength = totalElements * componentByteSize; const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0); if (mainBinaryBuffer.byteLength < byteOffset + accessorByteLength) { throw new Error( `Buffer access out of bounds for accessor ${accessorIndex}. Offset: ${byteOffset}, Length: ${accessorByteLength}, BufferSize: ${mainBinaryBuffer.byteLength}. BV target: ${bufferView.target || 'N/A'}, bvLength: ${bufferView.byteLength}` ); } const bufferSlice = mainBinaryBuffer.slice(byteOffset, byteOffset + accessorByteLength); return new TypedArrayConstructor(bufferSlice); }
 
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null);
@@ -47,9 +33,12 @@ export default function LipstickMirrorLive_Clone() {
   const [debugMessage, setDebugMessage] = useState('Initializing...');
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect (Static Model Rotation Test).");
-    let device = null, context = null, format = null;
-    let resizeObserver = null; let renderLoopStarted = false;
+    console.log("[LML_Clone 3DModel] Main useEffect (Static Model Rotation Test - Final Fix).");
+    let device = null; 
+    let context = null; 
+    let format = null;
+    let resizeObserver = null; 
+    let renderLoopStarted = false; // The missing variable
     const canvasElement = canvasRef.current;
     if (!canvasElement) return;
 
@@ -67,9 +56,8 @@ export default function LipstickMirrorLive_Clone() {
             currentCanvas.height = targetHeight;
         }
 
-        try {
-            context.configure({ device, format, alphaMode: 'opaque', size: [targetWidth, targetHeight] });
-        } catch (e) { setError("Error config context: " + e.message); return; }
+        try { context.configure({ device, format, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } 
+        catch (e) { setError("Error config context: " + e.message); return; }
 
         const pState = pipelineStateRef.current;
         if (needsReconfigure || !pState.depthTexture) {
@@ -95,15 +83,15 @@ export default function LipstickMirrorLive_Clone() {
         
         const projectionMatrix = mat4.create();
         const canvasAspectRatio = context.canvas.width / context.canvas.height;
-        mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.01, 100.0);
+        mat4.perspective(projectionMatrix, (45 * Math.PI) / 180, canvasAspectRatio, 0.01, 100.0);
         
         const viewMatrix = mat4.create();
-        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 0.15), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 0.2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
         
         const modelMatrix = mat4.create();
         mat4.rotateY(modelMatrix, modelMatrix, frameCounter.current * 0.01);
         mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.3, 0.3, 0.3));
-        
+
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, viewMatrix, modelMatrix);
         mat4.multiply(mvpMatrix, projectionMatrix, mvpMatrix);
@@ -140,6 +128,7 @@ export default function LipstickMirrorLive_Clone() {
             else { throw new Error("Could not find main binary ArrayBuffer."); }
             if (!gltfJson?.meshes?.[0]?.primitives?.[0]) throw new Error("GLTF data is missing required mesh/primitive structure.");
             const primitiveJson = gltfJson.meshes[0].primitives[0];
+            if (primitiveJson.attributes.POSITION === undefined) throw new Error("Primitive missing POSITION.");
             const positions = getAccessorDataFromGLTF(gltfJson, primitiveJson.attributes.POSITION, mainBinaryBuffer);
             const normals = getAccessorDataFromGLTF(gltfJson, primitiveJson.attributes.NORMAL, mainBinaryBuffer);
             const uvs = getAccessorDataFromGLTF(gltfJson, primitiveJson.attributes.TEXCOORD_0, mainBinaryBuffer);
@@ -193,16 +182,17 @@ export default function LipstickMirrorLive_Clone() {
             
             console.log("GPU resources for static model test initialized.");
             setDebugMessage("Ready (Static 3D Test).");
-            if (!renderLoopStartedInternal) { render(); renderLoopStartedInternal = true; }
+            if (!renderLoopStarted) { render(); renderLoopStarted = true; }
         } catch (err) { setError(`GPU Init: ${err.message.substring(0,100)}`); console.error("GPU Init Error:", err); setDebugMessage("Error: GPU Init"); }
     };
 
     initializeAll();
     return () => { 
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current); 
-        if (resizeObserverInternal && canvasRef.current) resizeObserverInternal.unobserve(canvasRef.current); 
+        if (resizeObserverInternal && canvasElement.current) resizeObserverInternal.unobserve(canvasElement.current); 
         const pS=pipelineStateRef.current; 
-        pS.lipModelMatrixUBO?.destroy(); pS.lipModelVertexBuffer?.destroy(); pS.lipModelIndexBuffer?.destroy(); pS.depthTexture?.destroy(); 
+        pS.lipModelMatrixUBO?.destroy(); pS.lipModelVertexBuffer?.destroy();
+        pS.lipModelIndexBuffer?.destroy(); pS.depthTexture?.destroy(); 
     };
   }, []);
 
@@ -218,8 +208,9 @@ export default function LipstickMirrorLive_Clone() {
       <div style={{ position: 'absolute', top: '5px', left: '5px', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '2px 5px', fontSize: '12px', zIndex: 20, pointerEvents: 'none' }}>
         {debugMessage} (Frame: {frameCounter.current})
       </div>
-      {/* Hiding color swatches and video element for this test */}
+      {/* Hiding swatches for this test */}
       {/* <div style={{...}}>...</div> */}
+      {/* Hiding video element for this test */}
       {/* <video ref={videoRef} style={{ display: 'none' }} ... /> */}
       <canvas ref={canvasRef} width={640} height={480} style={{ width: '100%', height: '100%', display: 'block', background: 'lightpink' }} />
     </div>
