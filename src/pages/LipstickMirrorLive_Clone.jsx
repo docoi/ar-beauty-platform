@@ -35,15 +35,8 @@ export default function LipstickMirrorLive_Clone() {
         if (cw === 0 || ch === 0) return;
         const targetWidth = Math.floor(cw * dpr); const targetHeight = Math.floor(ch * dpr);
         let needsReconfigure = currentCanvas.width !== targetWidth || currentCanvas.height !== targetHeight;
-        
-        if (needsReconfigure) {
-            currentCanvas.width = targetWidth;
-            currentCanvas.height = targetHeight;
-        }
-
-        try { context.configure({ device, format, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } 
-        catch (e) { setError("Error config context: " + e.message); return; }
-
+        if (needsReconfigure) { currentCanvas.width = targetWidth; currentCanvas.height = targetHeight; }
+        try { context.configure({ device, format, alphaMode: 'opaque', size: [targetWidth, targetHeight] }); } catch (e) { setError("Error config context: " + e.message); return; }
         const pState = pipelineStateRef.current;
         if (needsReconfigure || !pState.depthTexture) {
             pState.depthTexture?.destroy(); 
@@ -75,7 +68,8 @@ export default function LipstickMirrorLive_Clone() {
         
         const modelMatrix = mat4.create();
         mat4.rotateY(modelMatrix, modelMatrix, frameCounter.current * 0.01);
-        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.3, 0.3, 0.3));
+        // Corrected, smaller scale factor
+        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.06, 0.06, 0.06));
 
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, viewMatrix, modelMatrix);
@@ -135,7 +129,6 @@ export default function LipstickMirrorLive_Clone() {
             configureCanvasAndDepthTexture();
             
             const pState = pipelineStateRef.current;
-            // For this test, we don't need the full pipeline creation, just the simplified 3D model one.
             const layoutsAndPipelines = await createPipelines(device, format, true); 
             if (!layoutsAndPipelines.lipModelPipeline) throw new Error(`Lip Model Pipeline creation failed.`);
             
