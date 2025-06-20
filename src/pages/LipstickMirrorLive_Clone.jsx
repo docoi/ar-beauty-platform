@@ -11,26 +11,11 @@ async function loadImageBitmap(url) { const response = await fetch(url); if (!re
 function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) { const accessor = gltfJson.accessors[accessorIndex]; if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`); const bufferView = gltfJson.bufferViews[accessor.bufferView]; if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`); const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; let numComponents; switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported accessor type: ${type}`);} let TypedArrayConstructor; let componentByteSize = 0; switch (componentType) { case 5120: TypedArrayConstructor = Int8Array; componentByteSize = 1; break; case 5121: TypedArrayConstructor = Uint8Array; componentByteSize = 1; break; case 5122: TypedArrayConstructor = Int16Array; componentByteSize = 2; break; case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);} const totalElements = count * numComponents; const accessorByteLength = totalElements * componentByteSize; const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0); if (mainBinaryBuffer.byteLength < byteOffset + accessorByteLength) { throw new Error( `Buffer access out of bounds for accessor ${accessorIndex}. Offset: ${byteOffset}, Length: ${accessorByteLength}, BufferSize: ${mainBinaryBuffer.byteLength}. BV target: ${bufferView.target || 'N/A'}, bvLength: ${bufferView.byteLength}` ); } const bufferSlice = mainBinaryBuffer.slice(byteOffset, byteOffset + accessorByteLength); return new TypedArrayConstructor(bufferSlice); }
 
 export default function LipstickMirrorLive_Clone() {
-  const canvasRef = useRef(null);
-  const animationFrameIdRef = useRef(null);
-  const frameCounter = useRef(0);
-  const resizeHandlerRef = useRef(null);
-  
-  const pipelineStateRef = useRef({
-    lipModelData: null,
-    lipModelVertexBuffer: null,
-    lipModelIndexBuffer: null,
-    lipModelIndexFormat: 'uint16',
-    lipModelNumIndices: 0,
-    lipModelPipeline: null,
-    lipModelMatrixUBO: null,
-    lipModelMatrixBindGroup: null,
-    depthTexture: null,
-    depthTextureView: null,
-  });
-
-  const [error, setError] = useState(null);
-  const [debugMessage, setDebugMessage] = useState('Initializing...');
+  const canvasRef = useRef(null); const videoRef = useRef(null); const animationFrameIdRef = useRef(null); const frameCounter = useRef(0); const resizeHandlerRef = useRef(null); const deviceRef = useRef(null); const contextRef = useRef(null); const formatRef = useRef(null); const landmarkerRef = useRef(null);
+  const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value); const selectedColorForRenderRef = useRef(LIPSTICK_COLORS[0].value);
+  const pipelineStateRef = useRef({ lipModelData: null, lipModelVertexBuffer: null, lipModelIndexBuffer: null, lipModelIndexFormat: 'uint16', lipModelNumIndices: 0, lipModelPipeline: null, lipModelMatrixUBO: null, lipModelMatrixBindGroup: null, depthTexture: null, depthTextureView: null, });
+  const [error, setError] = useState(null); const [debugMessage, setDebugMessage] = useState('Initializing...');
+  useEffect(() => { selectedColorForRenderRef.current = selectedColorUI; }, [selectedColorUI]);
 
   useEffect(() => {
     console.log("[LML_Clone 3DModel] Main useEffect (Static Model Rotation Test - Final Fix).");
@@ -38,7 +23,7 @@ export default function LipstickMirrorLive_Clone() {
     let context = null; 
     let format = null;
     let resizeObserver = null; 
-    let renderLoopStarted = false; // The missing variable
+    let renderLoopStarted = false; 
     const canvasElement = canvasRef.current;
     if (!canvasElement) return;
 
@@ -150,6 +135,7 @@ export default function LipstickMirrorLive_Clone() {
             configureCanvasAndDepthTexture();
             
             const pState = pipelineStateRef.current;
+            // For this test, we don't need the full pipeline creation, just the simplified 3D model one.
             const layoutsAndPipelines = await createPipelines(device, format, true); 
             if (!layoutsAndPipelines.lipModelPipeline) throw new Error(`Lip Model Pipeline creation failed.`);
             
@@ -208,9 +194,8 @@ export default function LipstickMirrorLive_Clone() {
       <div style={{ position: 'absolute', top: '5px', left: '5px', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '2px 5px', fontSize: '12px', zIndex: 20, pointerEvents: 'none' }}>
         {debugMessage} (Frame: {frameCounter.current})
       </div>
-      {/* Hiding swatches for this test */}
+      {/* Hiding swatches and video element for this isolated test */}
       {/* <div style={{...}}>...</div> */}
-      {/* Hiding video element for this test */}
       {/* <video ref={videoRef} style={{ display: 'none' }} ... /> */}
       <canvas ref={canvasRef} width={640} height={480} style={{ width: '100%', height: '100%', display: 'block', background: 'lightpink' }} />
     </div>
