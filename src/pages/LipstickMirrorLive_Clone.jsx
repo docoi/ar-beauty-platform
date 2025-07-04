@@ -76,7 +76,7 @@ export default function LipstickMirrorLive_Clone() {
         mat4.rotateY(modelMatrix, modelMatrix, frameCounter.current * 0.01);
 
         // --- CRITICAL FIX: Add scaling to the model matrix ---
-        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.3, 0.3, 0.3));
+        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.1, 0.1, 0.1));
 
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, viewMatrix, modelMatrix);
