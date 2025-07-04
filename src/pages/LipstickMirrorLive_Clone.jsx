@@ -67,15 +67,16 @@ export default function LipstickMirrorLive_Clone() {
         
         const projectionMatrix = mat4.create();
         const canvasAspectRatio = context.canvas.width / context.canvas.height;
-        mat4.perspective(projectionMatrix, (45 * Math.PI) / 180, canvasAspectRatio, 0.1, 100.0);
+        mat4.perspective(projectionMatrix, (45 * Math.PI) / 180, canvasAspectRatio, 0.01, 100.0);
         
-        // Pull camera way back to ensure we see the object, no matter its original scale
         const viewMatrix = mat4.create();
-        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 5), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 0.5), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
         
-        // Just rotate the model at the origin at its native scale
         const modelMatrix = mat4.create();
         mat4.rotateY(modelMatrix, modelMatrix, frameCounter.current * 0.01);
+
+        // --- CRITICAL FIX: Add scaling to the model matrix ---
+        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.1, 0.1, 0.1));
 
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, viewMatrix, modelMatrix);
