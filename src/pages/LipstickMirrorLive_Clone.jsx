@@ -1,12 +1,11 @@
 // src/pages/LipstickMirrorLive_Clone.jsx
 
 import React, { useEffect, useRef, useState } from 'react';
-import createPipelines from '@/utils/createPipelines'; // Uses the simplified version
+import createPipelines from '@/utils/createPipelines';
 import { load } from '@loaders.gl/core';
 import { GLTFLoader } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
-// This helper function is correct and necessary for parsing the GLB
 function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) {
     const accessor = gltfJson.accessors[accessorIndex];
     if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`);
@@ -14,7 +13,7 @@ function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) {
     if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`);
     const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; 
     let numComponents;
-    switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported accessor type: ${type}`);}
+    switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported type: ${type}`);}
     let TypedArrayConstructor; let componentByteSize = 0;
     switch (componentType) { case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);}
     const accessorByteLength = count * numComponents * componentByteSize;
@@ -47,7 +46,7 @@ export default function LipstickMirrorLive_Clone() {
   const [debugMessage, setDebugMessage] = useState('Initializing...');
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect (Static Model Rotation Test - FINAL).");
+    console.log("[LML_Clone 3DModel] Main useEffect (Static Model Rotation Test - Final Fix).");
     let device, context, format, resizeObserver; 
     let renderLoopStarted = false;
     const canvas = canvasRef.current;
@@ -68,14 +67,15 @@ export default function LipstickMirrorLive_Clone() {
         
         const projectionMatrix = mat4.create();
         const canvasAspectRatio = context.canvas.width / context.canvas.height;
-        mat4.perspective(projectionMatrix, (45 * Math.PI) / 180, canvasAspectRatio, 0.01, 100.0);
+        mat4.perspective(projectionMatrix, (45 * Math.PI) / 180, canvasAspectRatio, 0.1, 100.0);
         
+        // Pull camera way back to ensure we see the object, no matter its original scale
         const viewMatrix = mat4.create();
-        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 5.0), ...)
+        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 5), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
         
+        // Just rotate the model at the origin at its native scale
         const modelMatrix = mat4.create();
         mat4.rotateY(modelMatrix, modelMatrix, frameCounter.current * 0.01);
-        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(1.0, 1.0, 1.0));
 
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, viewMatrix, modelMatrix);
