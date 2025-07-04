@@ -7,12 +7,9 @@ import { GLTFLoader } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
 function getAccessorDataFromGLTF(gltfJson, accessorIndex, mainBinaryBuffer) {
-    const accessor = gltfJson.accessors[accessorIndex];
-    if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`);
-    const bufferView = gltfJson.bufferViews[accessor.bufferView];
-    if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`);
-    const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; 
-    let numComponents;
+    const accessor = gltfJson.accessors[accessorIndex]; if (!accessor) throw new Error(`Accessor ${accessorIndex} not found.`);
+    const bufferView = gltfJson.bufferViews[accessor.bufferView]; if (!bufferView) throw new Error(`BufferView ${accessor.bufferView} not found for accessor ${accessorIndex}.`);
+    const componentType = accessor.componentType; const type = accessor.type; const count = accessor.count; let numComponents;
     switch (type) { case "SCALAR": numComponents = 1; break; case "VEC2":   numComponents = 2; break; case "VEC3":   numComponents = 3; break; case "VEC4":   numComponents = 4; break; default: throw new Error(`Unsupported type: ${type}`);}
     let TypedArrayConstructor; let componentByteSize = 0;
     switch (componentType) { case 5123: TypedArrayConstructor = Uint16Array; componentByteSize = 2; break; case 5125: TypedArrayConstructor = Uint32Array; componentByteSize = 4; break; case 5126: TypedArrayConstructor = Float32Array; componentByteSize = 4; break; default: throw new Error(`Unsupported component type: ${componentType}`);}
@@ -40,13 +37,13 @@ export default function LipstickMirrorLive_Clone() {
     lipModelMatrixBindGroup: null,
     depthTexture: null,
     depthTextureView: null,
-  }).current; // Use .current to avoid closure issues with pState alias
+  }).current;
 
   const [error, setError] = useState(null);
   const [debugMessage, setDebugMessage] = useState('Initializing...');
 
   useEffect(() => {
-    console.log("[LML_Clone 3DModel] Main useEffect (ULTRA-SIMPLIFIED DIAGNOSTIC - FINAL).");
+    console.log("[LML_Clone 3DModel] Main useEffect (Static Model Rotation Test - FINAL).");
     let device, context, format, resizeObserver; 
     let renderLoopStarted = false;
     const canvas = canvasRef.current;
@@ -59,16 +56,23 @@ export default function LipstickMirrorLive_Clone() {
         }
         frameCounter.current++;
         
+        // Final check for canvas size changes before drawing
+        if (pipelineStateRef.depthTexture.width !== context.canvas.width || pipelineStateRef.depthTexture.height !== context.canvas.height) {
+            // This case should be handled by the resize observer, but as a fallback:
+            animationFrameIdRef.current = requestAnimationFrame(render);
+            return;
+        }
+        
         const projectionMatrix = mat4.create();
         const canvasAspectRatio = context.canvas.width / context.canvas.height;
         mat4.perspective(projectionMatrix, (45 * Math.PI) / 180, canvasAspectRatio, 0.01, 100.0);
         
         const viewMatrix = mat4.create();
-        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 0.2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 0.5), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
         
         const modelMatrix = mat4.create();
         mat4.rotateY(modelMatrix, modelMatrix, frameCounter.current * 0.01);
-        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.3, 0.3, 0.3));
+        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.1, 0.1, 0.1));
 
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, viewMatrix, modelMatrix);
@@ -82,13 +86,11 @@ export default function LipstickMirrorLive_Clone() {
             colorAttachments: [{ view: currentTextureView, clearValue: { r: 0, g: 0, b: 0, a: 1 }, loadOp: 'clear', storeOp: 'store' }],
             depthStencilAttachment: { view: pipelineStateRef.depthTextureView, depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }
         });
-
         passEncoder.setPipeline(pipelineStateRef.lipModelPipeline);
         passEncoder.setBindGroup(0, pipelineStateRef.lipModelMatrixBindGroup); 
         passEncoder.setVertexBuffer(0, pipelineStateRef.lipModelVertexBuffer);
         passEncoder.setIndexBuffer(pipelineStateRef.lipModelIndexBuffer, pipelineStateRef.lipModelIndexFormat);
         passEncoder.drawIndexed(pipelineStateRef.lipModelNumIndices);
-        
         passEncoder.end();
         device.queue.submit([commandEncoder.finish()]);
         animationFrameIdRef.current = requestAnimationFrame(render);
@@ -96,6 +98,8 @@ export default function LipstickMirrorLive_Clone() {
 
     const initializeAll = async () => {
       try {
+        console.log("Attempting to load /models/lips_model.glb...");
+        setDebugMessage("Loading 3D Lip Model...");
         let gltfData = await load('/models/lips_model.glb', GLTFLoader);
         const gltfJson = gltfData.json;
         if (!gltfJson?.meshes?.[0]?.primitives?.[0]) throw new Error("GLTF missing mesh/primitive structure.");
@@ -104,10 +108,11 @@ export default function LipstickMirrorLive_Clone() {
         const mainBinaryBuffer = gltfData.buffers[0].arrayBuffer;
         const positions = getAccessorDataFromGLTF(gltfJson, primitiveJson.attributes.POSITION, mainBinaryBuffer);
         const indices = getAccessorDataFromGLTF(gltfJson, primitiveJson.indices, mainBinaryBuffer);
-
         pipelineStateRef.lipModelData = { positions, indices };
-        setDebugMessage("Model Parsed. Initializing GPU...");
 
+        console.log("Model Parsed. Initializing WebGPU...");
+        setDebugMessage("Model Parsed. Initializing GPU...");
+        
         const adapter = await navigator.gpu.requestAdapter();
         device = await adapter.requestDevice();
         context = canvas.getContext('webgpu');
@@ -115,8 +120,12 @@ export default function LipstickMirrorLive_Clone() {
         
         const configureAndRender = () => {
             const dpr = window.devicePixelRatio || 1;
-            canvas.width = canvas.clientWidth * dpr;
-            canvas.height = canvas.clientHeight * dpr;
+            const targetWidth = canvas.clientWidth * dpr;
+            const targetHeight = canvas.clientHeight * dpr;
+            if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+            }
             context.configure({ device, format, alphaMode: 'opaque', size: [canvas.width, canvas.height] });
             pipelineStateRef.depthTexture?.destroy();
             pipelineStateRef.depthTexture = device.createTexture({ size: [canvas.width, canvas.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
