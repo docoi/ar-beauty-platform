@@ -71,11 +71,11 @@ export default function LipstickMirrorLive_Clone() {
         mat4.perspective(projectionMatrix, (45 * Math.PI) / 180, canvasAspectRatio, 0.01, 100.0);
         
         const viewMatrix = mat4.create();
-        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 0.2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 5.0), ...)
         
         const modelMatrix = mat4.create();
         mat4.rotateY(modelMatrix, modelMatrix, frameCounter.current * 0.01);
-        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0.3, 0.3, 0.3));
+        mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(1.0, 1.0, 1.0));
 
         const mvpMatrix = mat4.create();
         mat4.multiply(mvpMatrix, viewMatrix, modelMatrix);
