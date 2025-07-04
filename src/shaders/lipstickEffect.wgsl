@@ -1,20 +1,22 @@
-// src/shaders/lipstickEffect.wgsl (Ultra-Simplified Diagnostic with Visible Color)
+// src/shaders/lipstickEffect.wgsl
 
-// This uniform is expected by the pipeline, but we won't use it in this test
-@group(0) @binding(0) var<uniform> mvpMatrix: mat4x4f;
+// Group 0, Binding 0: A single uniform buffer containing just the MVP matrix.
+@group(0) @binding(0) var<uniform> sceneUniforms: mat4x4f;
 
+// The vertex shader only needs the vertex position from the buffer.
 struct VertexInput {
   @location(0) position: vec3f,
 };
 
+// The vertex shader's only job is to calculate the final clip space position.
 @vertex
 fn vert_main_3d(input: VertexInput) -> @builtin(position) vec4f {
-  // We will now use the MVP matrix to correctly position and scale the object
-  return mvpMatrix * vec4f(input.position, 1.0);
+  return sceneUniforms * vec4f(input.position, 1.0);
 }
 
+// The fragment shader's only job is to output a solid, bright color
+// so we can see the shape of the rendered model.
 @fragment
 fn frag_main_3d() -> @location(0) vec4f {
-  // Return a solid, bright, easily identifiable color to see the model's shape.
-  return vec4f(1.0, 0.0, 1.0, 1.0); // Bright Magenta
+  return vec4f(1.0, 0.0, 1.0, 1.0); // Bright Magenta, fully opaque
 }
