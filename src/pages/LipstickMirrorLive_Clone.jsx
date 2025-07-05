@@ -92,6 +92,8 @@ export default function LipstickMirrorLive_Clone() {
 
     // PASTE THIS ENTIRE FUNCTION INTO YOUR LipstickMirrorLive_Clone.jsx FILE
 
+    // PASTE THIS NEW VERSION of the render function into LipstickMirrorLive_Clone.jsx
+
     const render = async () => {
         const currentDevice = deviceRef.current;
         const currentContext = contextRef.current;
@@ -124,68 +126,59 @@ export default function LipstickMirrorLive_Clone() {
         }
         
         if (pState.lipModelMatrixUBO) {
+            // The Projection matrix is still needed to convert from camera (view) space to clip space.
             const projectionMatrix = mat4.create();
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
+            // This is a standard perspective projection. The MediaPipe matrix is designed to work with it.
             mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
             
-            const viewMatrix = mat4.create();
-            mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 1), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
-            
-            let modelMatrix = mat4.create();
-            if(hasFace) {
-                // ==================================================================
-                // START OF THE FIX: Correct Matrix Calculation Logic
-                // ==================================================================
+            // ==================================================================
+            // START OF THE FIX (v2)
+            // ==================================================================
+            // The MediaPipe faceTransform is a MODEL-VIEW matrix. It handles both model placement AND the camera view.
+            // Therefore, our own `viewMatrix` must be an identity matrix (a "do nothing" matrix),
+            // so we don't apply the view transform twice.
+            const viewMatrix = mat4.create(); // Creates an identity matrix.
 
-                // 1. Get the raw transformation matrix from MediaPipe.
+            let modelMatrix = mat4.create(); // This will now hold the combined Model-View transform.
+
+            if(hasFace) {
+                // 1. Get the raw model-view matrix from MediaPipe.
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
                 
-                // 2. Correct for Coordinate System Differences.
-                // MediaPipe uses a right-handed coordinate system common in CV, but we need to align
-                // it with our WebGPU/WebGL-style view space. This matrix flips the Y and Z axes.
-                const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
-                mat4.multiply(faceTransform, flipYZ, faceTransform); // Pre-multiplies: New = Flip * Old
-
-                // 3. Create the Local Adjustment Matrix.
-                // This matrix transforms OUR lip model (with its specific origin and scale)
-                // into the "canonical face space" that the MediaPipe matrix expects.
-                // The order of operations is CRITICAL: Scale first, then Translate.
-                const localAdjustmentMatrix = mat4.create(); // Start with identity
+                // 2. Create the Local Adjustment Matrix to scale and position OUR model
+                // relative to the "canonical face" that MediaPipe expects.
+                const localAdjustmentMatrix = mat4.create();
 
                 // --- TWEAK THESE VALUES FOR PERFECT PLACEMENT ---
-                // Scale the model to fit the face.
-                const scaleFactor = 0.075; 
-                // Translate the model. [X, Y, Z]
-                // +X is right, +Y is up, +Z is towards you.
-                const translationVector = vec3.fromValues(0.0, -0.04, 0.05); 
+                // This will likely need significant adjustment now. Start with something large to see it.
+                const scaleFactor = 60.0; // This value is now in different units.
+                // Y will likely be negative to move it down. Z may need to be negative to move it away.
+                const translationVector = vec3.fromValues(0.0, -2.0, -5.0);
                 // --- END OF TWEAKABLE VALUES ---
 
-                // a) Apply scaling FIRST.
                 mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
-                
-                // b) Apply translation SECOND. gl-matrix pre-multiplies, so this correctly calculates:
-                // Final Adjustment = TranslationMatrix * ScalingMatrix
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, translationVector);
 
-                // 4. Calculate the final modelMatrix.
-                // Final Matrix = (MediaPipe Pose) * (Our Local Adjustment)
-                // This takes a vertex from our model, scales/positions it to fit a generic face,
-                // and then transforms that result using the live head pose.
+                // 3. Calculate the final model-view matrix.
+                // Final = (MediaPipe Pose) * (Our Local Adjustment)
                 mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
-                
-                // ==================================================================
-                // END OF THE FIX
-                // ==================================================================
 
             } else {
-                // If no face is detected, scale the model to zero so it's invisible.
+                // If no face, scale to zero to hide it.
                 mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0, 0, 0));
             }
             
+            // In the shader, the calculation will be: Proj * Identity * (Our ModelView)
+            // which simplifies to: Proj * (Our ModelView), which is correct.
+            // ==================================================================
+            // END OF THE FIX (v2)
+            // ==================================================================
+
             const sceneMatrices = new Float32Array(16 * 3);
             sceneMatrices.set(projectionMatrix, 0);
-            sceneMatrices.set(viewMatrix, 16);
-            sceneMatrices.set(modelMatrix, 32);
+            sceneMatrices.set(viewMatrix, 16); // Sending the identity matrix
+            sceneMatrices.set(modelMatrix, 32); // Sending our combined model-view matrix
 
             currentDevice.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
         }
@@ -193,7 +186,7 @@ export default function LipstickMirrorLive_Clone() {
         if (pState.lipstickMaterialUniformBuffer) { const colorData = new Float32Array(selectedColorForRenderRef.current); currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData); }
         if (pState.lightingUniformBuffer) { const { lightDirection, ambientColor, diffuseColor, cameraWorldPosition } = lightSettingsRef.current; const lightingData = new Float32Array([ ...lightDirection, 0.0, ...ambientColor, ...diffuseColor, ...cameraWorldPosition, 0.0 ]); currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData); }
         
-        let videoTextureGPU, frameBindGroupForTexture; try { videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl }); if (pState.videoBindGroupLayout && pState.videoSampler) { frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{ binding: 0, resource: pState.videoSampler }, { binding: 1, resource: videoTextureGPU }] }); } else { animationFrameIdRef.current = requestAnimationFrame(render); return; } } catch (e) { console.error("Error importing video texture:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+        let videoTextureGPU, frameBindGroupForTexture; try { videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl }); if (pState.videoBindGroupLayout && pState.videoSampler) { frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{ binding: 0, resource: pS.videoSampler }, { binding: 1, resource: videoTextureGPU }] }); } else { animationFrameIdRef.current = requestAnimationFrame(render); return; } } catch (e) { console.error("Error importing video texture:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
         let currentGpuTexture, currentTextureView; try { currentGpuTexture = currentContext.getCurrentTexture(); currentTextureView = currentGpuTexture.createView(); } catch (e) { console.warn("Error getting current texture", e); if (resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
         
         const cmdEnc = currentDevice.createCommandEncoder({label: "Main Render Encoder"});
