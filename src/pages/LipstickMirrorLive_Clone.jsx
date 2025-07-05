@@ -94,6 +94,8 @@ export default function LipstickMirrorLive_Clone() {
 
     // PASTE THIS NEW VERSION of the render function into LipstickMirrorLive_Clone.jsx
 
+    // PASTE THIS FINAL, CORRECTED VERSION of the render function into LipstickMirrorLive_Clone.jsx
+
     const render = async () => {
         const currentDevice = deviceRef.current;
         const currentContext = contextRef.current;
@@ -126,55 +128,33 @@ export default function LipstickMirrorLive_Clone() {
         }
         
         if (pState.lipModelMatrixUBO) {
-            // The Projection matrix is still needed to convert from camera (view) space to clip space.
             const projectionMatrix = mat4.create();
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
-            // This is a standard perspective projection. The MediaPipe matrix is designed to work with it.
             mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
             
-            // ==================================================================
-            // START OF THE FIX (v2)
-            // ==================================================================
-            // The MediaPipe faceTransform is a MODEL-VIEW matrix. It handles both model placement AND the camera view.
-            // Therefore, our own `viewMatrix` must be an identity matrix (a "do nothing" matrix),
-            // so we don't apply the view transform twice.
-            const viewMatrix = mat4.create(); // Creates an identity matrix.
+            // The MediaPipe faceTransform is a MODEL-VIEW matrix. Our `viewMatrix` must be an identity matrix.
+            const viewMatrix = mat4.create(); // Identity matrix
 
-            let modelMatrix = mat4.create(); // This will now hold the combined Model-View transform.
+            let modelMatrix = mat4.create(); // This will hold the combined Model-View transform.
 
             if(hasFace) {
-                // 1. Get the raw model-view matrix from MediaPipe.
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-                
-                // 2. Create the Local Adjustment Matrix to scale and position OUR model
-                // relative to the "canonical face" that MediaPipe expects.
                 const localAdjustmentMatrix = mat4.create();
 
                 // --- TWEAK THESE VALUES FOR PERFECT PLACEMENT ---
-                // This will likely need significant adjustment now. Start with something large to see it.
-                const scaleFactor = 60.0; // This value is now in different units.
-                // Y will likely be negative to move it down. Z may need to be negative to move it away.
+                const scaleFactor = 60.0; 
                 const translationVector = vec3.fromValues(0.0, -2.0, -5.0);
                 // --- END OF TWEAKABLE VALUES ---
 
                 mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, translationVector);
 
-                // 3. Calculate the final model-view matrix.
-                // Final = (MediaPipe Pose) * (Our Local Adjustment)
                 mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
 
             } else {
-                // If no face, scale to zero to hide it.
                 mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0, 0, 0));
             }
             
-            // In the shader, the calculation will be: Proj * Identity * (Our ModelView)
-            // which simplifies to: Proj * (Our ModelView), which is correct.
-            // ==================================================================
-            // END OF THE FIX (v2)
-            // ==================================================================
-
             const sceneMatrices = new Float32Array(16 * 3);
             sceneMatrices.set(projectionMatrix, 0);
             sceneMatrices.set(viewMatrix, 16); // Sending the identity matrix
@@ -186,8 +166,38 @@ export default function LipstickMirrorLive_Clone() {
         if (pState.lipstickMaterialUniformBuffer) { const colorData = new Float32Array(selectedColorForRenderRef.current); currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData); }
         if (pState.lightingUniformBuffer) { const { lightDirection, ambientColor, diffuseColor, cameraWorldPosition } = lightSettingsRef.current; const lightingData = new Float32Array([ ...lightDirection, 0.0, ...ambientColor, ...diffuseColor, ...cameraWorldPosition, 0.0 ]); currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData); }
         
-        let videoTextureGPU, frameBindGroupForTexture; try { videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl }); if (pState.videoBindGroupLayout && pState.videoSampler) { frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{ binding: 0, resource: pS.videoSampler }, { binding: 1, resource: videoTextureGPU }] }); } else { animationFrameIdRef.current = requestAnimationFrame(render); return; } } catch (e) { console.error("Error importing video texture:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
-        let currentGpuTexture, currentTextureView; try { currentGpuTexture = currentContext.getCurrentTexture(); currentTextureView = currentGpuTexture.createView(); } catch (e) { console.warn("Error getting current texture", e); if (resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+        let videoTextureGPU, frameBindGroupForTexture; 
+        try { 
+            videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl }); 
+            if (pState.videoBindGroupLayout && pState.videoSampler) { 
+                // THIS IS THE LINE THAT HAD THE TYPO. IT IS NOW FIXED.
+                frameBindGroupForTexture = currentDevice.createBindGroup({ 
+                    layout: pState.videoBindGroupLayout, 
+                    entries: [
+                        { binding: 0, resource: pState.videoSampler }, // Formerly pS.videoSampler
+                        { binding: 1, resource: videoTextureGPU }
+                    ] 
+                }); 
+            } else { 
+                animationFrameIdRef.current = requestAnimationFrame(render); 
+                return; 
+            } 
+        } catch (e) { 
+            console.error("Error importing video texture:", e); 
+            animationFrameIdRef.current = requestAnimationFrame(render); 
+            return; 
+        }
+        
+        let currentGpuTexture, currentTextureView; 
+        try { 
+            currentGpuTexture = currentContext.getCurrentTexture(); 
+            currentTextureView = currentGpuTexture.createView(); 
+        } catch (e) { 
+            console.warn("Error getting current texture", e); 
+            if (resizeHandlerRef.current) resizeHandlerRef.current(); 
+            animationFrameIdRef.current = requestAnimationFrame(render); 
+            return; 
+        }
         
         const cmdEnc = currentDevice.createCommandEncoder({label: "Main Render Encoder"});
         const passEnc = cmdEnc.beginRenderPass({ colorAttachments: [{ view: currentTextureView, clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }], depthStencilAttachment: { view: pState.depthTextureView, depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }});
@@ -204,7 +214,7 @@ export default function LipstickMirrorLive_Clone() {
         if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelMatrixBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
-            passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
+            passEnc.setBindGroup(1, pS.lipModelMaterialBindGroup);   
             passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);   
             passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
             passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
