@@ -4,7 +4,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
-import { GLTFLoader } from '@loaders.gl/gltf';
+// getAccessorData is the official helper function we need from the library
+import { GLTFLoader, getAccessorData } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
 const LIPSTICK_COLORS = [
@@ -23,7 +24,6 @@ async function loadImageBitmap(url) {
   return createImageBitmap(blob);
 }
 
-// This helper function is correct and will now receive clean data.
 function calculateBoundingBoxCenter(positions) {
   if (!positions || positions.length < 3) return vec3.create();
   let minX = Infinity, minY = Infinity, minZ = Infinity;
@@ -93,7 +93,6 @@ export default function LipstickMirrorLive_Clone() {
     };
     resizeHandlerRef.current = configureCanvasAndDepthTexture;
 
-    // THIS IS THE STATIC TEST RENDER FUNCTION - IT WILL SHOW A STABLE, NON-TRACKING LIP SHAPE
     const render = async () => {
         const currentDevice = deviceRef.current;
         const currentContext = contextRef.current;
@@ -139,9 +138,12 @@ export default function LipstickMirrorLive_Clone() {
                 modelMatrix = mat4.create();
                 const modelCenter = pState.lipModelData.modelCenter;
                 const centeringVector = vec3.negate(vec3.create(), modelCenter);
-                const scaleFactor = 0.05; // You can adjust this value to make the static model bigger or smaller
+                
+                // Let's use a scale factor that should make it clearly visible
+                const scaleFactor = 0.05;
                 const scaleVector = vec3.fromValues(scaleFactor, scaleFactor, scaleFactor);
                 
+                // Apply scaling first, then the centering translation
                 mat4.scale(modelMatrix, modelMatrix, scaleVector);
                 mat4.translate(modelMatrix, modelMatrix, centeringVector);
                 
@@ -191,33 +193,32 @@ export default function LipstickMirrorLive_Clone() {
         animationFrameIdRef.current = requestAnimationFrame(render);
     };
 
-    // THIS initializeAll FUNCTION IS NEW AND IMPROVED
     const initializeAll = async () => {
         setDebugMessage("Loading 3D Lip Model...");
         try {
-            // Use the loaders.gl library to process the GLB file correctly.
-            // This is much more robust than the previous manual parsing.
-            const gltfData = await load('/models/lips_model.glb', GLTFLoader, { gltf: { postProcess: true } });
-            console.log("Loaded and processed GLTF data:", gltfData);
+            // Load the raw GLTF data without any special options
+            const gltfData = await load('/models/lips_model.glb', GLTFLoader);
             
-            if (!gltfData.meshes || gltfData.meshes.length === 0) throw new Error("No meshes found in GLTF.");
-            const primitive = gltfData.meshes[0].primitives[0];
-            
-            // The library provides the data in clean, typed arrays.
-            const positions = primitive.attributes.POSITION.value;
-            const normals = primitive.attributes.NORMAL.value;
-            const uvs = primitive.attributes.TEXCOORD_0.value;
-            const indices = primitive.indices.value;
+            const scene = gltfData.scenes[0];
+            const node = scene.nodes[0];
+            const mesh = node.mesh;
+            const primitive = mesh.primitives[0];
+
+            // Use the library's 'getAccessorData' helper for robust parsing
+            const positions = getAccessorData(primitive.attributes.POSITION, gltfData);
+            const normals = getAccessorData(primitive.attributes.NORMAL, gltfData);
+            const uvs = getAccessorData(primitive.attributes.TEXCOORD_0, gltfData);
+            const indices = getAccessorData(primitive.indices, gltfData);
 
             if (!positions || !normals || !uvs || !indices) { throw new Error("Essential mesh attributes are missing after processing."); }
 
             const modelCenter = calculateBoundingBoxCenter(positions);
             pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, modelCenter };
 
-            console.log("[LML_Clone] Mesh data extracted successfully from library.");
+            console.log("[LML_Clone] Mesh data extracted successfully using library helpers.");
             setDebugMessage("3D Model Parsed. Initializing GPU...");
 
-        } catch (modelLoadError) { console.error("[LML_Clone] Error loading/processing lip model:", modelLoadError); setError(`Model Load: ${modelLoadError.message.substring(0, 100)}`); setDebugMessage("Error: Model Load"); return;  }
+        } catch (modelLoadError) { console.error("[LML_Clone] Error loading/processing lip model:", modelLoadError); setError(`Model Load: ${modelLoadError.message}`); setDebugMessage("Error: Model Load"); return;  }
 
         if (!navigator.gpu) { setError("WebGPU not supported."); return; }
         setDebugMessage("Initializing WebGPU...");
@@ -278,12 +279,14 @@ export default function LipstickMirrorLive_Clone() {
             deviceInternal.queue.writeBuffer(pState.lipModelVertexBuffer, 0, interleavedBufferData);
             
             let indicesData = model.indices; let dataToWriteToGpu = indicesData; let finalIndexByteLength = indicesData.byteLength;
-            if (indicesData.byteLength % 4 !== 0) { finalIndexByteLength = Math.ceil(indicesData.byteLength / 4) * 4; const paddedBuffer = new Uint8Array(finalIndexByteLength); paddedBuffer.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength)); dataToWriteToGpu = paddedBuffer; }
+            const paddedBuffer = new Uint8Array(finalIndexByteLength); 
+            paddedBuffer.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength));
+            dataToWriteToGpu = paddedBuffer;
             pState.lipModelIndexBuffer = deviceInternal.createBuffer({ label: "3DLipIB", size: finalIndexByteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
             deviceInternal.queue.writeBuffer(pState.lipModelIndexBuffer, 0, dataToWriteToGpu, 0, finalIndexByteLength);
             
-            if (model.indices instanceof Uint16Array) { pState.lipModelIndexFormat = 'uint16'; } 
-            else if (model.indices instanceof Uint32Array) { pState.lipModelIndexFormat = 'uint32'; } 
+            if (model.indices.BYTES_PER_ELEMENT === 2) { pState.lipModelIndexFormat = 'uint16'; } 
+            else if (model.indices.BYTES_PER_ELEMENT === 4) { pState.lipModelIndexFormat = 'uint32'; } 
             
             pState.lipModelNumIndices = model.indices.length;
             console.log(`[LML_Clone] Created Interleaved VB & IB (${pState.lipModelNumIndices}i)`);
@@ -295,7 +298,7 @@ export default function LipstickMirrorLive_Clone() {
             console.log("[LML_Clone] GPU resources and video initialized.");
             setDebugMessage("Ready (3D Model).");
             if (!renderLoopStartedInternal) { render(); renderLoopStartedInternal = true; }
-        } catch (err) { setError(`GPU Init: ${err.message.substring(0,100)}`); console.error("[LML_Clone] GPU Init Error:", err); setDebugMessage("Error: GPU Init"); }
+        } catch (err) { setError(`GPU Init: ${err.message}`); console.error("[LML_Clone] GPU Init Error:", err); setDebugMessage("Error: GPU Init"); }
     };
 
     initializeAll();
@@ -319,10 +322,10 @@ export default function LipstickMirrorLive_Clone() {
   }, []);
 
   useEffect(() => { 
-    if (error) { setDebugMessage(`Error: ${error.substring(0,50)}`); } 
+    if (error) { setDebugMessage(`Error: ${error}`); } 
     else if (landmarkerState && deviceRef.current && contextRef.current && pipelineStateRef.current.lipModelPipeline) { setDebugMessage("Live Active (3D Model)"); } 
     else if (pipelineStateRef.current.lipModelData && !error && !pipelineStateRef.current.lipModelPipeline) { setDebugMessage("Model Parsed, GPU Init..."); } 
-    else if (!pipelineStateRef.current.lipModelData && !error) { setDebugMessage("Initializing (3D Model Load)..."); } 
+    else if (!pipelineStateRef.current.lip_model_data && !error) { setDebugMessage("Initializing (3D Model Load)..."); } 
   }, [landmarkerState, deviceRef.current, contextRef.current, pipelineStateRef.current.lipModelPipeline, pipelineStateRef.current.lipModelData, error]);
 
   return ( 
