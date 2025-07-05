@@ -104,6 +104,8 @@ export default function LipstickMirrorLive_Clone() {
 
     // PASTE THIS into LipstickMirrorLive_Clone.jsx. This is the "Static Test".
 
+    // PASTE THIS into LipstickMirrorLive_Clone.jsx. This will shrink the model.
+
     const render = async () => {
         const currentDevice = deviceRef.current;
         const currentContext = contextRef.current;
@@ -140,38 +142,34 @@ export default function LipstickMirrorLive_Clone() {
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
             mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 100.0);
             
+            // =========================================================================
+            // START OF THE AGGRESSIVE STATIC TEST
+            // =========================================================================
+
+            // Pull the camera back further to get a wider view.
             const viewMatrix = mat4.create();
-            // Standard "camera" looking at the origin from a distance of 1 unit.
-            mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 1), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+            mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 10), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
             
-            let modelMatrix; // We will define this below.
+            let modelMatrix;
 
-            // =========================================================================
-            // START OF THE STATIC TEST
-            // We are deliberately IGNORING the MediaPipe matrix to see if the model renders correctly on its own.
-            // =========================================================================
             if (hasFace) {
-                modelMatrix = mat4.create(); // Start with a fresh identity matrix
+                modelMatrix = mat4.create(); // A fresh identity matrix
 
-                // --- TWEAKABLE VALUES for the STATIC model ---
-                const scaleFactor = 0.4; // A simple scale factor. Adjust if it's too big or small.
-                // Move the model down a little bit so it's not dead center. [X, Y, Z]
-                const translationVector = vec3.fromValues(0, -0.2, 0); 
-                // --- END TWEAKABLE VALUES ---
+                // --- KEY CHANGE: AGGRESSIVE SCALING ---
+                // We are using a VERY small number to shrink the oversized model.
+                const scaleFactor = 0.005; 
+                // We won't translate it yet. We just want to see it at the center.
+                // --- END KEY CHANGE ---
 
-                // Build the static model matrix: Scale it, then move it.
-                // We use translate first, then scale, because gl-matrix pre-multiplies.
-                // This results in a final transform of T * S, which has the visual effect of Scale then Translate.
-                mat4.translate(modelMatrix, modelMatrix, translationVector);
                 mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
 
             } else {
-                // If no face, create a matrix that scales the model to zero so it's invisible.
+                // If no face, create a matrix that scales the model to zero.
                 modelMatrix = mat4.create();
                 mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0, 0, 0));
             }
             // =========================================================================
-            // END OF THE STATIC TEST
+            // END OF THE AGGRESSIVE STATIC TEST
             // =========================================================================
 
             const sceneMatrices = new Float32Array(16 * 3);
