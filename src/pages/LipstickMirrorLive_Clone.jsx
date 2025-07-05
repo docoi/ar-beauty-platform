@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
-// getAccessorData is the official helper function we need from the library
+// getAccessorData is the official helper function we need.
 import { GLTFLoader, getAccessorData } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
@@ -139,11 +139,9 @@ export default function LipstickMirrorLive_Clone() {
                 const modelCenter = pState.lipModelData.modelCenter;
                 const centeringVector = vec3.negate(vec3.create(), modelCenter);
                 
-                // Let's use a scale factor that should make it clearly visible
                 const scaleFactor = 0.05;
                 const scaleVector = vec3.fromValues(scaleFactor, scaleFactor, scaleFactor);
                 
-                // Apply scaling first, then the centering translation
                 mat4.scale(modelMatrix, modelMatrix, scaleVector);
                 mat4.translate(modelMatrix, modelMatrix, centeringVector);
                 
@@ -196,19 +194,23 @@ export default function LipstickMirrorLive_Clone() {
     const initializeAll = async () => {
         setDebugMessage("Loading 3D Lip Model...");
         try {
-            // Load the raw GLTF data without any special options
+            // Load the raw GLTF data. This is the simplest and most robust way.
             const gltfData = await load('/models/lips_model.glb', GLTFLoader);
             
-            const scene = gltfData.scenes[0];
-            const node = scene.nodes[0];
-            const mesh = node.mesh;
-            const primitive = mesh.primitives[0];
+            // The JSON structure is nested under the 'json' key.
+            const gltfJson = gltfData.json;
+            if (!gltfJson.meshes || gltfJson.meshes.length === 0) {
+              throw new Error("No meshes found in gltf.json structure.");
+            }
 
-            // Use the library's 'getAccessorData' helper for robust parsing
-            const positions = getAccessorData(primitive.attributes.POSITION, gltfData);
-            const normals = getAccessorData(primitive.attributes.NORMAL, gltfData);
-            const uvs = getAccessorData(primitive.attributes.TEXCOORD_0, gltfData);
-            const indices = getAccessorData(primitive.indices, gltfData);
+            const primitive = gltfJson.meshes[0].primitives[0];
+
+            // Use the library's official 'getAccessorData' helper.
+            // The signature is getAccessorData(gltf, accessorIndex).
+            const positions = getAccessorData(gltfData, primitive.attributes.POSITION);
+            const normals = getAccessorData(gltfData, primitive.attributes.NORMAL);
+            const uvs = getAccessorData(gltfData, primitive.attributes.TEXCOORD_0);
+            const indices = getAccessorData(gltfData, primitive.indices);
 
             if (!positions || !normals || !uvs || !indices) { throw new Error("Essential mesh attributes are missing after processing."); }
 
@@ -279,9 +281,7 @@ export default function LipstickMirrorLive_Clone() {
             deviceInternal.queue.writeBuffer(pState.lipModelVertexBuffer, 0, interleavedBufferData);
             
             let indicesData = model.indices; let dataToWriteToGpu = indicesData; let finalIndexByteLength = indicesData.byteLength;
-            const paddedBuffer = new Uint8Array(finalIndexByteLength); 
-            paddedBuffer.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength));
-            dataToWriteToGpu = paddedBuffer;
+            if (indicesData.byteLength % 4 !== 0) { finalIndexByteLength = Math.ceil(indicesData.byteLength / 4) * 4; const paddedBuffer = new Uint8Array(finalIndexByteLength); paddedBuffer.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength)); dataToWriteToGpu = paddedBuffer; }
             pState.lipModelIndexBuffer = deviceInternal.createBuffer({ label: "3DLipIB", size: finalIndexByteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
             deviceInternal.queue.writeBuffer(pState.lipModelIndexBuffer, 0, dataToWriteToGpu, 0, finalIndexByteLength);
             
@@ -325,7 +325,7 @@ export default function LipstickMirrorLive_Clone() {
     if (error) { setDebugMessage(`Error: ${error}`); } 
     else if (landmarkerState && deviceRef.current && contextRef.current && pipelineStateRef.current.lipModelPipeline) { setDebugMessage("Live Active (3D Model)"); } 
     else if (pipelineStateRef.current.lipModelData && !error && !pipelineStateRef.current.lipModelPipeline) { setDebugMessage("Model Parsed, GPU Init..."); } 
-    else if (!pipelineStateRef.current.lip_model_data && !error) { setDebugMessage("Initializing (3D Model Load)..."); } 
+    else if (!pipelineStateRef.current.lipModelData && !error) { setDebugMessage("Initializing (3D Model Load)..."); } 
   }, [landmarkerState, deviceRef.current, contextRef.current, pipelineStateRef.current.lipModelPipeline, pipelineStateRef.current.lipModelData, error]);
 
   return ( 
