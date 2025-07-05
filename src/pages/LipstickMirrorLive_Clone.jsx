@@ -99,7 +99,7 @@ export default function LipstickMirrorLive_Clone() {
         const pState = pipelineStateRef.current;
         const activeLandmarker = landmarkerRef.current;
 
-        if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.depthTextureView || (pState.lipModelData && !pS.lipModelPipeline) ) {
+        if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.depthTextureView || (pState.lipModelData && !pState.lipModelPipeline) ) {
             animationFrameIdRef.current = requestAnimationFrame(render);
             return;
         }
