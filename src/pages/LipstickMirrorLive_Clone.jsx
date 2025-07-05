@@ -98,6 +98,8 @@ export default function LipstickMirrorLive_Clone() {
 
     // PASTE THIS FULLY CORRECTED AND PROOFREAD VERSION into LipstickMirrorLive_Clone.jsx
 
+    // PASTE THIS into LipstickMirrorLive_Clone.jsx. Note the new values below.
+
     const render = async () => {
         const currentDevice = deviceRef.current;
         const currentContext = contextRef.current;
@@ -142,11 +144,26 @@ export default function LipstickMirrorLive_Clone() {
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
                 const localAdjustmentMatrix = mat4.create();
 
-                const scaleFactor = 60.0; 
-                const translationVector = vec3.fromValues(0.0, -2.0, -5.0);
+                // ==========================================================
+                // --- YOUR GOAL: TWEAK THESE VALUES FOR PERFECT PLACEMENT ---
+                // ==========================================================
+
+                // 1. SCALE: Start by making this smaller until you can see the whole model.
+                const scaleFactor = 1.0; 
+
+                // 2. TRANSLATION: [X, Y, Z]
+                // X: positive is right, negative is left
+                // Y: positive is up, negative is down
+                // Z: positive is toward you, negative is away from you (make this more negative to push it back)
+                const translationVector = vec3.fromValues(0.0, -5.0, -70.0);
+                
+                // ==========================================================
                 
                 mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, translationVector);
+                
+                // (We might need to add a rotation here later if the model is upside-down)
+                
                 mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
 
             } else {
@@ -208,10 +225,9 @@ export default function LipstickMirrorLive_Clone() {
             passEnc.draw(6);
         }
         
-        if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelMatrixBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
+        if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pS.lipModelNumIndices > 0 && pState.lipModelMatrixBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
-            // THIS IS THE LINE THAT HAD THE TYPO. IT IS NOW FIXED.
             passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
             passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);   
             passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
