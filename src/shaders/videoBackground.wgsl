@@ -1,18 +1,20 @@
-// src/shaders/videoBackground.wgsl (Flip Video Horizontally + "Contain" Aspect Correction)
+// src/shaders/videoBackground.wgsl
 
 struct VertOut {
   @builtin(position) position: vec4f,
   @location(0) uv: vec2f, 
 };
 
+// Group 0 for video texture resources
 @group(0) @binding(0) var videoSampler: sampler;
 @group(0) @binding(1) var videoTexture: texture_external;
 
-struct AspectRatios {
+// Group 1 for aspect ratio uniforms
+struct AspectRatioUniforms {
     videoDimensions: vec2f, 
     canvasDimensions: vec2f 
 };
-@group(1) @binding(0) var<uniform> aspectRatiosUniform: AspectRatios;
+@group(1) @binding(0) var<uniform> aspectRatiosUniform: AspectRatioUniforms;
 
 @vertex
 fn vert_main(@builtin(vertex_index) vertexIndex : u32) -> VertOut {
@@ -36,7 +38,7 @@ fn frag_main(input: VertOut) -> @location(0) vec4f {
   let videoDim = aspectRatiosUniform.videoDimensions;
 
   if (canvasDim.y < 1.0 || videoDim.y < 1.0 || videoDim.x < 1.0 || canvasDim.x < 1.0) {
-    return vec4f(0.0, 0.0, 0.0, 1.0); 
+    return vec4f(0.0, 0.0, 0.0, 1.0); // Return black if dimensions are invalid
   }
 
   let screenAspect = canvasDim.x / canvasDim.y; 
@@ -51,14 +53,15 @@ fn frag_main(input: VertOut) -> @location(0) vec4f {
     scale.x = videoAspect / screenAspect;
   }
   
-  tc = (tc - vec2f(0.5, 0.5)) / scale + vec2f(0.5, 0.5); // Inverse scale for "contain"
+  // Apply "contain" scaling to texture coordinates
+  tc = (tc - vec2f(0.5, 0.5)) / scale + vec2f(0.5, 0.5);
   
-  // --- FLIP THE VIDEO HORIZONTALLY for a true, non-mirrored view ---
+  // Flip the video horizontally for a "true mirror" view
   tc.x = 1.0 - tc.x;
-  // --- END FLIP ---
   
+  // If outside the video area, draw black bars
   if (tc.x < 0.0 || tc.x > 1.0 || tc.y < 0.0 || tc.y > 1.0) {
-    return vec4f(0.0, 0.0, 0.0, 1.0); // Black bars
+    return vec4f(0.0, 0.0, 0.0, 1.0);
   }
 
   return textureSampleBaseClampToEdge(videoTexture, videoSampler, tc);
