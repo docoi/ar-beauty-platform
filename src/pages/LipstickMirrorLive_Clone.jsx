@@ -100,6 +100,8 @@ export default function LipstickMirrorLive_Clone() {
 
     // PASTE THIS into LipstickMirrorLive_Clone.jsx. Note the new values below.
 
+    // PASTE THIS FINAL VERSION into LipstickMirrorLive_Clone.jsx
+
     const render = async () => {
         const currentDevice = deviceRef.current;
         const currentContext = contextRef.current;
@@ -134,48 +136,61 @@ export default function LipstickMirrorLive_Clone() {
         if (pState.lipModelMatrixUBO) {
             const projectionMatrix = mat4.create();
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
-            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
+            // The near/far planes are important. Let's use standard values.
+            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 100.0);
             
-            const viewMatrix = mat4.create(); // Identity matrix
+            // As diagnosed, MediaPipe provides a full Model-View matrix, so our viewMatrix must be identity.
+            const viewMatrix = mat4.create();
 
-            let modelMatrix = mat4.create();
+            let modelMatrix = mat4.create(); // This will hold the combined Model-View transform.
 
             if(hasFace) {
+                // 1. Get the raw transformation from MediaPipe
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+                
+                // 2. Create the local adjustment matrix for OUR model
                 const localAdjustmentMatrix = mat4.create();
 
-                // ==========================================================
-                // --- YOUR GOAL: TWEAK THESE VALUES FOR PERFECT PLACEMENT ---
-                // ==========================================================
+                // --- TWEAKABLE VALUES ---
+                const scaleFactor = 0.07; // Start with the first value we tried
+                // Y moves down, Z moves towards camera
+                const translationVector = vec3.fromValues(0.0, -0.04, 0.05);
+                // --- END TWEAKABLE VALUES ---
 
-                // 1. SCALE: Start by making this smaller until you can see the whole model.
-                const scaleFactor = 1.0; 
-
-                // 2. TRANSLATION: [X, Y, Z]
-                // X: positive is right, negative is left
-                // Y: positive is up, negative is down
-                // Z: positive is toward you, negative is away from you (make this more negative to push it back)
-                const translationVector = vec3.fromValues(0.0, -5.0, -70.0);
-                
-                // ==========================================================
-                
-                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
+                // 3. CORRECT ORDER OF OPERATIONS: Translate then Scale.
+                // gl-matrix pre-multiplies, so this results in a final matrix of T * S,
+                // which correctly scales the model first, then translates the scaled result.
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, translationVector);
+                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 
-                // (We might need to add a rotation here later if the model is upside-down)
-                
+                // 4. Combine the matrices. Note we are now multiplying our local adjustment
+                // by the raw MediaPipe matrix.
                 mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
 
-            } else {
-                mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0, 0, 0));
-            }
-            
-            const sceneMatrices = new Float32Array(16 * 3);
-            sceneMatrices.set(projectionMatrix, 0);
-            sceneMatrices.set(viewMatrix, 16);
-            sceneMatrices.set(modelMatrix, 32);
+                // 5. This is our FIRST approach again, which should now work correctly.
+                // We let MediaPipe matrix be just the model matrix, and we use our own LookAt view.
+                // Revert to the original logic now that the localAdjustment is correct.
+                const finalViewMatrix = mat4.create();
+                mat4.lookAt(finalViewMatrix, vec3.fromValues(0, 0, 1.2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+                
+                const finalModelMatrix = mat4.create();
+                const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
+                mat4.multiply(finalModelMatrix, faceTransform, flipYZ); // Apply MediaPipe pose with fixed coords
+                mat4.multiply(finalModelMatrix, finalModelMatrix, localAdjustmentMatrix); // Then apply our local adjustment
+                
+                // --- We will send these final matrices to the shader ---
+                const sceneMatrices = new Float32Array(16 * 3);
+                sceneMatrices.set(projectionMatrix, 0);
+                sceneMatrices.set(finalViewMatrix, 16); // Using our own view matrix
+                sceneMatrices.set(finalModelMatrix, 32); // Using our fully combined model matrix
 
-            currentDevice.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
+                currentDevice.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
+
+
+            } else { // if !hasFace
+                const sceneMatrices = new Float32Array(16 * 3).fill(0);
+                currentDevice.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
+            }
         }
 
         if (pState.lipstickMaterialUniformBuffer) { const colorData = new Float32Array(selectedColorForRenderRef.current); currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData); }
@@ -187,31 +202,14 @@ export default function LipstickMirrorLive_Clone() {
             if (pState.videoBindGroupLayout && pState.videoSampler) { 
                 frameBindGroupForTexture = currentDevice.createBindGroup({ 
                     layout: pState.videoBindGroupLayout, 
-                    entries: [
-                        { binding: 0, resource: pState.videoSampler },
-                        { binding: 1, resource: videoTextureGPU }
-                    ] 
+                    entries: [{ binding: 0, resource: pState.videoSampler }, { binding: 1, resource: videoTextureGPU }] 
                 }); 
-            } else { 
-                animationFrameIdRef.current = requestAnimationFrame(render); 
-                return; 
-            } 
-        } catch (e) { 
-            console.error("Error importing video texture:", e); 
-            animationFrameIdRef.current = requestAnimationFrame(render); 
-            return; 
-        }
+            } else { animationFrameIdRef.current = requestAnimationFrame(render); return; } 
+        } catch (e) { console.error("Error importing video texture:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
         
         let currentGpuTexture, currentTextureView; 
-        try { 
-            currentGpuTexture = currentContext.getCurrentTexture(); 
-            currentTextureView = currentGpuTexture.createView(); 
-        } catch (e) { 
-            console.warn("Error getting current texture", e); 
-            if (resizeHandlerRef.current) resizeHandlerRef.current(); 
-            animationFrameIdRef.current = requestAnimationFrame(render); 
-            return; 
-        }
+        try { currentGpuTexture = currentContext.getCurrentTexture(); currentTextureView = currentGpuTexture.createView(); } 
+        catch (e) { console.warn("Error getting current texture", e); if (resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
         
         const cmdEnc = currentDevice.createCommandEncoder({label: "Main Render Encoder"});
         const passEnc = cmdEnc.beginRenderPass({ colorAttachments: [{ view: currentTextureView, clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }], depthStencilAttachment: { view: pState.depthTextureView, depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }});
