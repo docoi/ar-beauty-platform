@@ -96,6 +96,8 @@ export default function LipstickMirrorLive_Clone() {
 
     // PASTE THIS FINAL, CORRECTED VERSION of the render function into LipstickMirrorLive_Clone.jsx
 
+    // PASTE THIS FULLY CORRECTED AND PROOFREAD VERSION into LipstickMirrorLive_Clone.jsx
+
     const render = async () => {
         const currentDevice = deviceRef.current;
         const currentContext = contextRef.current;
@@ -132,23 +134,19 @@ export default function LipstickMirrorLive_Clone() {
             const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
             mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 1000);
             
-            // The MediaPipe faceTransform is a MODEL-VIEW matrix. Our `viewMatrix` must be an identity matrix.
             const viewMatrix = mat4.create(); // Identity matrix
 
-            let modelMatrix = mat4.create(); // This will hold the combined Model-View transform.
+            let modelMatrix = mat4.create();
 
             if(hasFace) {
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
                 const localAdjustmentMatrix = mat4.create();
 
-                // --- TWEAK THESE VALUES FOR PERFECT PLACEMENT ---
                 const scaleFactor = 60.0; 
                 const translationVector = vec3.fromValues(0.0, -2.0, -5.0);
-                // --- END OF TWEAKABLE VALUES ---
-
+                
                 mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, translationVector);
-
                 mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
 
             } else {
@@ -157,8 +155,8 @@ export default function LipstickMirrorLive_Clone() {
             
             const sceneMatrices = new Float32Array(16 * 3);
             sceneMatrices.set(projectionMatrix, 0);
-            sceneMatrices.set(viewMatrix, 16); // Sending the identity matrix
-            sceneMatrices.set(modelMatrix, 32); // Sending our combined model-view matrix
+            sceneMatrices.set(viewMatrix, 16);
+            sceneMatrices.set(modelMatrix, 32);
 
             currentDevice.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
         }
@@ -170,11 +168,10 @@ export default function LipstickMirrorLive_Clone() {
         try { 
             videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl }); 
             if (pState.videoBindGroupLayout && pState.videoSampler) { 
-                // THIS IS THE LINE THAT HAD THE TYPO. IT IS NOW FIXED.
                 frameBindGroupForTexture = currentDevice.createBindGroup({ 
                     layout: pState.videoBindGroupLayout, 
                     entries: [
-                        { binding: 0, resource: pState.videoSampler }, // Formerly pS.videoSampler
+                        { binding: 0, resource: pState.videoSampler },
                         { binding: 1, resource: videoTextureGPU }
                     ] 
                 }); 
@@ -214,7 +211,8 @@ export default function LipstickMirrorLive_Clone() {
         if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0 && pState.lipModelMatrixBindGroup && pState.lipModelMaterialBindGroup && pState.lipModelLightingBindGroup) {
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
-            passEnc.setBindGroup(1, pS.lipModelMaterialBindGroup);   
+            // THIS IS THE LINE THAT HAD THE TYPO. IT IS NOW FIXED.
+            passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
             passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);   
             passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
             passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
