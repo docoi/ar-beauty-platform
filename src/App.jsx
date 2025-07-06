@@ -1,5 +1,8 @@
+// src/App.jsx
+
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
+// Standard Pages
 import Home from "@/pages/home.jsx";
 import Login from "@/pages/login.jsx";
 import Dashboard from "@/pages/dashboard.jsx";
@@ -9,25 +12,15 @@ import Pricing from "@/pages/pricing.jsx";
 import Contact from "@/pages/contact.jsx";
 import PrivacyPolicy from "@/pages/privacy.jsx";
 import TermsOfService from "@/pages/TermsOfService.jsx";
-import AvatarSwitcher from "@/pages/AvatarSwitcher.jsx";
 import ComingSoonPage from "@/pages/ComingSoon.jsx";
+
+// Feature Pages
+import AvatarSwitcher from "@/pages/AvatarSwitcher.jsx";
 import HydrationSerumPage from "@/pages/hydration_serum.jsx";
 import VirtualTryOnPage from "@/pages/VirtualTryOnPage.jsx";
-import LipstickMirrorLive from "@/pages/LipstickMirrorLive.jsx";
-import MirrorPage from "@/pages/mirror.jsx";
-import LipstickMirrorLive_Clone from './pages/LipstickMirrorLive_Clone';
 
-
-
-
-// ✅ FIXED: Use correct path to component
-import WebGPUDemo from "@/components/WebGPUDemo.jsx";
-import WebGPUTest from '@/pages/webgpu-test.jsx';
-import StaticSafeTryOn from "@/components/StaticSelfieTryOn.jsx";
-import TryOnRenderer from "@/components/TryOnRenderer.jsx";
-import LipstickMirror from "@/components/LipstickMirror.jsx";
-import TestWebGPUCanvas from './components/TestWebGPUCanvas'; // Import the new test component
-import TestInConstrainedParent from './components/TestInConstrainedParent'; // New test setup
+// CORRECTED: Import our component from its proper location in the 'components' folder.
+import LipstickMirrorLive_Clone from '@/components/LipstickMirrorLive_Clone';
 
 
 function App() {
@@ -47,11 +40,10 @@ function App() {
         <Route path="/avatar-switcher" element={<AvatarSwitcher />} />
         <Route path="/hydration_serum" element={<HydrationSerumPage />} />
         <Route path="/try-on" element={<VirtualTryOnPage />} />
-        <Route path="/webgpu-test" element={<WebGPUDemo />} />
-        <Route path="/lipstick-mirror" element={<LipstickMirror />} />
-        <Route path="/mirror" element={<MirrorPage />} />
-        <Route path="/test-constrained" element={<TestInConstrainedParent />} />
+        
+        {/* CORRECTED: The route for our mirror now correctly loads the component. */}
         <Route path="/mirror-live" element={<LipstickMirrorLive_Clone />} />
+
       </Routes>
     </Router>
   );
