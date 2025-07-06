@@ -4,7 +4,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
-import { GLTFLoader, getAccessorData } from '@loaders.gl/gltf';
+// REMOVED the faulty getAccessorData import
+import { GLTFLoader } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
 const LIPSTICK_COLORS = [
@@ -131,25 +132,27 @@ export default function LipstickMirrorLive_Clone() {
     const initializeAll = async () => {
         setDebugMessage("Loading 3D Lip Model...");
         try {
-            const gltfData = await load('/models/lips_model.glb', GLTFLoader);
-            const gltfJson = gltfData.json;
-            if (!gltfJson.meshes || gltfJson.meshes.length === 0) { throw new Error("No meshes found in gltf.json structure."); }
-            const primitive = gltfJson.meshes[0].primitives[0];
+            // ======================================================================
+            // THE DEFINITIVE FIX
+            // 1. We use the 'gltf: { postProcess: true }' option to make the loader
+            //    do all the hard work of connecting buffers for us.
+            // 2. We access the final, typed-array data via the `.value` property.
+            // ======================================================================
+            const gltfData = await load('/models/lips_model.glb', GLTFLoader, { gltf: { postProcess: true } });
             
-            // ======================================================================
-            // THE DEFINITIVE FIX: Use the correct arguments for getAccessorData
-            // The first argument must be the entire gltfData object.
-            // The second argument must be the accessor OBJECT, not just its index.
-            // ======================================================================
-            const positions = getAccessorData(gltfData, gltfJson.accessors[primitive.attributes.POSITION]);
-            const normals = getAccessorData(gltfData, gltfJson.accessors[primitive.attributes.NORMAL]);
-            const uvs = getAccessorData(gltfData, gltfJson.accessors[primitive.attributes.TEXCOORD_0]);
-            const indices = getAccessorData(gltfData, gltfJson.accessors[primitive.indices]);
+            if (!gltfData.meshes || gltfData.meshes.length === 0) { throw new Error("No meshes found in post-processed GLTF."); }
+            const primitive = gltfData.meshes[0].primitives[0];
+            
+            const positions = primitive.attributes.POSITION.value;
+            const normals = primitive.attributes.NORMAL.value;
+            const uvs = primitive.attributes.TEXCOORD_0.value;
+            const indices = primitive.indices.value;
 
             if (!positions || !normals || !uvs || !indices) { throw new Error("Essential mesh attributes are missing after processing."); }
             const modelCenter = calculateBoundingBoxCenter(positions);
             pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, modelCenter };
             setDebugMessage("3D Model Parsed. Initializing GPU...");
+
         } catch (modelLoadError) { console.error("[LML_Clone] Error loading/processing lip model:", modelLoadError); setError(`Model Load: ${modelLoadError.message}`); setDebugMessage("Error: Model Load"); return;  }
         if (!navigator.gpu) { setError("WebGPU not supported."); return; }
         setDebugMessage("Initializing WebGPU...");
