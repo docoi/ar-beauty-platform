@@ -19,7 +19,7 @@ import AvatarSwitcher from "@/pages/AvatarSwitcher.jsx";
 import HydrationSerumPage from "@/pages/hydration_serum.jsx";
 import VirtualTryOnPage from "@/pages/VirtualTryOnPage.jsx";
 
-// CORRECTED: Import our component from its proper location in the 'components' folder.
+// CORRECT: We import our component from its correct home in the 'components' folder.
 import LipstickMirrorLive_Clone from '@/components/LipstickMirrorLive_Clone';
 
 
@@ -41,7 +41,7 @@ function App() {
         <Route path="/hydration_serum" element={<HydrationSerumPage />} />
         <Route path="/try-on" element={<VirtualTryOnPage />} />
         
-        {/* CORRECTED: The route for our mirror now correctly loads the component. */}
+        {/* CORRECT: This line creates the URL and tells it what component to show. */}
         <Route path="/mirror-live" element={<LipstickMirrorLive_Clone />} />
 
       </Routes>
