@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
+// getAccessorData is the official helper function we need.
 import { GLTFLoader, getAccessorData } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
@@ -37,7 +38,6 @@ function calculateBoundingBoxCenter(positions) {
   return center;
 }
 
-// React requires a default export for components
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null); const videoRef = useRef(null); const animationFrameIdRef = useRef(null); const frameCounter = useRef(0); const resizeHandlerRef = useRef(null); const deviceRef = useRef(null); const contextRef = useRef(null); const formatRef = useRef(null); const landmarkerRef = useRef(null);
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value); const selectedColorForRenderRef = useRef(LIPSTICK_COLORS[0].value);
@@ -136,10 +136,17 @@ export default function LipstickMirrorLive_Clone() {
             const gltfJson = gltfData.json;
             if (!gltfJson.meshes || gltfJson.meshes.length === 0) { throw new Error("No meshes found in gltf.json structure."); }
             const primitive = gltfJson.meshes[0].primitives[0];
-            const positions = getAccessorData(gltfData, primitive.attributes.POSITION);
-            const normals = getAccessorData(gltfData, primitive.attributes.NORMAL);
-            const uvs = getAccessorData(gltfData, primitive.attributes.TEXCOORD_0);
-            const indices = getAccessorData(gltfData, primitive.indices);
+
+            // ======================================================================
+            // THIS IS THE CRITICAL FIX
+            // We now correctly pass the full gltfData object and the accessor OBJECT
+            // to the library's official helper function.
+            // ======================================================================
+            const positions = getAccessorData(gltfData, gltfJson.accessors[primitive.attributes.POSITION]);
+            const normals = getAccessorData(gltfData, gltfJson.accessors[primitive.attributes.NORMAL]);
+            const uvs = getAccessorData(gltfData, gltfJson.accessors[primitive.attributes.TEXCOORD_0]);
+            const indices = getAccessorData(gltfData, gltfJson.accessors[primitive.indices]);
+
             if (!positions || !normals || !uvs || !indices) { throw new Error("Essential mesh attributes are missing after processing."); }
             const modelCenter = calculateBoundingBoxCenter(positions);
             pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, modelCenter };
@@ -162,7 +169,7 @@ export default function LipstickMirrorLive_Clone() {
             try { lipstickNormalImageBitmap = await loadImageBitmap('/textures/lipstick_normal.png'); } catch (e) { console.warn("Normal map load failed.", e); }
             const pState = pipelineStateRef.current;
             const layoutsAndPipelines = await createPipelines(deviceInternal, formatInternal, true); 
-            if (!layoutsAndPipelines.videoPipeline || !layoutsAndPipelines.lipModelPipeline) throw new Error(`Pipeline creation failed.`);
+            if (!layoutsAndPipelines.videoPipeline || !layoutsAndP.lipModelPipeline) throw new Error(`Pipeline creation failed.`);
             pState.videoPipeline = layoutsAndPipelines.videoPipeline; pState.lipModelPipeline = layoutsAndPipelines.lipModelPipeline; pState.videoBindGroupLayout = layoutsAndPipelines.videoBindGroupLayout; pState.videoAspectRatioGroupLayout = layoutsAndPipelines.videoAspectRatioGroupLayout; pState.lipModelMatrixGroupLayout = layoutsAndPipelines.lipModelMatrixGroupLayout; pState.lipstickMaterialGroupLayout = layoutsAndPipelines.lipstickMaterialGroupLayout; pState.lightingGroupLayout = layoutsAndPipelines.lightingGroupLayout;
             pState.videoAspectRatioUBO = deviceInternal.createBuffer({ label: "Video Aspect UBO", size: 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             pState.videoAspectRatioBindGroup = deviceInternal.createBindGroup({ label: "VideoDim_BG", layout: pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:pState.videoAspectRatioUBO}}]});
