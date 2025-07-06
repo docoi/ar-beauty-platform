@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
-// getAccessorData is the official helper function we need.
 import { GLTFLoader, getAccessorData } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
@@ -136,11 +135,11 @@ export default function LipstickMirrorLive_Clone() {
             const gltfJson = gltfData.json;
             if (!gltfJson.meshes || gltfJson.meshes.length === 0) { throw new Error("No meshes found in gltf.json structure."); }
             const primitive = gltfJson.meshes[0].primitives[0];
-
+            
             // ======================================================================
-            // THIS IS THE CRITICAL FIX
-            // We now correctly pass the full gltfData object and the accessor OBJECT
-            // to the library's official helper function.
+            // THE DEFINITIVE FIX: Use the correct arguments for getAccessorData
+            // The first argument must be the entire gltfData object.
+            // The second argument must be the accessor OBJECT, not just its index.
             // ======================================================================
             const positions = getAccessorData(gltfData, gltfJson.accessors[primitive.attributes.POSITION]);
             const normals = getAccessorData(gltfData, gltfJson.accessors[primitive.attributes.NORMAL]);
@@ -169,7 +168,7 @@ export default function LipstickMirrorLive_Clone() {
             try { lipstickNormalImageBitmap = await loadImageBitmap('/textures/lipstick_normal.png'); } catch (e) { console.warn("Normal map load failed.", e); }
             const pState = pipelineStateRef.current;
             const layoutsAndPipelines = await createPipelines(deviceInternal, formatInternal, true); 
-            if (!layoutsAndPipelines.videoPipeline || !layoutsAndP.lipModelPipeline) throw new Error(`Pipeline creation failed.`);
+            if (!layoutsAndPipelines.videoPipeline || !layoutsAndPipelines.lipModelPipeline) throw new Error(`Pipeline creation failed.`);
             pState.videoPipeline = layoutsAndPipelines.videoPipeline; pState.lipModelPipeline = layoutsAndPipelines.lipModelPipeline; pState.videoBindGroupLayout = layoutsAndPipelines.videoBindGroupLayout; pState.videoAspectRatioGroupLayout = layoutsAndPipelines.videoAspectRatioGroupLayout; pState.lipModelMatrixGroupLayout = layoutsAndPipelines.lipModelMatrixGroupLayout; pState.lipstickMaterialGroupLayout = layoutsAndPipelines.lipstickMaterialGroupLayout; pState.lightingGroupLayout = layoutsAndPipelines.lightingGroupLayout;
             pState.videoAspectRatioUBO = deviceInternal.createBuffer({ label: "Video Aspect UBO", size: 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             pState.videoAspectRatioBindGroup = deviceInternal.createBindGroup({ label: "VideoDim_BG", layout: pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:pState.videoAspectRatioUBO}}]});
