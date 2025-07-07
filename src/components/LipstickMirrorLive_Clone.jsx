@@ -48,7 +48,7 @@ export default function LipstickMirrorLive_Clone() {
       offsetX: 0.0,
       offsetY: -0.04,
       offsetZ: 0.05,
-      static: false, // Start with tracking ON by default
+      static: false,
   });
   
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
@@ -124,29 +124,30 @@ export default function LipstickMirrorLive_Clone() {
         let modelMatrix = mat4.create();
 
         if (pState.lipModelData) {
-            // Use live tracking IF a face is detected AND the "Force Static" box is UNCHECKED
+            // First, create the local adjustment matrix using the UI controls.
+            // This is the part that centers, scales, and offsets our specific lip model.
+            const localAdjustmentMatrix = mat4.create();
+            const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
+            mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
+            mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
+            mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.negate(vec3.create(), pState.lipModelData.modelCenter));
+
+            // Now, decide what to do with it.
             if (hasFace && !debugControlsRef.current.static) {
+                // If we have a face and we're NOT in static mode, apply the live tracking.
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
                 const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
                 const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
-
-                const localAdjustmentMatrix = mat4.create();
-                const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
-                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
-                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
-                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.negate(vec3.create(), pState.lipModelData.modelCenter));
                 
+                // Final Matrix = (Live Head Pose) * (Our Fine-Tuned Local Adjustment)
                 mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
-            } 
-            // Otherwise, render in static mode. This covers the "Force Static" case AND the "No Face Detected" case.
-            else {
-                const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
-                mat4.translate(modelMatrix, modelMatrix, [offsetX, offsetY, offsetZ]);
-                mat4.scale(modelMatrix, modelMatrix, [scale, scale, scale]);
-                mat4.translate(modelMatrix, modelMatrix, vec3.negate(vec3.create(), pState.lipModelData.modelCenter));
+            } else {
+                // If there's no face OR if "Force Static" is checked, just use the local adjustment matrix.
+                // This will place the model statically in the center for positioning.
+                mat4.copy(modelMatrix, localAdjustmentMatrix);
             }
         } else {
-             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]); // Hide if model not loaded
+             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]);
         }
         
         const sceneMatrices = new Float32Array(16 * 3);
