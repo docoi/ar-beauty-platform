@@ -44,11 +44,10 @@ export default function LipstickMirrorLive_Clone() {
   const landmarkerRef = useRef(null);
 
   const debugControlsRef = useRef({
-      scale: 0.075,
+      scale: 0.95, // Adjusted for new matrix logic
       offsetX: 0.0,
-      offsetY: -0.04,
-      offsetZ: 0.05,
-      static: false,
+      offsetY: 0.0,
+      offsetZ: 0.0,
   });
   
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
@@ -114,46 +113,41 @@ export default function LipstickMirrorLive_Clone() {
         const hasFace = landmarkerResult?.faceLandmarks?.length > 0 && landmarkerResult?.facialTransformationMatrixes?.length > 0;
 
         device.queue.writeBuffer(pState.videoAspectRatioUBO, 0, new Float32Array([videoRef.current.videoWidth, videoRef.current.videoHeight, context.canvas.width, context.canvas.height]));
-
-        const projectionMatrix = mat4.create();
-        mat4.perspective(projectionMatrix, 45 * Math.PI / 180, context.canvas.width / context.canvas.height, 0.1, 1000.0);
         
-        const viewMatrix = mat4.create();
-        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 1.2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+        // ======================================================================
+        // THE DEFINITIVE FIX FOR TRACKING
+        // MediaPipe provides a full MVP matrix. We must neutralize our own P and V matrices.
+        // ======================================================================
+        const projectionMatrix = mat4.create(); // Create an identity matrix (does nothing)
+        const viewMatrix = mat4.create();       // Create an identity matrix (does nothing)
         
         let modelMatrix = mat4.create();
 
-        if (pState.lipModelData) {
-            // First, create the local adjustment matrix using the UI controls.
-            // This is the part that centers, scales, and offsets our specific lip model.
+        if (hasFace && pState.lipModelData) {
+            // Get the complete MVP matrix from MediaPipe
+            const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+
+            // Create our fine-tuning adjustment matrix
             const localAdjustmentMatrix = mat4.create();
             const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
+
+            // Apply our adjustments. Since the main matrix already handles projection,
+            // these values will be more sensitive.
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
             mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
-            mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.negate(vec3.create(), pState.lipModelData.modelCenter));
 
-            // Now, decide what to do with it.
-            if (hasFace && !debugControlsRef.current.static) {
-                // If we have a face and we're NOT in static mode, apply the live tracking.
-                const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-                const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
-                const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
-                
-                // Final Matrix = (Live Head Pose) * (Our Fine-Tuned Local Adjustment)
-                mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
-            } else {
-                // If there's no face OR if "Force Static" is checked, just use the local adjustment matrix.
-                // This will place the model statically in the center for positioning.
-                mat4.copy(modelMatrix, localAdjustmentMatrix);
-            }
+            // Combine the two. The shader calculation will be:
+            // Identity * Identity * (MediaPipe_MVP * Our_Adjustment) * Vertex
+            // which correctly simplifies to: (MediaPipe_MVP * Our_Adjustment) * Vertex
+            mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
         } else {
-             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]);
+             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]); // Hide if no face
         }
         
         const sceneMatrices = new Float32Array(16 * 3);
-        sceneMatrices.set(projectionMatrix, 0);
-        sceneMatrices.set(viewMatrix, 16);
-        sceneMatrices.set(modelMatrix, 32);
+        sceneMatrices.set(projectionMatrix, 0); // Sending identity
+        sceneMatrices.set(viewMatrix, 16);       // Sending identity
+        sceneMatrices.set(modelMatrix, 32);      // Sending the combined, final matrix
         device.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
 
         device.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, new Float32Array(selectedColorForRenderRef.current));
@@ -177,7 +171,7 @@ export default function LipstickMirrorLive_Clone() {
         passEnc.setBindGroup(1, pState.videoAspectRatioBindGroup);
         passEnc.draw(6);
 
-        if (pState.lipModelPipeline) {
+        if (hasFace && pState.lipModelPipeline) { // Only draw if a face is present
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup);
             passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);
@@ -199,13 +193,14 @@ export default function LipstickMirrorLive_Clone() {
             let lipMesh = null;
             gltf.scene.traverse((object) => { if (object instanceof Mesh) { lipMesh = object; } });
             if (!lipMesh) throw new Error("Could not find a mesh in the loaded GLTF scene.");
+            // We don't need to center the geometry anymore because the MVP matrix handles everything.
+            // But we still need the raw data.
             const geometry = lipMesh.geometry;
             const positions = geometry.attributes.position.array;
             const normals = geometry.attributes.normal.array;
             const uvs = geometry.attributes.uv.array;
             const indices = geometry.index.array;
-            const modelCenter = calculateBoundingBoxCenter(positions);
-            gpuState.pState.lipModelData = { positions, normals, uvs, indices, modelCenter };
+            gpuState.pState.lipModelData = { positions, normals, uvs, indices };
 
             setDebugMessage("Initializing GPU...");
             if (!navigator.gpu) throw new Error("WebGPU not supported.");
@@ -298,11 +293,11 @@ export default function LipstickMirrorLive_Clone() {
 
     gui = new GUI();
     const controls = debugControlsRef.current;
-    gui.add(controls, 'scale', 0.01, 0.2, 0.001).name('Scale');
-    gui.add(controls, 'offsetX', -0.5, 0.5, 0.001).name('Offset X');
-    gui.add(controls, 'offsetY', -0.5, 0.5, 0.001).name('Offset Y');
-    gui.add(controls, 'offsetZ', -0.5, 0.5, 0.001).name('Offset Z');
-    gui.add(controls, 'static').name('Force Static');
+    gui.add(controls, 'scale', 0.5, 1.5, 0.001).name('Scale'); // Adjusted range
+    gui.add(controls, 'offsetX', -0.1, 0.1, 0.001).name('Offset X');
+    gui.add(controls, 'offsetY', -0.1, 0.1, 0.001).name('Offset Y');
+    gui.add(controls, 'offsetZ', -0.1, 0.1, 0.001).name('Offset Z');
+    // REMOVED Force Static - we no longer need it.
 
     initialize();
 
