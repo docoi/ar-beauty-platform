@@ -6,6 +6,8 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Mesh } from 'three';
 import { mat4, vec3 } from 'gl-matrix';
+// NEW: Import the UI library
+import GUI from 'lil-gui';
 
 const LIPSTICK_COLORS = [
   { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] },
@@ -37,7 +39,15 @@ function calculateBoundingBoxCenter(positions) {
 }
 
 export default function LipstickMirrorLive_Clone() {
-  const canvasRef = useRef(null); const videoRef = useRef(null); const animationFrameIdRef = useRef(null); const frameCounter = useRef(0); const resizeHandlerRef = useRef(null); const deviceRef = useRef(null); const contextRef = useRef(null); const formatRef = useRef(null); const landmarkerRef = useRef(null);
+  const canvasRef = useRef(null); const videoRef = useRef(null); const animationFrameIdRef = useRef(null);
+  // NEW: A ref to hold our UI controls object
+  const debugControlsRef = useRef({
+      scale: 0.075,
+      offsetX: 0.0,
+      offsetY: -0.04,
+      offsetZ: 0.05,
+  });
+  
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value); const selectedColorForRenderRef = useRef(LIPSTICK_COLORS[0].value);
   const lightSettingsRef = useRef({ lightDirection: [0.2, 0.5, 0.8], ambientColor: [0.1, 0.1, 0.1, 1.0], diffuseColor: [0.9, 0.9, 0.9, 1.0], cameraWorldPosition: [0, 0, 1.2] });
   
@@ -45,9 +55,6 @@ export default function LipstickMirrorLive_Clone() {
     videoPipeline: null, videoBindGroupLayout: null, videoSampler: null, videoAspectRatioGroupLayout: null, videoAspectRatioUBO: null, videoAspectRatioBindGroup: null,
     lipstickMaterialGroupLayout: null, lipstickMaterialUniformBuffer: null,
     lightingGroupLayout: null, lightingUniformBuffer: null, lipModelLightingBindGroup: null,
-    lipstickAlbedoTexture: null, lipstickAlbedoTextureView: null,
-    lipstickNormalTexture: null, lipstickNormalTextureView: null,
-    lipstickAlbedoSampler: null,
     lipModelData: null, lipModelVertexBuffer: null, lipModelIndexBuffer: null,
     lipModelIndexFormat: 'uint16', lipModelNumIndices: 0,
     lipModelPipeline: null, lipModelMaterialBindGroup: null,
@@ -61,6 +68,8 @@ export default function LipstickMirrorLive_Clone() {
   useEffect(() => {
     let deviceInternal = null, contextInternal = null, formatInternal = null;
     let resizeObserverInternal = null; let renderLoopStartedInternal = false;
+    let gui = null; // NEW: variable for our UI panel
+
     const canvasElement = canvasRef.current; const videoElement = videoRef.current; 
     if (!canvasElement || !videoElement) { setError("Canvas or Video element not found."); return; }
 
@@ -107,13 +116,12 @@ export default function LipstickMirrorLive_Clone() {
                 const modelCenter = pState.lipModelData.modelCenter;
                 const centeringVector = vec3.negate(vec3.create(), modelCenter);
                 
-                // --- TWEAK THESE VALUES FOR PERFECT PLACEMENT ---
-                const scaleFactor = 0.075;
-                const translationVector = vec3.fromValues(0.0, -0.04, 0.05); 
-                // --- END OF TWEAKABLE VALUES ---
+                // NEW: Read values from our UI controls instead of hardcoded constants
+                const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
+                const translationVector = vec3.fromValues(offsetX, offsetY, offsetZ); 
                 
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, translationVector);
-                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
+                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scale, scale, scale));
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, centeringVector);
                 mat4.multiply(modelMatrix, modelMatrix, localAdjustmentMatrix);
             } else {
@@ -160,12 +168,20 @@ export default function LipstickMirrorLive_Clone() {
         if (!navigator.gpu) { setError("WebGPU not supported."); return; }
         setDebugMessage("Initializing WebGPU...");
         try {
+            // NEW: Initialize the debug UI
+            gui = new GUI();
+            const controls = debugControlsRef.current;
+            gui.add(controls, 'scale', 0.01, 0.2, 0.001).name('Scale');
+            gui.add(controls, 'offsetX', -0.5, 0.5, 0.001).name('Offset X');
+            gui.add(controls, 'offsetY', -0.5, 0.5, 0.001).name('Offset Y');
+            gui.add(controls, 'offsetZ', -0.5, 0.5, 0.001).name('Offset Z');
+
             const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
             const lmInstance = await FaceLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: '/models/face_landmarker.task', delegate: 'GPU' }, outputFaceLandmarks: true, outputFacialTransformationMatrixes: true, runningMode: 'VIDEO', numFaces: 1 });
             landmarkerRef.current = lmInstance; setLandmarkerState(lmInstance);
             const adapter = await navigator.gpu.requestAdapter(); if (!adapter) throw new Error("No adapter.");
             deviceInternal = await adapter.requestDevice(); deviceRef.current = deviceInternal;
-            deviceInternal.lost.then((info) => { console.error(`Device lost: ${info.message}`); setError("Device lost"); deviceRef.current = null; if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current); });
+            deviceInternal.lost.then((info) => { console.error(`Device lost: ${info.message}`); setError("Device lost"); if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current); });
             contextInternal = canvasElement.getContext('webgpu'); contextRef.current = contextInternal;
             formatInternal = navigator.gpu.getPreferredCanvasFormat(); formatRef.current = formatInternal;
             configureCanvasAndDepthTexture(); 
@@ -213,6 +229,7 @@ export default function LipstickMirrorLive_Clone() {
 
     initializeAll();
     return () => { 
+        if (gui) { gui.destroy(); } // NEW: Clean up the UI panel
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current); 
         if (resizeObserverInternal && canvasElement.current) resizeObserverInternal.unobserve(canvasElement.current); 
         if (resizeObserverInternal) resizeObserverInternal.disconnect(); 
@@ -221,8 +238,6 @@ export default function LipstickMirrorLive_Clone() {
         const pState=pipelineStateRef.current; 
         pState.videoAspectRatioUBO?.destroy(); pState.lipModelMatrixUBO?.destroy(); pState.lipstickMaterialUniformBuffer?.destroy(); pState.lightingUniformBuffer?.destroy(); pState.lipstickAlbedoTexture?.destroy(); pState.lipstickNormalTexture?.destroy(); pState.lipModelVertexBuffer?.destroy(); pState.lipModelIndexBuffer?.destroy(); pState.depthTexture?.destroy(); 
         if (landmarkerRef.current?.close) landmarkerRef.current.close(); 
-        landmarkerRef.current=null; setLandmarkerState(null); 
-        deviceRef.current=null; contextRef.current=null; formatRef.current=null; 
     };
   }, []);
 
