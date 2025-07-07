@@ -48,7 +48,7 @@ export default function LipstickMirrorLive_Clone() {
       offsetX: 0.0,
       offsetY: -0.04,
       offsetZ: 0.05,
-      static: false,
+      static: false, // Start with tracking ON by default
   });
   
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
@@ -107,7 +107,7 @@ export default function LipstickMirrorLive_Clone() {
 
         const { device, context, pState } = gpuState;
         
-        const landmarkerResult = (landmarkerRef.current && !debugControlsRef.current.static) 
+        const landmarkerResult = landmarkerRef.current 
             ? landmarkerRef.current.detectForVideo(videoRef.current, performance.now()) 
             : null;
 
@@ -124,7 +124,8 @@ export default function LipstickMirrorLive_Clone() {
         let modelMatrix = mat4.create();
 
         if (pState.lipModelData) {
-            if (hasFace) {
+            // Use live tracking IF a face is detected AND the "Force Static" box is UNCHECKED
+            if (hasFace && !debugControlsRef.current.static) {
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
                 const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
                 const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
@@ -136,14 +137,16 @@ export default function LipstickMirrorLive_Clone() {
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.negate(vec3.create(), pState.lipModelData.modelCenter));
                 
                 mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
-            } else {
+            } 
+            // Otherwise, render in static mode. This covers the "Force Static" case AND the "No Face Detected" case.
+            else {
                 const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
                 mat4.translate(modelMatrix, modelMatrix, [offsetX, offsetY, offsetZ]);
                 mat4.scale(modelMatrix, modelMatrix, [scale, scale, scale]);
                 mat4.translate(modelMatrix, modelMatrix, vec3.negate(vec3.create(), pState.lipModelData.modelCenter));
             }
         } else {
-             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]);
+             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]); // Hide if model not loaded
         }
         
         const sceneMatrices = new Float32Array(16 * 3);
@@ -246,9 +249,6 @@ export default function LipstickMirrorLive_Clone() {
             gpuState.pState.lipModelVertexBuffer = gpuState.device.createBuffer({ size: interleaved.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
             gpuState.device.queue.writeBuffer(gpuState.pState.lipModelVertexBuffer, 0, interleaved);
             
-            // ======================================================================
-            // THE DEFINITIVE FIX FOR THE INDEX BUFFER ALIGNMENT ERROR
-            // ======================================================================
             const indicesData = model.indices;
             const paddedIndexDataLength = Math.ceil(indicesData.byteLength / 4) * 4;
             const paddedIndexData = new Uint8Array(paddedIndexDataLength);
