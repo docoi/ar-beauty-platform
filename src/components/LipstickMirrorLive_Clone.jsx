@@ -15,6 +15,14 @@ const LIPSTICK_COLORS = [
   // ... add more colors if you wish
 ];
 
+// RESTORED HELPER FUNCTION
+async function loadImageBitmap(url) {
+  const response = await fetch(url);
+  if (!response.ok) { throw new Error(`Failed to fetch image ${url}: ${response.statusText}`); }
+  const blob = await response.blob();
+  return createImageBitmap(blob);
+}
+
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
@@ -183,9 +191,6 @@ export default function LipstickMirrorLive_Clone() {
             const layoutsAndPipelines = await createPipelines(gpuState.device, gpuState.format, true);
             Object.assign(gpuState.pState, layoutsAndPipelines);
             
-            // ======================================================================
-            // THE DEFINITIVE FIX: Use gpuState.device for all GPU calls
-            // ======================================================================
             gpuState.pState.videoAspectRatioUBO = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.videoAspectRatioBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.videoAspectRatioUBO}}]});
             
@@ -197,15 +202,31 @@ export default function LipstickMirrorLive_Clone() {
             gpuState.pState.lipModelLightingBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lightingGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lightingUniformBuffer}}]});
             gpuState.pState.videoSampler = gpuState.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
-            if (lipstickAlbedoImageBitmap) { gpuState.pState.lipstickAlbedoTexture = gpuState.device.createTexture({ size:[lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickAlbedoImageBitmap}, {texture:gpuState.pState.lipstickAlbedoTexture}, [lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height]); gpuState.pState.lipstickAlbedoTextureView = gpuState.pState.lipstickAlbedoTexture.createView(); }
-            if (lipstickNormalImageBitmap) { gpuState.pState.lipstickNormalTexture = gpuState.device.createTexture({label:"NormalTex", size:[lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickNormalImageBitmap}, {texture:gpuState.pState.lipstickNormalTexture}, [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height]); gpuState.pState.lipstickNormalTextureView = gpuState.pState.lipstickNormalTexture.createView(); }
+            // ======================================================================
+            // THE DEFINITIVE FIX FOR THE BIND GROUP ERROR
+            // ======================================================================
+            if (lipstickAlbedoImageBitmap) { gpuState.pState.lipstickAlbedoTexture = gpuState.device.createTexture({ size:[lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickAlbedoImageBitmap}, {texture:gpuState.pState.lipstickAlbedoTexture}, [lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height]); }
+            if (lipstickNormalImageBitmap) { gpuState.pState.lipstickNormalTexture = gpuState.device.createTexture({label:"NormalTex", size:[lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickNormalImageBitmap}, {texture:gpuState.pState.lipstickNormalTexture}, [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height]); }
+            
+            // Create a 1x1 white fallback texture for robustness
+            const fallbackTexture = gpuState.device.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+            gpuState.device.queue.writeTexture({ texture: fallbackTexture }, new Uint8Array([255, 255, 255, 255]), { bytesPerRow: 4 }, { width: 1, height: 1 });
+            
             gpuState.pState.lipstickAlbedoSampler = gpuState.device.createSampler({magFilter:'linear', minFilter:'linear'});
-
-            const materialEntries = [{binding:0, resource:{buffer:gpuState.pState.lipstickMaterialUniformBuffer}}];
-            if (gpuState.pState.lipstickAlbedoTextureView) materialEntries.push({binding:1, resource:gpuState.pState.lipstickAlbedoTextureView});
-            if (gpuState.pState.lipstickAlbedoSampler) materialEntries.push({binding:2, resource:gpuState.pState.lipstickAlbedoSampler});
-            if (gpuState.pState.lipstickNormalTextureView) materialEntries.push({binding:3, resource:gpuState.pState.lipstickNormalTextureView});
-            gpuState.pState.lipModelMaterialBindGroup = gpuState.device.createBindGroup({layout:gpuState.pState.lipstickMaterialGroupLayout, entries: materialEntries});
+            
+            // Always provide all 4 entries to the bind group, using the fallback if a texture is missing.
+            gpuState.pState.lipModelMaterialBindGroup = gpuState.device.createBindGroup({
+              layout: gpuState.pState.lipstickMaterialGroupLayout,
+              entries: [
+                { binding: 0, resource: { buffer: gpuState.pState.lipstickMaterialUniformBuffer } },
+                { binding: 1, resource: (gpuState.pState.lipstickAlbedoTexture || fallbackTexture).createView() },
+                { binding: 2, resource: gpuState.pState.lipstickAlbedoSampler },
+                { binding: 3, resource: (gpuState.pState.lipstickNormalTexture || fallbackTexture).createView() },
+              ]
+            });
+            // ======================================================================
+            // END OF FIX
+            // ======================================================================
             
             const model = gpuState.pState.lipModelData;
             const numVertices = model.positions.length / 3;
