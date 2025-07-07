@@ -15,7 +15,6 @@ const LIPSTICK_COLORS = [
   // ... add more colors if you wish
 ];
 
-// RESTORED HELPER FUNCTION
 async function loadImageBitmap(url) {
   const response = await fetch(url);
   if (!response.ok) { throw new Error(`Failed to fetch image ${url}: ${response.statusText}`); }
@@ -107,14 +106,34 @@ export default function LipstickMirrorLive_Clone() {
         let modelMatrix = mat4.create();
 
         if (hasFace) {
+            // ======================================================================
+            // THE DEFINITIVE FIX FOR INVERTED TRACKING
+            // ======================================================================
+            
+            // 1. Get the raw Model-View matrix from MediaPipe.
             const modelViewMatrix = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
             
+            // 2. Define the correction matrix to flip Y and Z axes.
+            const flipYZ = mat4.fromValues(
+                1,  0,  0,  0,
+                0, -1,  0,  0,
+                0,  0, -1,  0,
+                0,  0,  0,  1
+            );
+            
+            // 3. Correct the MediaPipe matrix's coordinate system FIRST.
+            mat4.multiply(modelViewMatrix, modelViewMatrix, flipYZ);
+            
+            // 4. Create our local adjustment matrix for fine-tuning from the UI.
             const localAdjustmentMatrix = mat4.create();
             const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
             mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
 
+            // 5. Combine them: Model = Corrected_ModelView * Local_Adjustment
             mat4.multiply(modelMatrix, modelViewMatrix, localAdjustmentMatrix);
+
+            // 6. Create the final MVP matrix for positioning.
             mat4.multiply(mvpMatrix, projectionMatrix, modelMatrix);
         }
         
@@ -202,19 +221,14 @@ export default function LipstickMirrorLive_Clone() {
             gpuState.pState.lipModelLightingBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lightingGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lightingUniformBuffer}}]});
             gpuState.pState.videoSampler = gpuState.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
-            // ======================================================================
-            // THE DEFINITIVE FIX FOR THE BIND GROUP ERROR
-            // ======================================================================
-            if (lipstickAlbedoImageBitmap) { gpuState.pState.lipstickAlbedoTexture = gpuState.device.createTexture({ size:[lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickAlbedoImageBitmap}, {texture:gpuState.pState.lipstickAlbedoTexture}, [lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height]); }
-            if (lipstickNormalImageBitmap) { gpuState.pState.lipstickNormalTexture = gpuState.device.createTexture({label:"NormalTex", size:[lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickNormalImageBitmap}, {texture:gpuState.pState.lipstickNormalTexture}, [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height]); }
-            
-            // Create a 1x1 white fallback texture for robustness
             const fallbackTexture = gpuState.device.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
             gpuState.device.queue.writeTexture({ texture: fallbackTexture }, new Uint8Array([255, 255, 255, 255]), { bytesPerRow: 4 }, { width: 1, height: 1 });
             
+            if (lipstickAlbedoImageBitmap) { gpuState.pState.lipstickAlbedoTexture = gpuState.device.createTexture({ size:[lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickAlbedoImageBitmap}, {texture:gpuState.pState.lipstickAlbedoTexture}, [lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height]); }
+            if (lipstickNormalImageBitmap) { gpuState.pState.lipstickNormalTexture = gpuState.device.createTexture({label:"NormalTex", size:[lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickNormalImageBitmap}, {texture:gpuState.pState.lipstickNormalTexture}, [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height]); }
+            
             gpuState.pState.lipstickAlbedoSampler = gpuState.device.createSampler({magFilter:'linear', minFilter:'linear'});
             
-            // Always provide all 4 entries to the bind group, using the fallback if a texture is missing.
             gpuState.pState.lipModelMaterialBindGroup = gpuState.device.createBindGroup({
               layout: gpuState.pState.lipstickMaterialGroupLayout,
               entries: [
@@ -224,9 +238,6 @@ export default function LipstickMirrorLive_Clone() {
                 { binding: 3, resource: (gpuState.pState.lipstickNormalTexture || fallbackTexture).createView() },
               ]
             });
-            // ======================================================================
-            // END OF FIX
-            // ======================================================================
             
             const model = gpuState.pState.lipModelData;
             const numVertices = model.positions.length / 3;
