@@ -48,7 +48,7 @@ export default function LipstickMirrorLive_Clone() {
       offsetX: 0.0,
       offsetY: -0.04,
       offsetZ: 0.05,
-      static: false, // Add a checkbox to force static mode for easier positioning
+      static: false,
   });
   
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
@@ -64,13 +64,13 @@ export default function LipstickMirrorLive_Clone() {
   useEffect(() => {
     let gui = null;
     let isCleanedUp = false;
+    let resizeObserver = null;
 
-    // This is the core state for all our WebGPU objects.
     const gpuState = {
         device: null,
         context: null,
         format: null,
-        pState: { /* pipeline state */ },
+        pState: {},
     };
 
     const configureCanvasAndDepthTexture = () => {
@@ -123,9 +123,8 @@ export default function LipstickMirrorLive_Clone() {
         
         let modelMatrix = mat4.create();
 
-        // This block now handles both tracking AND static modes.
         if (pState.lipModelData) {
-            if (hasFace) { // Live Tracking Mode
+            if (hasFace) {
                 const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
                 const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
                 const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
@@ -137,7 +136,7 @@ export default function LipstickMirrorLive_Clone() {
                 mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, vec3.negate(vec3.create(), pState.lipModelData.modelCenter));
                 
                 mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
-            } else { // Static Mode (or if no face is detected)
+            } else {
                 const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
                 mat4.translate(modelMatrix, modelMatrix, [offsetX, offsetY, offsetZ]);
                 mat4.scale(modelMatrix, modelMatrix, [scale, scale, scale]);
@@ -189,7 +188,6 @@ export default function LipstickMirrorLive_Clone() {
     };
 
     const initialize = async () => {
-        // --- STAGE 1: Load essential GPU and media resources ---
         try {
             setDebugMessage("Loading 3D Model...");
             const loader = new GLTFLoader();
@@ -222,7 +220,6 @@ export default function LipstickMirrorLive_Clone() {
             const layoutsAndPipelines = await createPipelines(gpuState.device, gpuState.format, true);
             Object.assign(gpuState.pState, layoutsAndPipelines);
             
-            // Create all buffers and samplers...
             gpuState.pState.videoAspectRatioUBO = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.videoAspectRatioBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.videoAspectRatioUBO}}]});
             gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -249,10 +246,18 @@ export default function LipstickMirrorLive_Clone() {
             gpuState.pState.lipModelVertexBuffer = gpuState.device.createBuffer({ size: interleaved.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
             gpuState.device.queue.writeBuffer(gpuState.pState.lipModelVertexBuffer, 0, interleaved);
             
-            const iData = model.indices;
-            gpuState.pState.lipModelIndexBuffer = gpuState.device.createBuffer({ size: iData.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
-            gpuState.device.queue.writeBuffer(gpuState.pState.lipModelIndexBuffer, 0, iData);
-            gpuState.pState.lipModelIndexFormat = (iData instanceof Uint16Array) ? 'uint16' : 'uint32';
+            // ======================================================================
+            // THE DEFINITIVE FIX FOR THE INDEX BUFFER ALIGNMENT ERROR
+            // ======================================================================
+            const indicesData = model.indices;
+            const paddedIndexDataLength = Math.ceil(indicesData.byteLength / 4) * 4;
+            const paddedIndexData = new Uint8Array(paddedIndexDataLength);
+            paddedIndexData.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength));
+            
+            gpuState.pState.lipModelIndexBuffer = gpuState.device.createBuffer({ size: paddedIndexDataLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+            gpuState.device.queue.writeBuffer(gpuState.pState.lipModelIndexBuffer, 0, paddedIndexData);
+
+            gpuState.pState.lipModelIndexFormat = (indicesData instanceof Uint16Array) ? 'uint16' : 'uint32';
             gpuState.pState.lipModelNumIndices = model.indices.length;
 
             setDebugMessage("Starting video...");
@@ -260,20 +265,19 @@ export default function LipstickMirrorLive_Clone() {
             videoRef.current.srcObject = stream;
             await videoRef.current.play();
 
-            const resizeObserver = new ResizeObserver(configureCanvasAndDepthTexture);
+            resizeObserver = new ResizeObserver(configureCanvasAndDepthTexture);
             resizeObserver.observe(canvasRef.current);
             
-            // Start rendering! Video and static model will now appear.
             render();
             setDebugMessage("Ready. Initializing tracking...");
 
         } catch (err) {
+            console.error("Initialization failed:", err);
             setError(err.message);
             setDebugMessage("Error during setup.");
-            return; // Stop if essential setup fails
+            return;
         }
 
-        // --- STAGE 2: Load MediaPipe in the background ---
         try {
             const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
             const lmInstance = await FaceLandmarker.createFromOptions(vision, {
@@ -283,15 +287,14 @@ export default function LipstickMirrorLive_Clone() {
                 runningMode: 'VIDEO',
                 numFaces: 1,
             });
-            landmarkerRef.current = lmInstance; // Tracking is now live
+            landmarkerRef.current = lmInstance;
             setDebugMessage("Tracking Active");
         } catch (err) {
             console.error("Failed to initialize Face Landmarker:", err);
-            setDebugMessage("Tracking failed to load."); // Non-fatal error
+            setDebugMessage("Tracking failed to load.");
         }
     };
 
-    // Setup GUI and start initialization
     gui = new GUI();
     const controls = debugControlsRef.current;
     gui.add(controls, 'scale', 0.01, 0.2, 0.001).name('Scale');
@@ -305,6 +308,7 @@ export default function LipstickMirrorLive_Clone() {
     return () => {
         isCleanedUp = true;
         gui?.destroy();
+        resizeObserver?.disconnect();
         if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
         videoRef.current?.srcObject?.getTracks().forEach(t => t.stop());
         landmarkerRef.current?.close();
@@ -318,7 +322,7 @@ export default function LipstickMirrorLive_Clone() {
       </div>
       <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px', padding: '10px', backgroundColor: 'rgba(255, 255, 255, 0.2)', borderRadius: '10px', zIndex: 10 }}>
         {LIPSTICK_COLORS.map(color => (
-            <div key={color.name} title={color.name} onClick={() => setSelectedColorUI(color.value)} style={{ width: '40px', height: '40px', backgroundColor: `rgba(${color.value[0]*255}, ${color.value[1]*255}, ${color.value[2]*255}, ${color.value[3]})`, borderRadius: '50%', border: selectedColorUI === color.value ? '3px solid white' : '3px solid transparent', cursor: 'pointer' }} />
+            <div key={color.name} title={color.name} onClick={() => setSelectedColorUI(color.value)} style={{ width: '40px', height: '40px', backgroundColor: `rgba(${color.value[0]*255}, ${color.value[1]*255}, ${color.value[2]*255}, ${color.value[3]})`, borderRadius: '50%', border: selectedColorForRenderRef.current === color.value ? '3px solid white' : '3px solid transparent', cursor: 'pointer' }} />
         ))}
       </div>
       <video ref={videoRef} style={{ display: 'none' }} autoPlay playsInline muted />
