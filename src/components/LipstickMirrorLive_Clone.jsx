@@ -133,16 +133,13 @@ export default function LipstickMirrorLive_Clone() {
         try {
             // ======================================================================
             // THE DEFINITIVE FIX
-            // We load the model with the correct 'postProcess' option.
-            // This tells the loader to do all the work and give us the final,
-            // ready-to-use data arrays directly.
+            // Load the model with NO options.
+            // The library automatically populates the `meshes` array.
+            // We then access the final vertex data via the `.value` property.
             // ======================================================================
-            const gltf = await load('/models/lips_model.glb', GLTFLoader, {
-              gltf: { postProcess: true }
-            });
+            const gltf = await load('/models/lips_model.glb', GLTFLoader);
             
-            // Now we can safely access the geometry because the loader has processed it.
-            if (!gltf.meshes || !gltf.meshes.length) { throw new Error("No meshes found in post-processed GLTF data."); }
+            if (!gltf.meshes || !gltf.meshes.length) { throw new Error("No meshes found in loaded GLTF data."); }
             const primitive = gltf.meshes[0].primitives[0];
 
             const positions = primitive.attributes.POSITION.value;
