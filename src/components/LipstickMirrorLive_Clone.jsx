@@ -31,10 +31,10 @@ export default function LipstickMirrorLive_Clone() {
   const landmarkerRef = useRef(null);
 
   const debugControlsRef = useRef({
-      scale: 0.075,
+      scale: 0.95,
       offsetX: 0.0,
-      offsetY: -0.04,
-      offsetZ: 0.05,
+      offsetY: 0.0,
+      offsetZ: 0.0,
   });
   
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
@@ -101,36 +101,31 @@ export default function LipstickMirrorLive_Clone() {
 
         device.queue.writeBuffer(pState.videoAspectRatioUBO, 0, new Float32Array([videoRef.current.videoWidth, videoRef.current.videoHeight, context.canvas.width, context.canvas.height]));
         
-        // --- This matrix logic is now based on the correct, ChatGPT-validated approach ---
         const projectionMatrix = mat4.create();
         mat4.perspective(projectionMatrix, 45 * Math.PI / 180, context.canvas.width / context.canvas.height, 0.1, 1000.0);
         
-        const viewMatrix = mat4.create();
-        mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 1.2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
-        
+        // ======================================================================
+        // THE DEFINITIVE FIX FOR INVERTED TRACKING
+        // We flip the Y-axis of the projection matrix to match MediaPipe's coordinate system.
+        // This is the standard and correct way to solve this problem.
+        mat4.scale(projectionMatrix, projectionMatrix, [1, -1, 1]);
+        // ======================================================================
+
+        const viewMatrix = mat4.create(); // Identity matrix, as MediaPipe provides Model-View
         let modelMatrix = mat4.create();
 
         if (hasFace) {
-            // 1. Get the raw Model-View matrix from MediaPipe.
             const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
             
-            // 2. THIS IS THE CRITICAL FIX: Flip the Y and Z axes to match WebGPU's coordinate system.
-            const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
-            const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
-
-            // 3. Create our local adjustment matrix for fine-tuning.
             const localAdjustmentMatrix = mat4.create();
             const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
             mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
-            
-            // 4. Combine them: Final Model = (Flipped Head Pose) * (Our Fine-Tuning)
-            mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
-        } else {
-             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]); // Hide if no face
+
+            mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
         }
         
-        // We now send all three correct matrices to the shader.
+        // We now send P, V, and M, but P is flipped and V is identity.
         const sceneMatrices = new Float32Array(16 * 3);
         sceneMatrices.set(projectionMatrix, 0);
         sceneMatrices.set(viewMatrix, 16);
@@ -208,7 +203,6 @@ export default function LipstickMirrorLive_Clone() {
             gpuState.pState.videoAspectRatioUBO = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.videoAspectRatioBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.videoAspectRatioUBO}}]});
             
-            // The buffer now holds 3 matrices
             gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: (16 + 16 + 16) * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.lipModelMatrixBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lipModelMatrixGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lipModelMatrixUBO}}]});
             
@@ -282,7 +276,7 @@ export default function LipstickMirrorLive_Clone() {
 
     gui = new GUI();
     const controls = debugControlsRef.current;
-    gui.add(controls, 'scale', 0.01, 0.2, 0.001).name('Scale');
+    gui.add(controls, 'scale', 0.5, 2.0, 0.01).name('Scale');
     gui.add(controls, 'offsetX', -0.1, 0.1, 0.001).name('Offset X');
     gui.add(controls, 'offsetY', -0.1, 0.1, 0.001).name('Offset Y');
     gui.add(controls, 'offsetZ', -0.1, 0.1, 0.001).name('Offset Z');
