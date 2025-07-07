@@ -4,8 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { load } from '@loaders.gl/core';
-// We need this specific helper to decode the raw buffer data correctly
-import { getAccessorData, GLTFLoader } from '@loaders.gl/gltf';
+import { GLTFLoader } from '@loaders.gl/gltf';
 import { mat4, vec3 } from 'gl-matrix';
 
 const LIPSTICK_COLORS = [
@@ -134,11 +133,16 @@ export default function LipstickMirrorLive_Clone() {
         try {
             // ======================================================================
             // THE DEFINITIVE FIX
-            // We load the model with NO options.
-            // Then we manually navigate the loaded structure to get the data.
+            // We load the model with the correct 'postProcess' option.
+            // This tells the loader to do all the work and give us the final,
+            // ready-to-use data arrays directly.
             // ======================================================================
-            const gltf = await load('/models/lips_model.glb', GLTFLoader);
+            const gltf = await load('/models/lips_model.glb', GLTFLoader, {
+              gltf: { postProcess: true }
+            });
             
+            // Now we can safely access the geometry because the loader has processed it.
+            if (!gltf.meshes || !gltf.meshes.length) { throw new Error("No meshes found in post-processed GLTF data."); }
             const primitive = gltf.meshes[0].primitives[0];
 
             const positions = primitive.attributes.POSITION.value;
