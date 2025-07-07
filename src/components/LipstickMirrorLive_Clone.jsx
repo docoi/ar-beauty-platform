@@ -86,43 +86,120 @@ export default function LipstickMirrorLive_Clone() {
     };
     resizeHandlerRef.current = configureCanvasAndDepthTexture;
 
+    // REPLACE the render function in src/components/LipstickMirrorLive_Clone.jsx with this
+
     const render = async () => {
-        const currentDevice = deviceRef.current; const currentContext = contextRef.current; const currentVideoEl = videoRef.current; const pState = pipelineStateRef.current; const activeLandmarker = landmarkerRef.current;
-        if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.depthTextureView || (pState.lipModelData && !pState.lipModelPipeline) ) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
-        if (!currentVideoEl || currentVideoEl.readyState < currentVideoEl.HAVE_ENOUGH_DATA || currentVideoEl.videoWidth === 0 || currentVideoEl.videoHeight === 0) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
-        if (pState.depthTexture.width !== currentContext.canvas.width || pState.depthTexture.height !== currentContext.canvas.height) { configureCanvasAndDepthTexture(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+        const currentDevice = deviceRef.current;
+        const currentContext = contextRef.current;
+        const currentVideoEl = videoRef.current;
+        const pState = pipelineStateRef.current;
+        const activeLandmarker = landmarkerRef.current;
+
+        if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.depthTextureView || (pState.lipModelData && !pState.lipModelPipeline) ) {
+            animationFrameIdRef.current = requestAnimationFrame(render);
+            return;
+        }
+        frameCounter.current++;
+        if (!currentVideoEl || currentVideoEl.readyState < currentVideoEl.HAVE_ENOUGH_DATA || currentVideoEl.videoWidth === 0 || currentVideoEl.videoHeight === 0) {
+            animationFrameIdRef.current = requestAnimationFrame(render);
+            return;
+        }
+        if (pState.depthTexture.width !== currentContext.canvas.width || pState.depthTexture.height !== currentContext.canvas.height) {
+            configureCanvasAndDepthTexture();
+            animationFrameIdRef.current = requestAnimationFrame(render);
+            return;
+        }
+        
         const now = performance.now();
         const landmarkerResult = activeLandmarker?.detectForVideo(currentVideoEl, now);
         const hasFace = landmarkerResult && landmarkerResult.faceLandmarks.length > 0 && landmarkerResult.facialTransformationMatrixes?.length > 0;
-        if (pState.videoAspectRatioUBO) { const videoDimData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]); currentDevice.queue.writeBuffer(pState.videoAspectRatioUBO, 0, videoDimData); }
+
+        if (pState.videoAspectRatioUBO) {
+            const videoDimData = new Float32Array([currentVideoEl.videoWidth, currentVideoEl.videoHeight, currentContext.canvas.width, currentContext.canvas.height]);
+            currentDevice.queue.writeBuffer(pState.videoAspectRatioUBO, 0, videoDimData);
+        }
+        
         if (pState.lipModelMatrixUBO) {
-            const projectionMatrix = mat4.create(); const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
+            const projectionMatrix = mat4.create();
+            const canvasAspectRatio = currentContext.canvas.width / currentContext.canvas.height;
             mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvasAspectRatio, 0.1, 1000.0);
-            const viewMatrix = mat4.create(); mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 10), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
-            let modelMatrix;
+            
+            // This is our standard camera view.
+            const viewMatrix = mat4.create();
+            mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 1.2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+            
+            let modelMatrix = mat4.create(); // This will be our final model matrix.
+
             if (hasFace && pState.lipModelData?.modelCenter) {
-                modelMatrix = mat4.create();
-                const modelCenter = pState.lipModelData.modelCenter; const centeringVector = vec3.negate(vec3.create(), modelCenter);
-                const scaleFactor = 0.05; const scaleVector = vec3.fromValues(scaleFactor, scaleFactor, scaleFactor);
-                mat4.scale(modelMatrix, modelMatrix, scaleVector);
-                mat4.translate(modelMatrix, modelMatrix, centeringVector);
-            } else { modelMatrix = mat4.create(); mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0, 0, 0)); }
+                // 1. Get the raw pose matrix from MediaPipe
+                const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+                
+                // 2. Correct MediaPipe's coordinate system to match our 3D world (flips Y and Z)
+                const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
+                mat4.multiply(modelMatrix, faceTransform, flipYZ);
+
+                // 3. Create the local adjustment for OUR specific model
+                const localAdjustmentMatrix = mat4.create();
+                const modelCenter = pState.lipModelData.modelCenter;
+                const centeringVector = vec3.negate(vec3.create(), modelCenter);
+                
+                // --- TWEAK THESE VALUES FOR PERFECT PLACEMENT ---
+                const scaleFactor = 0.075; // Adjust size
+                // Adjust position: [Left/Right, Up/Down, Forward/Back]
+                const translationVector = vec3.fromValues(0.0, -0.04, 0.05); 
+                // --- END OF TWEAKABLE VALUES ---
+
+                // 4. Build the adjustment matrix: Center -> Scale -> Translate
+                // (Applied in reverse order for gl-matrix)
+                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, translationVector);
+                mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scaleFactor, scaleFactor, scaleFactor));
+                mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, centeringVector);
+
+                // 5. Apply our local adjustment to the posed model matrix
+                mat4.multiply(modelMatrix, modelMatrix, localAdjustmentMatrix);
+
+            } else {
+                // If no face, scale to zero so it's invisible.
+                mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0, 0, 0));
+            }
+            
             const sceneMatrices = new Float32Array(16 * 3);
-            sceneMatrices.set(projectionMatrix, 0); sceneMatrices.set(viewMatrix, 16); sceneMatrices.set(modelMatrix, 32);
+            sceneMatrices.set(projectionMatrix, 0);
+            sceneMatrices.set(viewMatrix, 16);
+            sceneMatrices.set(modelMatrix, 32);
             currentDevice.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
         }
+
         if (pState.lipstickMaterialUniformBuffer) { const colorData = new Float32Array(selectedColorForRenderRef.current); currentDevice.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, colorData); }
         if (pState.lightingUniformBuffer) { const { lightDirection, ambientColor, diffuseColor, cameraWorldPosition } = lightSettingsRef.current; const lightingData = new Float32Array([ ...lightDirection, 0.0, ...ambientColor, ...diffuseColor, ...cameraWorldPosition, 0.0 ]); currentDevice.queue.writeBuffer(pState.lightingUniformBuffer, 0, lightingData); }
+        
         let videoTextureGPU, frameBindGroupForTexture; 
         try { videoTextureGPU = currentDevice.importExternalTexture({ source: currentVideoEl }); if (pState.videoBindGroupLayout && pState.videoSampler) { frameBindGroupForTexture = currentDevice.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{ binding: 0, resource: pState.videoSampler }, { binding: 1, resource: videoTextureGPU }] }); } else { animationFrameIdRef.current = requestAnimationFrame(render); return; } } catch (e) { console.error("Error importing video texture:", e); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+        
         let currentGpuTexture, currentTextureView; 
         try { currentGpuTexture = currentContext.getCurrentTexture(); currentTextureView = currentGpuTexture.createView(); } catch (e) { console.warn("Error getting current texture", e); if (resizeHandlerRef.current) resizeHandlerRef.current(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
+        
         const cmdEnc = currentDevice.createCommandEncoder({label: "Main Render Encoder"});
         const passEnc = cmdEnc.beginRenderPass({ colorAttachments: [{ view: currentTextureView, clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, loadOp: 'clear', storeOp: 'store' }], depthStencilAttachment: { view: pState.depthTextureView, depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store' }});
         passEnc.setViewport(0, 0, currentGpuTexture.width, currentGpuTexture.height, 0, 1);
         passEnc.setScissorRect(0, 0, currentGpuTexture.width, currentGpuTexture.height);
-        if (pState.videoPipeline && frameBindGroupForTexture && pState.videoAspectRatioBindGroup) { passEnc.setPipeline(pState.videoPipeline); passEnc.setBindGroup(0, frameBindGroupForTexture); passEnc.setBindGroup(1, pState.videoAspectRatioBindGroup); passEnc.draw(6); }
-        if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0) { passEnc.setPipeline(pState.lipModelPipeline); passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup); passEnc.setBindGroup(2, pState.lipModelLightingBindGroup); passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer); passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat); passEnc.drawIndexed(pState.lipModelNumIndices); }
+        
+        if (pState.videoPipeline && frameBindGroupForTexture && pState.videoAspectRatioBindGroup) {
+            passEnc.setPipeline(pState.videoPipeline);
+            passEnc.setBindGroup(0, frameBindGroupForTexture);
+            passEnc.setBindGroup(1, pState.videoAspectRatioBindGroup);
+            passEnc.draw(6);
+        }
+        
+        if (hasFace && pState.lipModelPipeline && pState.lipModelVertexBuffer && pState.lipModelIndexBuffer && pState.lipModelNumIndices > 0) {
+            passEnc.setPipeline(pState.lipModelPipeline);
+            passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup); 
+            passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);   
+            passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);   
+            passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
+            passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
+            passEnc.drawIndexed(pState.lipModelNumIndices);
+        }
         passEnc.end(); currentDevice.queue.submit([cmdEnc.finish()]);
         animationFrameIdRef.current = requestAnimationFrame(render);
     };
