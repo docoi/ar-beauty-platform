@@ -3,9 +3,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
-import { load } from '@loaders.gl/core';
-// We need this helper to correctly decode the buffer data based on the JSON description
-import { GLTFLoader, getAccessorData } from '@loaders.gl/gltf';
+// NEW: Import the robust three.js GLTFLoader
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { Mesh } from 'three';
 import { mat4, vec3 } from 'gl-matrix';
 
 const LIPSTICK_COLORS = [
@@ -82,7 +82,6 @@ export default function LipstickMirrorLive_Clone() {
             pState.depthTexture?.destroy(); 
             pState.depthTexture = deviceInternal.createTexture({ size: [targetWidth, targetHeight], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT, label: "Depth Texture" });
             pState.depthTextureView = pState.depthTexture.createView({ label: "Depth Texture View"});
-            console.log(`[LML_Clone] Canvas configured (${targetWidth}x${targetHeight}), Depth texture (re)created.`);
         }
     };
     resizeHandlerRef.current = configureCanvasAndDepthTexture;
@@ -90,7 +89,6 @@ export default function LipstickMirrorLive_Clone() {
     const render = async () => {
         const currentDevice = deviceRef.current; const currentContext = contextRef.current; const currentVideoEl = videoRef.current; const pState = pipelineStateRef.current; const activeLandmarker = landmarkerRef.current;
         if (!currentDevice || !currentContext || !pState.videoPipeline || !pState.depthTextureView || (pState.lipModelData && !pState.lipModelPipeline) ) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
-        frameCounter.current++;
         if (!currentVideoEl || currentVideoEl.readyState < currentVideoEl.HAVE_ENOUGH_DATA || currentVideoEl.videoWidth === 0 || currentVideoEl.videoHeight === 0) { animationFrameIdRef.current = requestAnimationFrame(render); return; }
         if (pState.depthTexture.width !== currentContext.canvas.width || pState.depthTexture.height !== currentContext.canvas.height) { configureCanvasAndDepthTexture(); animationFrameIdRef.current = requestAnimationFrame(render); return; }
         const now = performance.now();
@@ -133,24 +131,27 @@ export default function LipstickMirrorLive_Clone() {
         setDebugMessage("Loading 3D Lip Model...");
         try {
             // ======================================================================
-            // THE DEFINITIVE FIX
-            // Load the model with NO options.
-            // Then access the data using the correct path: `gltf.json.meshes`.
+            // THE DEFINITIVE FIX: Use the robust three.js loader
             // ======================================================================
-            const gltf = await load('/models/lips_model.glb', GLTFLoader);
-            
-            const gltfJson = gltf.json;
-            if (!gltfJson.meshes || gltfJson.meshes.length === 0) { throw new Error("No meshes found in gltf.json structure."); }
-            const primitive = gltfJson.meshes[0].primitives[0];
-            
-            // The getAccessorData helper is still needed to decode the raw buffer data.
-            // Now we pass it the correct arguments based on the real object structure.
-            const positions = getAccessorData(gltf, gltfJson.accessors[primitive.attributes.POSITION]);
-            const normals = getAccessorData(gltf, gltfJson.accessors[primitive.attributes.NORMAL]);
-            const uvs = getAccessorData(gltf, gltfJson.accessors[primitive.attributes.TEXCOORD_0]);
-            const indices = getAccessorData(gltf, gltfJson.accessors[primitive.indices]);
+            const loader = new GLTFLoader();
+            const gltf = await loader.loadAsync('/models/lips_model.glb');
 
-            if (!positions || !normals || !uvs || !indices) { throw new Error("Essential mesh attributes are missing after processing."); }
+            let lipMesh = null;
+            gltf.scene.traverse((object) => {
+              if (object instanceof Mesh) {
+                lipMesh = object;
+              }
+            });
+
+            if (!lipMesh) throw new Error("Could not find a mesh in the loaded GLTF scene.");
+            
+            const geometry = lipMesh.geometry;
+            const positions = geometry.attributes.position.array;
+            const normals = geometry.attributes.normal.array;
+            const uvs = geometry.attributes.uv.array;
+            const indices = geometry.index.array;
+            
+            if (!positions || !normals || !uvs || !indices) { throw new Error("Essential mesh attributes are missing from the three.js geometry."); }
             const modelCenter = calculateBoundingBoxCenter(positions);
             pipelineStateRef.current.lipModelData = { positions, normals, uvs, indices, modelCenter };
             setDebugMessage("3D Model Parsed. Initializing GPU...");
@@ -201,14 +202,11 @@ export default function LipstickMirrorLive_Clone() {
             if (indicesData.byteLength % 4 !== 0) { finalIndexByteLength = Math.ceil(indicesData.byteLength / 4) * 4; const paddedBuffer = new Uint8Array(finalIndexByteLength); paddedBuffer.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength)); dataToWriteToGpu = paddedBuffer; }
             pState.lipModelIndexBuffer = deviceInternal.createBuffer({ label: "3DLipIB", size: finalIndexByteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
             deviceInternal.queue.writeBuffer(pState.lipModelIndexBuffer, 0, dataToWriteToGpu, 0, finalIndexByteLength);
-            if (model.indices.BYTES_PER_ELEMENT === 2) { pState.lipModelIndexFormat = 'uint16'; } else if (model.indices.BYTES_PER_ELEMENT === 4) { pState.lipModelIndexFormat = 'uint32'; } 
+            if (indicesData instanceof Uint16Array) { pState.lipModelIndexFormat = 'uint16'; } else if (indicesData instanceof Uint32Array) { pState.lipModelIndexFormat = 'uint32'; } 
             pState.lipModelNumIndices = model.indices.length;
-            console.log(`[LML_Clone] Created Interleaved VB & IB (${pState.lipModelNumIndices}i)`);
             const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } }); videoElement.srcObject = stream; await new Promise((res, rej) => { videoElement.onloadedmetadata = res; videoElement.onerror = () => rej(new Error("Video metadata error."));}); await videoElement.play();
             resizeObserverInternal = new ResizeObserver(resizeHandlerRef.current); resizeObserverInternal.observe(canvasElement);
             configureCanvasAndDepthTexture(); 
-            console.log("[LML_Clone] GPU resources and video initialized.");
-            setDebugMessage("Ready (3D Model).");
             if (!renderLoopStartedInternal) { render(); renderLoopStartedInternal = true; }
         } catch (err) { setError(`GPU Init: ${err.message}`); console.error("[LML_Clone] GPU Init Error:", err); setDebugMessage("Error: GPU Init"); }
     };
