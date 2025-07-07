@@ -24,19 +24,6 @@ async function loadImageBitmap(url) {
   return createImageBitmap(blob);
 }
 
-function calculateBoundingBoxCenter(positions) {
-  if (!positions || positions.length < 3) return vec3.create();
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-  for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i]; const y = positions[i + 1]; const z = positions[i + 2];
-    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
-    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
-  }
-  const center = vec3.fromValues((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-  return center;
-}
-
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
@@ -44,7 +31,7 @@ export default function LipstickMirrorLive_Clone() {
   const landmarkerRef = useRef(null);
 
   const debugControlsRef = useRef({
-      scale: 0.95, // Adjusted for new matrix logic
+      scale: 1.0,     // Adjusted for new matrix logic
       offsetX: 0.0,
       offsetY: 0.0,
       offsetZ: 0.0,
@@ -114,42 +101,36 @@ export default function LipstickMirrorLive_Clone() {
 
         device.queue.writeBuffer(pState.videoAspectRatioUBO, 0, new Float32Array([videoRef.current.videoWidth, videoRef.current.videoHeight, context.canvas.width, context.canvas.height]));
         
-        // ======================================================================
-        // THE DEFINITIVE FIX FOR TRACKING
-        // MediaPipe provides a full MVP matrix. We must neutralize our own P and V matrices.
-        // ======================================================================
-        const projectionMatrix = mat4.create(); // Create an identity matrix (does nothing)
-        const viewMatrix = mat4.create();       // Create an identity matrix (does nothing)
+        const projectionMatrix = mat4.create();
+        mat4.perspective(projectionMatrix, 45 * Math.PI / 180, context.canvas.width / context.canvas.height, 0.1, 1000.0);
         
-        let modelMatrix = mat4.create();
+        let mvpMatrix = mat4.create();
+        let modelMatrix = mat4.create(); // This will be used for lighting
 
-        if (hasFace && pState.lipModelData) {
-            // Get the complete MVP matrix from MediaPipe
-            const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-
-            // Create our fine-tuning adjustment matrix
+        if (hasFace) {
+            // Get the Model-View matrix from MediaPipe.
+            const modelViewMatrix = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+            
+            // Create our local adjustment matrix for fine-tuning.
             const localAdjustmentMatrix = mat4.create();
             const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
-
-            // Apply our adjustments. Since the main matrix already handles projection,
-            // these values will be more sensitive.
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
             mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
 
-            // Combine the two. The shader calculation will be:
-            // Identity * Identity * (MediaPipe_MVP * Our_Adjustment) * Vertex
-            // which correctly simplifies to: (MediaPipe_MVP * Our_Adjustment) * Vertex
-            mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
-        } else {
-             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]); // Hide if no face
+            // Combine for the final Model matrix (for lighting).
+            // Model = MediaPipe_ModelView * Local_Adjustment
+            mat4.multiply(modelMatrix, modelViewMatrix, localAdjustmentMatrix);
+
+            // Combine for the final MVP matrix (for position).
+            // MVP = Projection * Model
+            mat4.multiply(mvpMatrix, projectionMatrix, modelMatrix);
         }
         
-        const sceneMatrices = new Float32Array(16 * 3);
-        sceneMatrices.set(projectionMatrix, 0); // Sending identity
-        sceneMatrices.set(viewMatrix, 16);       // Sending identity
-        sceneMatrices.set(modelMatrix, 32);      // Sending the combined, final matrix
+        const sceneMatrices = new Float32Array(16 * 2); // Buffer for 2 matrices
+        sceneMatrices.set(mvpMatrix, 0);     // mvpMatrix at the start
+        sceneMatrices.set(modelMatrix, 16);  // modelMatrix after it
         device.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
-
+        
         device.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, new Float32Array(selectedColorForRenderRef.current));
         
         let videoTextureGPU;
@@ -171,7 +152,7 @@ export default function LipstickMirrorLive_Clone() {
         passEnc.setBindGroup(1, pState.videoAspectRatioBindGroup);
         passEnc.draw(6);
 
-        if (hasFace && pState.lipModelPipeline) { // Only draw if a face is present
+        if (hasFace && pState.lipModelPipeline) {
             passEnc.setPipeline(pState.lipModelPipeline);
             passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup);
             passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);
@@ -193,8 +174,7 @@ export default function LipstickMirrorLive_Clone() {
             let lipMesh = null;
             gltf.scene.traverse((object) => { if (object instanceof Mesh) { lipMesh = object; } });
             if (!lipMesh) throw new Error("Could not find a mesh in the loaded GLTF scene.");
-            // We don't need to center the geometry anymore because the MVP matrix handles everything.
-            // But we still need the raw data.
+            
             const geometry = lipMesh.geometry;
             const positions = geometry.attributes.position.array;
             const normals = geometry.attributes.normal.array;
@@ -221,8 +201,11 @@ export default function LipstickMirrorLive_Clone() {
             
             gpuState.pState.videoAspectRatioUBO = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.videoAspectRatioBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.videoAspectRatioUBO}}]});
-            gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            
+            // UPDATED: Buffer now holds 2 matrices (MVP + Model)
+            gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: (16 + 16) * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.lipModelMatrixBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lipModelMatrixGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lipModelMatrixUBO}}]});
+            
             gpuState.pState.lipstickMaterialUniformBuffer = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.lightingUniformBuffer = gpuState.device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.lipModelLightingBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lightingGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lightingUniformBuffer}}]});
@@ -293,11 +276,10 @@ export default function LipstickMirrorLive_Clone() {
 
     gui = new GUI();
     const controls = debugControlsRef.current;
-    gui.add(controls, 'scale', 0.5, 1.5, 0.001).name('Scale'); // Adjusted range
+    gui.add(controls, 'scale', 0.5, 2.0, 0.01).name('Scale');
     gui.add(controls, 'offsetX', -0.1, 0.1, 0.001).name('Offset X');
     gui.add(controls, 'offsetY', -0.1, 0.1, 0.001).name('Offset Y');
     gui.add(controls, 'offsetZ', -0.1, 0.1, 0.001).name('Offset Z');
-    // REMOVED Force Static - we no longer need it.
 
     initialize();
 
