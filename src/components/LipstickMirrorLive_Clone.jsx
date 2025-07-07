@@ -100,25 +100,37 @@ export default function LipstickMirrorLive_Clone() {
         
         const projectionMatrix = mat4.create();
         mat4.perspective(projectionMatrix, 45 * Math.PI / 180, contextInternal.canvas.width / contextInternal.canvas.height, 0.1, 1000.0);
+        
         const viewMatrix = mat4.create();
         mat4.lookAt(viewMatrix, vec3.fromValues(0, 0, 1.2), vec3.fromValues(0, 0, 0), vec3.fromValues(0, 1, 0));
+        
         let modelMatrix = mat4.create();
+        
         if (hasFace && pState.lipModelData?.modelCenter) {
+            // 1. Get MediaPipe's base transformation
             const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
             const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
-            mat4.multiply(modelMatrix, faceTransform, flipYZ);
+            const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
+
+            // 2. Create our local adjustment matrix with the CORRECT order of operations
             const localAdjustmentMatrix = mat4.create();
             const modelCenter = pState.lipModelData.modelCenter;
             const centeringVector = vec3.negate(vec3.create(), modelCenter);
             const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
             const translationVector = vec3.fromValues(offsetX, offsetY, offsetZ);
+
+            // To get a visual effect of: Center -> Scale -> Offset
+            // We apply the matrices in reverse order: Offset * Scale * Center
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, translationVector);
             mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, vec3.fromValues(scale, scale, scale));
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, centeringVector);
-            mat4.multiply(modelMatrix, modelMatrix, localAdjustmentMatrix);
+            
+            // 3. Combine the pose and our adjustment to get the final model matrix
+            mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
         } else {
             mat4.scale(modelMatrix, modelMatrix, vec3.fromValues(0, 0, 0));
         }
+
         const sceneMatrices = new Float32Array(16 * 3);
         sceneMatrices.set(projectionMatrix, 0); sceneMatrices.set(viewMatrix, 16); sceneMatrices.set(modelMatrix, 32);
         deviceInternal.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
