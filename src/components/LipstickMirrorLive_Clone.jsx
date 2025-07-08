@@ -5,14 +5,13 @@ import createPipelines from '@/utils/createPipelines';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Mesh } from 'three';
-import { mat4 } from 'gl-matrix';
+import { mat4, vec3 } from 'gl-matrix';
 import GUI from 'lil-gui';
 
 const LIPSTICK_COLORS = [
   { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] },
   { name: 'Classic Red', value: [200/255, 0/255, 0/255, 0.9] },
   { name: 'Deep Plum', value: [100/255, 20/255, 50/255, 0.85] },
-  // ... add more colors if you wish
 ];
 
 async function loadImageBitmap(url) {
@@ -22,6 +21,20 @@ async function loadImageBitmap(url) {
   return createImageBitmap(blob);
 }
 
+// This helper function is essential and correct.
+function calculateBoundingBoxCenter(positions) {
+  if (!positions || positions.length < 3) return vec3.create();
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i]; const y = positions[i + 1]; const z = positions[i + 2];
+    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
+    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
+  }
+  const center = vec3.fromValues((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+  return center;
+}
+
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
@@ -29,10 +42,10 @@ export default function LipstickMirrorLive_Clone() {
   const landmarkerRef = useRef(null);
 
   const debugControlsRef = useRef({
-      scale: 1.0,
+      scale: 0.075,
       offsetX: 0.0,
-      offsetY: 0.0,
-      offsetZ: 0.0,
+      offsetY: -0.04,
+      offsetZ: 0.05,
   });
   
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
@@ -102,31 +115,39 @@ export default function LipstickMirrorLive_Clone() {
         const projectionMatrix = mat4.create();
         mat4.perspective(projectionMatrix, 45 * Math.PI / 180, context.canvas.width / context.canvas.height, 0.1, 1000.0);
         
-        let mvpMatrix = mat4.create();
-        let modelMatrix = mat4.create(); // This will be used for lighting
+        const viewMatrix = mat4.create();
+        mat4.lookAt(viewMatrix, [0, 0, 1.2], [0, 0, 0], [0, 1, 0]);
+        
+        let modelMatrix = mat4.create();
 
-        if (hasFace) {
-            // Get the Model-View matrix from MediaPipe.
-            const modelViewMatrix = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-            
-            // Create our local adjustment matrix for fine-tuning.
+        if (hasFace && pState.lipModelData?.modelCenter) {
+            // Get the raw transform and correct its coordinate system to match WebGPU
+            const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+            const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
+            const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
+
+            // Create the adjustment matrix to center our model and then scale/offset it
             const localAdjustmentMatrix = mat4.create();
             const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
+            const modelCenter = pState.lipModelData.modelCenter;
+            const centeringVector = vec3.negate([], modelCenter);
+            
+            // Apply transformations in reverse order for desired visual effect:
+            // Final visual effect is: Center -> Scale -> Offset
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
             mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
-
-            // Combine for the final Model matrix (for lighting).
-            // Model = MediaPipe_ModelView * Local_Adjustment
-            mat4.multiply(modelMatrix, modelViewMatrix, localAdjustmentMatrix);
-
-            // Combine for the final MVP matrix (for position).
-            // MVP = Projection * Model
-            mat4.multiply(mvpMatrix, projectionMatrix, modelMatrix);
+            mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, centeringVector);
+            
+            // Combine the corrected pose with our model's adjustments
+            mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
+        } else {
+             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]);
         }
         
-        const sceneMatrices = new Float32Array(16 * 2); // Buffer for 2 matrices
-        sceneMatrices.set(mvpMatrix, 0);
-        sceneMatrices.set(modelMatrix, 16);
+        const sceneMatrices = new Float32Array(16 * 3);
+        sceneMatrices.set(projectionMatrix, 0);
+        sceneMatrices.set(viewMatrix, 16);
+        sceneMatrices.set(modelMatrix, 32);
         device.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
         
         device.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, new Float32Array(selectedColorForRenderRef.current));
@@ -178,7 +199,10 @@ export default function LipstickMirrorLive_Clone() {
             const normals = geometry.attributes.normal.array;
             const uvs = geometry.attributes.uv.array;
             const indices = geometry.index.array;
-            gpuState.pState.lipModelData = { positions, normals, uvs, indices };
+            
+            // RESTORED THE CRITICAL CENTERING LOGIC
+            const modelCenter = calculateBoundingBoxCenter(positions);
+            gpuState.pState.lipModelData = { positions, normals, uvs, indices, modelCenter };
 
             setDebugMessage("Initializing GPU...");
             if (!navigator.gpu) throw new Error("WebGPU not supported.");
@@ -200,8 +224,7 @@ export default function LipstickMirrorLive_Clone() {
             gpuState.pState.videoAspectRatioUBO = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.videoAspectRatioBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.videoAspectRatioUBO}}]});
             
-            // UPDATED: Buffer now holds 2 matrices (MVP + Model)
-            gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: (16 + 16) * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.lipModelMatrixBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lipModelMatrixGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lipModelMatrixUBO}}]});
             
             gpuState.pState.lipstickMaterialUniformBuffer = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -282,7 +305,7 @@ export default function LipstickMirrorLive_Clone() {
 
     gui = new GUI();
     const controls = debugControlsRef.current;
-    gui.add(controls, 'scale', 0.5, 2.0, 0.01).name('Scale');
+    gui.add(controls, 'scale', 0.01, 0.2, 0.001).name('Scale');
     gui.add(controls, 'offsetX', -0.1, 0.1, 0.001).name('Offset X');
     gui.add(controls, 'offsetY', -0.1, 0.1, 0.001).name('Offset Y');
     gui.add(controls, 'offsetZ', -0.1, 0.1, 0.001).name('Offset Z');
