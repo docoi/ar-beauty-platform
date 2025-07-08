@@ -12,7 +12,6 @@ const LIPSTICK_COLORS = [
   { name: 'Nude Pink', value: [228/255, 170/255, 170/255, 0.85] },
   { name: 'Classic Red', value: [200/255, 0/255, 0/255, 0.9] },
   { name: 'Deep Plum', value: [100/255, 20/255, 50/255, 0.85] },
-  // ... add more colors if you wish
 ];
 
 async function loadImageBitmap(url) {
@@ -122,20 +121,24 @@ export default function LipstickMirrorLive_Clone() {
         let modelMatrix = mat4.create();
 
         if (hasFace && pState.lipModelData?.modelCenter) {
+            // Get the raw transform and correct its coordinate system to match WebGPU
             const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
             const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
-            const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
+            const poseMatrix = mat4.multiply(mat4.create(), flipYZ, faceTransform);
 
+            // Create the adjustment matrix to center our model and then scale/offset it
             const localAdjustmentMatrix = mat4.create();
             const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
             const modelCenter = pState.lipModelData.modelCenter;
             const centeringVector = vec3.negate([], modelCenter);
             
-            // CORRECT ORDER OF OPERATIONS: Offset * Scale * Center
+            // Apply transformations in reverse order for desired visual effect:
+            // Final visual effect is: Center -> Scale -> Offset
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
             mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, centeringVector);
             
+            // Combine the corrected pose with our model's adjustments
             mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
         } else {
              mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]);
