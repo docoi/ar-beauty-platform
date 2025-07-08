@@ -1,6 +1,6 @@
 // src/shaders/lipstickEffect.wgsl
 
-// Group 0: Scene Uniforms
+// Group 0: Scene Uniforms (for vertex shader)
 // UPDATED: Now accepts a pre-computed MVP matrix and the final model matrix
 @group(0) @binding(0) var<uniform> sceneUniforms: SceneUniforms3D;
 struct SceneUniforms3D {
