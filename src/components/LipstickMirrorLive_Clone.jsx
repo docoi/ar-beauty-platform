@@ -14,27 +14,6 @@ const LIPSTICK_COLORS = [
   { name: 'Deep Plum', value: [100/255, 20/255, 50/255, 0.85] },
 ];
 
-async function loadImageBitmap(url) {
-  const response = await fetch(url);
-  if (!response.ok) { throw new Error(`Failed to fetch image ${url}: ${response.statusText}`); }
-  const blob = await response.blob();
-  return createImageBitmap(blob);
-}
-
-// This helper function is essential and correct.
-function calculateBoundingBoxCenter(positions) {
-  if (!positions || positions.length < 3) return vec3.create();
-  let minX = Infinity, minY = Infinity, minZ = Infinity;
-  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-  for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i]; const y = positions[i + 1]; const z = positions[i + 2];
-    minX = Math.min(minX, x); minY = Math.min(minY, y); minZ = Math.min(minZ, z);
-    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); maxZ = Math.max(maxZ, z);
-  }
-  const center = vec3.fromValues((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
-  return center;
-}
-
 export default function LipstickMirrorLive_Clone() {
   const canvasRef = useRef(null);
   const videoRef = useRef(null);
@@ -42,10 +21,10 @@ export default function LipstickMirrorLive_Clone() {
   const landmarkerRef = useRef(null);
 
   const debugControlsRef = useRef({
-      scale: 0.075,
+      scale: 1.0,
       offsetX: 0.0,
-      offsetY: -0.04,
-      offsetZ: 0.05,
+      offsetY: 0.0,
+      offsetZ: 0.0,
   });
   
   const [selectedColorUI, setSelectedColorUI] = useState(LIPSTICK_COLORS[0].value);
@@ -76,17 +55,12 @@ export default function LipstickMirrorLive_Clone() {
         const cw = canvasRef.current.clientWidth;
         const ch = canvasRef.current.clientHeight;
         if (cw === 0 || ch === 0) return;
-
         const targetWidth = Math.floor(cw * dpr);
         const targetHeight = Math.floor(ch * dpr);
-
         if (canvasRef.current.width === targetWidth && canvasRef.current.height === targetHeight) return;
-
         canvasRef.current.width = targetWidth;
         canvasRef.current.height = targetHeight;
-
         gpuState.context.configure({ device: gpuState.device, format: gpuState.format, alphaMode: 'opaque', size: [targetWidth, targetHeight] });
-        
         gpuState.pState.depthTexture?.destroy();
         gpuState.pState.depthTexture = gpuState.device.createTexture({
             size: [targetWidth, targetHeight],
@@ -104,51 +78,32 @@ export default function LipstickMirrorLive_Clone() {
 
         const { device, context, pState } = gpuState;
         
-        const landmarkerResult = landmarkerRef.current 
-            ? landmarkerRef.current.detectForVideo(videoRef.current, performance.now()) 
-            : null;
-
+        const landmarkerResult = landmarkerRef.current ? landmarkerRef.current.detectForVideo(videoRef.current, performance.now()) : null;
         const hasFace = landmarkerResult?.faceLandmarks?.length > 0 && landmarkerResult?.facialTransformationMatrixes?.length > 0;
 
         device.queue.writeBuffer(pState.videoAspectRatioUBO, 0, new Float32Array([videoRef.current.videoWidth, videoRef.current.videoHeight, context.canvas.width, context.canvas.height]));
         
+        // --- START OF CORRECTED LOGIC (Based on ChatGPT Validation) ---
         const projectionMatrix = mat4.create();
         mat4.perspective(projectionMatrix, 45 * Math.PI / 180, context.canvas.width / context.canvas.height, 0.1, 1000.0);
         
-        const viewMatrix = mat4.create();
-        mat4.lookAt(viewMatrix, [0, 0, 1.2], [0, 0, 0], [0, 1, 0]);
-        
-        let modelMatrix = mat4.create();
+        const mvpMatrix = mat4.create();
 
-        if (hasFace && pState.lipModelData?.modelCenter) {
-            // Get the raw transform and correct its coordinate system to match WebGPU
-            const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
-            const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
-            mat4.multiply(faceTransform, flipYZ, faceTransform); // Correct the coordinate system
-
-            // Create the adjustment matrix to center our model and then scale/offset it
+        if (hasFace) {
+            const modelViewMatrix = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
+            
             const localAdjustmentMatrix = mat4.create();
             const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
-            const modelCenter = pState.lipModelData.modelCenter;
-            const centeringVector = vec3.negate([], modelCenter);
-            
-            // Apply transformations in reverse order for desired visual effect:
-            // Final visual effect is: Center -> Scale -> Offset
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [offsetX, offsetY, offsetZ]);
             mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [scale, scale, scale]);
-            mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, centeringVector);
-            
-            // Combine the corrected pose with our model's adjustments
-            mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
-        } else {
-             mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]);
+
+            const finalModelView = mat4.create();
+            mat4.multiply(finalModelView, modelViewMatrix, localAdjustmentMatrix);
+            mat4.multiply(mvpMatrix, projectionMatrix, finalModelView);
         }
         
-        const sceneMatrices = new Float32Array(16 * 3);
-        sceneMatrices.set(projectionMatrix, 0);
-        sceneMatrices.set(viewMatrix, 16);
-        sceneMatrices.set(modelMatrix, 32);
-        device.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
+        device.queue.writeBuffer(pState.lipModelMatrixUBO, 0, mvpMatrix);
+        // --- END OF CORRECTED LOGIC ---
         
         device.queue.writeBuffer(pState.lipstickMaterialUniformBuffer, 0, new Float32Array(selectedColorForRenderRef.current));
         
@@ -158,7 +113,6 @@ export default function LipstickMirrorLive_Clone() {
         }
 
         const frameBindGroupForTexture = device.createBindGroup({ layout: pState.videoBindGroupLayout, entries: [{ binding: 0, resource: pState.videoSampler }, { binding: 1, resource: videoTextureGPU }] });
-
         const currentTextureView = context.getCurrentTexture().createView();
         const cmdEnc = device.createCommandEncoder();
         const passEnc = cmdEnc.beginRenderPass({
@@ -199,10 +153,7 @@ export default function LipstickMirrorLive_Clone() {
             const normals = geometry.attributes.normal.array;
             const uvs = geometry.attributes.uv.array;
             const indices = geometry.index.array;
-            
-            // RESTORED THE CRITICAL CENTERING LOGIC
-            const modelCenter = calculateBoundingBoxCenter(positions);
-            gpuState.pState.lipModelData = { positions, normals, uvs, indices, modelCenter };
+            gpuState.pState.lipModelData = { positions, normals, uvs, indices };
 
             setDebugMessage("Initializing GPU...");
             if (!navigator.gpu) throw new Error("WebGPU not supported.");
@@ -224,7 +175,8 @@ export default function LipstickMirrorLive_Clone() {
             gpuState.pState.videoAspectRatioUBO = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.videoAspectRatioBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.videoAspectRatioUBO}}]});
             
-            gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            // UPDATED: Buffer now holds 1 MVP matrix
+            gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: 16 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
             gpuState.pState.lipModelMatrixBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lipModelMatrixGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lipModelMatrixUBO}}]});
             
             gpuState.pState.lipstickMaterialUniformBuffer = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -305,7 +257,7 @@ export default function LipstickMirrorLive_Clone() {
 
     gui = new GUI();
     const controls = debugControlsRef.current;
-    gui.add(controls, 'scale', 0.01, 0.2, 0.001).name('Scale');
+    gui.add(controls, 'scale', 0.5, 2.0, 0.01).name('Scale');
     gui.add(controls, 'offsetX', -0.1, 0.1, 0.001).name('Offset X');
     gui.add(controls, 'offsetY', -0.1, 0.1, 0.001).name('Offset Y');
     gui.add(controls, 'offsetZ', -0.1, 0.1, 0.001).name('Offset Z');
