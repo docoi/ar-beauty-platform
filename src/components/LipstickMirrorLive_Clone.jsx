@@ -92,119 +92,87 @@ export default function LipstickMirrorLive_Clone() {
     };
 
     const render = () => {
-        if (
-          isCleanedUp ||
-          !gpuState.device ||
-          !gpuState.pState.videoPipeline ||
-          !videoRef.current ||
-          videoRef.current.readyState < 2
-        ) {
+        if (!gpuState.device || !gpuState.context) {
           animationFrameIdRef.current = requestAnimationFrame(render);
           return;
         }
       
-        const { device, context, pState } = gpuState;
+        const { device, context } = gpuState;
       
-        // Aspect ratio update
-        device.queue.writeBuffer(
-          pState.videoAspectRatioUBO,
-          0,
-          new Float32Array([
-            videoRef.current.videoWidth,
-            videoRef.current.videoHeight,
-            context.canvas.width,
-            context.canvas.height,
-          ])
-        );
+        // === Create a test triangle buffer (1 time only) ===
+        if (!gpuState.debugTriangleVertexBuffer) {
+          const triangleVertices = new Float32Array([
+            // x,    y,   z
+            0.0,  0.5,  0.0,
+           -0.5, -0.5,  0.0,
+            0.5, -0.5,  0.0
+          ]);
       
-        // === FIXED STATIC MATRIX (to force visibility) ===
-        const projectionMatrix = mat4.create();
-        mat4.perspective(
-          projectionMatrix,
-          (45 * Math.PI) / 180,
-          context.canvas.width / context.canvas.height,
-          0.1,
-          1000.0
-        );
-      
-        const viewMatrix = mat4.create(); // Identity view
-        mat4.identity(viewMatrix);
-      
-        const modelMatrix = mat4.create();
-        mat4.translate(modelMatrix, modelMatrix, [0.0, 0.0, -1.0]); // Push forward
-        mat4.scale(modelMatrix, modelMatrix, [1.0, 1.0, 1.0]);       // Big enough
-      
-        const sceneMatrices = new Float32Array(16 * 3);
-        sceneMatrices.set(projectionMatrix, 0);
-        sceneMatrices.set(viewMatrix, 16);
-        sceneMatrices.set(modelMatrix, 32);
-        device.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
-      
-        // Force a solid visible yellow color
-        device.queue.writeBuffer(
-          pState.lipstickMaterialUniformBuffer,
-          0,
-          new Float32Array([1.0, 1.0, 0.0, 1.0]) // Yellow RGBA
-        );
-      
-        let videoTextureGPU;
-        try {
-          videoTextureGPU = device.importExternalTexture({
-            source: videoRef.current,
+          gpuState.debugTriangleVertexBuffer = device.createBuffer({
+            size: triangleVertices.byteLength,
+            usage: GPUBufferUsage.VERTEX,
+            mappedAtCreation: true,
           });
-        } catch (e) {
-          animationFrameIdRef.current = requestAnimationFrame(render);
-          return;
+      
+          new Float32Array(gpuState.debugTriangleVertexBuffer.getMappedRange()).set(triangleVertices);
+          gpuState.debugTriangleVertexBuffer.unmap();
+      
+          gpuState.debugTrianglePipeline = device.createRenderPipeline({
+            layout: 'auto',
+            vertex: {
+              module: device.createShaderModule({
+                code: `
+                  @vertex
+                  fn main(@location(0) position : vec3<f32>) -> @builtin(position) vec4<f32> {
+                    return vec4<f32>(position, 1.0);
+                  }
+                `
+              }),
+              entryPoint: 'main',
+              buffers: [{
+                arrayStride: 12,
+                attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }],
+              }]
+            },
+            fragment: {
+              module: device.createShaderModule({
+                code: `
+                  @fragment
+                  fn main() -> @location(0) vec4<f32> {
+                    return vec4<f32>(1.0, 1.0, 0.0, 1.0); // Yellow
+                  }
+                `
+              }),
+              entryPoint: 'main',
+              targets: [{ format: 'bgra8unorm' }],
+            },
+            primitive: {
+              topology: 'triangle-list',
+            },
+          });
         }
       
-        const frameBindGroupForTexture = device.createBindGroup({
-          layout: pState.videoBindGroupLayout,
-          entries: [
-            { binding: 0, resource: pState.videoSampler },
-            { binding: 1, resource: videoTextureGPU },
-          ],
-        });
-      
+        // === Render ===
         const currentTextureView = context.getCurrentTexture().createView();
         const cmdEnc = device.createCommandEncoder();
-        const passEnc = cmdEnc.beginRenderPass({
-          colorAttachments: [
-            {
-              view: currentTextureView,
-              clearValue: [0, 0, 0, 1],
-              loadOp: 'clear',
-              storeOp: 'store',
-            },
-          ],
-          depthStencilAttachment: {
-            view: pState.depthTextureView,
-            depthClearValue: 1.0,
-            depthLoadOp: 'clear',
-            depthStoreOp: 'store',
-          },
+        const pass = cmdEnc.beginRenderPass({
+          colorAttachments: [{
+            view: currentTextureView,
+            clearValue: [0, 0, 0, 1],
+            loadOp: 'clear',
+            storeOp: 'store',
+          }],
         });
       
-        // Draw background
-        passEnc.setPipeline(pState.videoPipeline);
-        passEnc.setBindGroup(0, frameBindGroupForTexture);
-        passEnc.setBindGroup(1, pState.videoAspectRatioBindGroup);
-        passEnc.draw(6);
+        pass.setPipeline(gpuState.debugTrianglePipeline);
+        pass.setVertexBuffer(0, gpuState.debugTriangleVertexBuffer);
+        pass.draw(3);
+        pass.end();
       
-        // Draw 3D lips (always render to force visibility)
-        if (pState.lipModelPipeline) {
-          passEnc.setPipeline(pState.lipModelPipeline);
-          passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup);
-          passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);
-          passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);
-          passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
-          passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
-          passEnc.drawIndexed(pState.lipModelNumIndices);
-        }
-      
-        passEnc.end();
         device.queue.submit([cmdEnc.finish()]);
         animationFrameIdRef.current = requestAnimationFrame(render);
       };
+      
       
       
       
