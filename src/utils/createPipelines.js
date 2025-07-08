@@ -4,14 +4,19 @@ import videoShaderSource from '@/shaders/videoBackground.wgsl?raw';
 import lipstickShaderSource from '@/shaders/lipstickEffect.wgsl?raw';
 
 // Pipeline for rendering the 2D video background
-async function createVideoBackgroundPipeline(device, format, videoBindGroupLayout, videoAspectRatioGroupLayout) {
+async function createVideoBackgroundPipeline(device, videoBindGroupLayout, videoAspectRatioGroupLayout) {
+  const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
   const videoModule = device.createShaderModule({ label: 'Video BG Shader Module', code: videoShaderSource });
   try {
     return await device.createRenderPipeline({
       label: 'Video Background Pipeline',
       layout: device.createPipelineLayout({ bindGroupLayouts: [videoBindGroupLayout, videoAspectRatioGroupLayout] }),
       vertex: { module: videoModule, entryPoint: 'vert_main' },
-      fragment: { module: videoModule, entryPoint: 'frag_main', targets: [{ format }] },
+      fragment: { 
+        module: videoModule, 
+        entryPoint: 'frag_main', 
+        targets: [{ format: preferredFormat }] 
+      },
       primitive: { topology: 'triangle-list' },
       depthStencil: {
         depthWriteEnabled: false, // The background is flat and should not obscure the 3D model
@@ -23,7 +28,8 @@ async function createVideoBackgroundPipeline(device, format, videoBindGroupLayou
 }
 
 // Pipeline for rendering the 3D Lip Model
-async function create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
+async function create3DLipModelPipeline(device, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout) {
+  const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
   let modelShaderModule;
   try {
     modelShaderModule = device.createShaderModule({ label: '3D Lip Model Shader Module', code: lipstickShaderSource });
@@ -54,7 +60,7 @@ async function create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGrou
         module: modelShaderModule,
         entryPoint: 'frag_main_3d',
         targets: [{ 
-          format: canvasFormat,
+          format: preferredFormat,
           blend: { 
             color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
             alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' }
@@ -87,11 +93,11 @@ export default async function createPipelines(device, canvasFormat, is3DModelMod
   console.log("[createPipelines] All Bind Group Layouts created.");
 
   // Create the necessary pipelines
-  const videoPipeline = await createVideoBackgroundPipeline(device, canvasFormat, videoBindGroupLayout, videoAspectRatioGroupLayout);
+  const videoPipeline = await createVideoBackgroundPipeline(device, videoBindGroupLayout, videoAspectRatioGroupLayout);
   
   let lipModelPipeline = null;
   if (is3DModelMode) {
-    lipModelPipeline = await create3DLipModelPipeline(device, canvasFormat, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
+    lipModelPipeline = await create3DLipModelPipeline(device, lipModelMatrixGroupLayout, lipstickMaterialGroupLayout, lightingGroupLayout);
   }
   
   console.log("[createPipelines] Returning pipelines. Lip Model Pipeline is:", lipModelPipeline ? "OK" : "null");
