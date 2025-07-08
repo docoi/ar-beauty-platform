@@ -113,7 +113,7 @@ export default function LipstickMirrorLive_Clone() {
           landmarkerResult?.faceLandmarks?.length > 0 &&
           landmarkerResult?.facialTransformationMatrixes?.length > 0;
       
-        // Update video canvas + video dimensions UBO
+        // Update video aspect UBO
         device.queue.writeBuffer(
           pState.videoAspectRatioUBO,
           0,
@@ -125,7 +125,7 @@ export default function LipstickMirrorLive_Clone() {
           ])
         );
       
-        // ---------------------- MATRIX FIX ----------------------
+        // ------------------- FIXED MODEL MATRIX -------------------
       
         const projectionMatrix = mat4.create();
         mat4.perspective(
@@ -136,47 +136,13 @@ export default function LipstickMirrorLive_Clone() {
           1000.0
         );
       
-        const viewMatrix = mat4.create(); // Identity, facial matrix already includes view
+        const viewMatrix = mat4.create(); // Identity
         mat4.identity(viewMatrix);
       
-        let modelMatrix = mat4.create();
-      
-        if (hasFace && pState.lipModelData?.modelCenter) {
-          const facialMatrixRaw =
-            landmarkerResult.facialTransformationMatrixes[0].data;
-          const faceTransform = mat4.clone(facialMatrixRaw);
-      
-          // Flip MediaPipe Y and Z axes to WebGPU space
-          const flipYZ = mat4.fromValues(
-            1, 0, 0, 0,
-            0, -1, 0, 0,
-            0, 0, -1, 0,
-            0, 0, 0, 1
-          );
-          mat4.multiply(faceTransform, flipYZ, faceTransform);
-      
-          const { scale, offsetX, offsetY, offsetZ } = debugControlsRef.current;
-          const modelCenter = pState.lipModelData.modelCenter;
-          const centeringVector = vec3.negate(vec3.create(), modelCenter);
-      
-          const localAdjustmentMatrix = mat4.create();
-          mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, [
-            offsetX,
-            offsetY,
-            offsetZ,
-          ]);
-          mat4.scale(localAdjustmentMatrix, localAdjustmentMatrix, [
-            scale,
-            scale,
-            scale,
-          ]);
-          mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, centeringVector);
-      
-          mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
-        } else {
-          mat4.identity(modelMatrix);
-          mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]); // Hide model if no face
-        }
+        const modelMatrix = mat4.create();
+        mat4.identity(modelMatrix);
+        mat4.translate(modelMatrix, modelMatrix, [0.0, 0.0, -1.0]); // In front of camera
+        mat4.scale(modelMatrix, modelMatrix, [0.12, 0.12, 0.12]);   // Make large enough
       
         const sceneMatrices = new Float32Array(16 * 3);
         sceneMatrices.set(projectionMatrix, 0);
@@ -184,16 +150,14 @@ export default function LipstickMirrorLive_Clone() {
         sceneMatrices.set(modelMatrix, 32);
         device.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
       
-        // ---------------------- END MATRIX FIX ----------------------
+        // ----------------------------------------------------------
       
-        // Lipstick color uniform
         device.queue.writeBuffer(
           pState.lipstickMaterialUniformBuffer,
           0,
           new Float32Array(selectedColorForRenderRef.current)
         );
       
-        // External camera texture
         let videoTextureGPU;
         try {
           videoTextureGPU = device.importExternalTexture({
@@ -213,7 +177,6 @@ export default function LipstickMirrorLive_Clone() {
         });
       
         const currentTextureView = context.getCurrentTexture().createView();
-      
         const cmdEnc = device.createCommandEncoder();
         const passEnc = cmdEnc.beginRenderPass({
           colorAttachments: [
@@ -232,20 +195,22 @@ export default function LipstickMirrorLive_Clone() {
           },
         });
       
-        // Render video background
         passEnc.setPipeline(pState.videoPipeline);
         passEnc.setBindGroup(0, frameBindGroupForTexture);
         passEnc.setBindGroup(1, pState.videoAspectRatioBindGroup);
         passEnc.draw(6);
       
-        // Render lip model
-        if (hasFace && pState.lipModelPipeline) {
+        // Always render model even if no face, for test
+        if (pState.lipModelPipeline) {
           passEnc.setPipeline(pState.lipModelPipeline);
           passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup);
           passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);
           passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);
           passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
-          passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
+          passEnc.setIndexBuffer(
+            pState.lipModelIndexBuffer,
+            pState.lipModelIndexFormat
+          );
           passEnc.drawIndexed(pState.lipModelNumIndices);
         }
       
@@ -253,6 +218,7 @@ export default function LipstickMirrorLive_Clone() {
         device.queue.submit([cmdEnc.finish()]);
         animationFrameIdRef.current = requestAnimationFrame(render);
       };
+      
       
 
     const initialize = async () => {
