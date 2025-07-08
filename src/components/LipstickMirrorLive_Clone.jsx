@@ -124,7 +124,7 @@ export default function LipstickMirrorLive_Clone() {
             // Get the raw transform and correct its coordinate system to match WebGPU
             const faceTransform = mat4.clone(landmarkerResult.facialTransformationMatrixes[0].data);
             const flipYZ = mat4.fromValues(1,0,0,0,  0,-1,0,0,  0,0,-1,0,  0,0,0,1);
-            const poseMatrix = mat4.multiply(mat4.create(), faceTransform, flipYZ);
+            mat4.multiply(faceTransform, flipYZ, faceTransform); // Correct the coordinate system
 
             // Create the adjustment matrix to center our model and then scale/offset it
             const localAdjustmentMatrix = mat4.create();
@@ -139,7 +139,7 @@ export default function LipstickMirrorLive_Clone() {
             mat4.translate(localAdjustmentMatrix, localAdjustmentMatrix, centeringVector);
             
             // Combine the corrected pose with our model's adjustments
-            mat4.multiply(modelMatrix, poseMatrix, localAdjustmentMatrix);
+            mat4.multiply(modelMatrix, faceTransform, localAdjustmentMatrix);
         } else {
              mat4.scale(modelMatrix, modelMatrix, [0, 0, 0]);
         }
