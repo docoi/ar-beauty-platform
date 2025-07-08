@@ -59,22 +59,5 @@ fn vert_main_3d(input: VertexInput3D) -> VertexOutput3D {
 // --- Main Fragment Shader ---
 @fragment
 fn frag_main_3d(input: VertexOutput3D) -> @location(0) vec4f {
-  let albedoSample = textureSample(u_albedoTexture, u_sampler, input.uv);
-  let baseColor = albedoSample.rgb * materialUniforms.tintColor.rgb;
-  let baseAlpha = albedoSample.a * materialUniforms.tintColor.a;
-
-  let N = normalize(input.world_normal);
-  let L = normalize(lightingUniforms.lightDirection);
-  let V = normalize(lightingUniforms.cameraWorldPosition - input.world_position);
-  let H = normalize(L + V);
-  let ambient = lightingUniforms.ambientColor.rgb * baseColor;
-  let lambertFactor = max(dot(N, L), 0.0);
-  let diffuse = lightingUniforms.diffuseColor.rgb * baseColor * lambertFactor;
-  let specFactor = pow(max(dot(N, H), 0.0), 128.0);
-  let specular = lightingUniforms.diffuseColor.rgb * specFactor * 0.7;
-  var finalRgb = ambient + diffuse + specular;
-  finalRgb = pow(finalRgb, vec3f(1.0/2.2));
-  finalRgb = clamp(finalRgb, vec3f(0.0), vec3f(1.0));
-
-  return vec4f(finalRgb, baseAlpha);
+  return vec4f(1.0, 1.0, 0.0, 1.0); // BRIGHT YELLOW FULL OPACITY
 }
