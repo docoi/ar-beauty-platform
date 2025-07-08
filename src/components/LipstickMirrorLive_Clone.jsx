@@ -105,15 +105,7 @@ export default function LipstickMirrorLive_Clone() {
       
         const { device, context, pState } = gpuState;
       
-        const landmarkerResult = landmarkerRef.current
-          ? landmarkerRef.current.detectForVideo(videoRef.current, performance.now())
-          : null;
-      
-        const hasFace =
-          landmarkerResult?.faceLandmarks?.length > 0 &&
-          landmarkerResult?.facialTransformationMatrixes?.length > 0;
-      
-        // Update video aspect UBO
+        // Aspect ratio update
         device.queue.writeBuffer(
           pState.videoAspectRatioUBO,
           0,
@@ -125,8 +117,7 @@ export default function LipstickMirrorLive_Clone() {
           ])
         );
       
-        // ------------------- FIXED MODEL MATRIX -------------------
-      
+        // === FIXED STATIC MATRIX (to force visibility) ===
         const projectionMatrix = mat4.create();
         mat4.perspective(
           projectionMatrix,
@@ -136,13 +127,12 @@ export default function LipstickMirrorLive_Clone() {
           1000.0
         );
       
-        const viewMatrix = mat4.create(); // Identity
+        const viewMatrix = mat4.create(); // Identity view
         mat4.identity(viewMatrix);
       
         const modelMatrix = mat4.create();
-        mat4.identity(modelMatrix);
-        mat4.translate(modelMatrix, modelMatrix, [0.0, 0.0, -1.0]); // In front of camera
-        mat4.scale(modelMatrix, modelMatrix, [0.12, 0.12, 0.12]);   // Make large enough
+        mat4.translate(modelMatrix, modelMatrix, [0.0, 0.0, -1.0]); // Push forward
+        mat4.scale(modelMatrix, modelMatrix, [1.0, 1.0, 1.0]);       // Big enough
       
         const sceneMatrices = new Float32Array(16 * 3);
         sceneMatrices.set(projectionMatrix, 0);
@@ -150,12 +140,11 @@ export default function LipstickMirrorLive_Clone() {
         sceneMatrices.set(modelMatrix, 32);
         device.queue.writeBuffer(pState.lipModelMatrixUBO, 0, sceneMatrices);
       
-        // ----------------------------------------------------------
-      
+        // Force a solid visible yellow color
         device.queue.writeBuffer(
           pState.lipstickMaterialUniformBuffer,
           0,
-          new Float32Array(selectedColorForRenderRef.current)
+          new Float32Array([1.0, 1.0, 0.0, 1.0]) // Yellow RGBA
         );
       
         let videoTextureGPU;
@@ -195,22 +184,20 @@ export default function LipstickMirrorLive_Clone() {
           },
         });
       
+        // Draw background
         passEnc.setPipeline(pState.videoPipeline);
         passEnc.setBindGroup(0, frameBindGroupForTexture);
         passEnc.setBindGroup(1, pState.videoAspectRatioBindGroup);
         passEnc.draw(6);
       
-        // Always render model even if no face, for test
+        // Draw 3D lips (always render to force visibility)
         if (pState.lipModelPipeline) {
           passEnc.setPipeline(pState.lipModelPipeline);
           passEnc.setBindGroup(0, pState.lipModelMatrixBindGroup);
           passEnc.setBindGroup(1, pState.lipModelMaterialBindGroup);
           passEnc.setBindGroup(2, pState.lipModelLightingBindGroup);
           passEnc.setVertexBuffer(0, pState.lipModelVertexBuffer);
-          passEnc.setIndexBuffer(
-            pState.lipModelIndexBuffer,
-            pState.lipModelIndexFormat
-          );
+          passEnc.setIndexBuffer(pState.lipModelIndexBuffer, pState.lipModelIndexFormat);
           passEnc.drawIndexed(pState.lipModelNumIndices);
         }
       
@@ -218,6 +205,7 @@ export default function LipstickMirrorLive_Clone() {
         device.queue.submit([cmdEnc.finish()]);
         animationFrameIdRef.current = requestAnimationFrame(render);
       };
+      
       
       
 
