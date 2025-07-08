@@ -221,123 +221,172 @@ export default function LipstickMirrorLive_Clone() {
       
       
 
-    const initialize = async () => {
+      const initialize = async () => {
         try {
-            setDebugMessage("Loading 3D Model...");
-            const loader = new GLTFLoader();
-            const gltf = await loader.loadAsync('/models/lips_model.glb');
-            let lipMesh = null;
-            gltf.scene.traverse((object) => { if (object instanceof Mesh) { lipMesh = object; } });
-            if (!lipMesh) throw new Error("Could not find a mesh in the loaded GLTF scene.");
-            
-            const geometry = lipMesh.geometry;
-            const positions = geometry.attributes.position.array;
-            const normals = geometry.attributes.normal.array;
-            const uvs = geometry.attributes.uv.array;
-            const indices = geometry.index.array;
-            
-            // RESTORED THE CRITICAL CENTERING LOGIC
-            const modelCenter = calculateBoundingBoxCenter(positions);
-            gpuState.pState.lipModelData = { positions, normals, uvs, indices, modelCenter };
-
-            setDebugMessage("Initializing GPU...");
-            if (!navigator.gpu) throw new Error("WebGPU not supported.");
-            const adapter = await navigator.gpu.requestAdapter();
-            if (!adapter) throw new Error("No GPU adapter found.");
-            gpuState.device = await adapter.requestDevice();
-            gpuState.context = canvasRef.current.getContext('webgpu');
-            gpuState.format = navigator.gpu.getPreferredCanvasFormat();
-            
-            configureCanvasAndDepthTexture();
-
-            let lipstickAlbedoImageBitmap, lipstickNormalImageBitmap;
-            try { lipstickAlbedoImageBitmap = await loadImageBitmap('/textures/lipstick_albedo_gray.png'); } catch (e) { console.warn(e); }
-            try { lipstickNormalImageBitmap = await loadImageBitmap('/textures/lipstick_normal.png'); } catch (e) { console.warn(e); }
-            
-            const layoutsAndPipelines = await createPipelines(gpuState.device, gpuState.format, true);
-            Object.assign(gpuState.pState, layoutsAndPipelines);
-            
-            gpuState.pState.videoAspectRatioUBO = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-            gpuState.pState.videoAspectRatioBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.videoAspectRatioGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.videoAspectRatioUBO}}]});
-            
-            gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-            gpuState.pState.lipModelMatrixBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lipModelMatrixGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lipModelMatrixUBO}}]});
-            
-            gpuState.pState.lipstickMaterialUniformBuffer = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-            gpuState.pState.lightingUniformBuffer = gpuState.device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-            gpuState.pState.lipModelLightingBindGroup = gpuState.device.createBindGroup({ layout: gpuState.pState.lightingGroupLayout, entries: [{binding:0, resource:{buffer:gpuState.pState.lightingUniformBuffer}}]});
-            gpuState.pState.videoSampler = gpuState.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
-
-            const fallbackTexture = gpuState.device.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
-            gpuState.device.queue.writeTexture({ texture: fallbackTexture }, new Uint8Array([255, 255, 255, 255]), { bytesPerRow: 4 }, { width: 1, height: 1 });
-            
-            if (lipstickAlbedoImageBitmap) { gpuState.pState.lipstickAlbedoTexture = gpuState.device.createTexture({ size:[lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickAlbedoImageBitmap}, {texture:gpuState.pState.lipstickAlbedoTexture}, [lipstickAlbedoImageBitmap.width, lipstickAlbedoImageBitmap.height]); }
-            if (lipstickNormalImageBitmap) { gpuState.pState.lipstickNormalTexture = gpuState.device.createTexture({label:"NormalTex", size:[lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height], format:'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT}); gpuState.device.queue.copyExternalImageToTexture({source:lipstickNormalImageBitmap}, {texture:gpuState.pState.lipstickNormalTexture}, [lipstickNormalImageBitmap.width, lipstickNormalImageBitmap.height]); }
-            
-            gpuState.pState.lipstickAlbedoSampler = gpuState.device.createSampler({magFilter:'linear', minFilter:'linear'});
-            
-            gpuState.pState.lipModelMaterialBindGroup = gpuState.device.createBindGroup({
-              layout: gpuState.pState.lipstickMaterialGroupLayout,
-              entries: [
-                { binding: 0, resource: { buffer: gpuState.pState.lipstickMaterialUniformBuffer } },
-                { binding: 1, resource: (gpuState.pState.lipstickAlbedoTexture || fallbackTexture).createView() },
-                { binding: 2, resource: gpuState.pState.lipstickAlbedoSampler },
-                { binding: 3, resource: (gpuState.pState.lipstickNormalTexture || fallbackTexture).createView() },
-              ]
-            });
-            
-            const model = gpuState.pState.lipModelData;
-            const numVertices = model.positions.length / 3;
-            const interleaved = new Float32Array(numVertices * 8); 
-            for (let i=0; i<numVertices; ++i) { interleaved.set(model.positions.slice(i*3, i*3+3), i*8); interleaved.set(model.normals.slice(i*3, i*3+3), i*8+3); interleaved.set(model.uvs.slice(i*2, i*2+2), i*8+6); }
-            gpuState.pState.lipModelVertexBuffer = gpuState.device.createBuffer({ size: interleaved.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-            gpuState.device.queue.writeBuffer(gpuState.pState.lipModelVertexBuffer, 0, interleaved);
-            
-            const indicesData = model.indices;
-            const paddedIndexDataLength = Math.ceil(indicesData.byteLength / 4) * 4;
-            const paddedIndexData = new Uint8Array(paddedIndexDataLength);
-            paddedIndexData.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength));
-            
-            gpuState.pState.lipModelIndexBuffer = gpuState.device.createBuffer({ size: paddedIndexDataLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
-            gpuState.device.queue.writeBuffer(gpuState.pState.lipModelIndexBuffer, 0, paddedIndexData);
-
-            gpuState.pState.lipModelIndexFormat = (indicesData instanceof Uint16Array) ? 'uint16' : 'uint32';
-            gpuState.pState.lipModelNumIndices = model.indices.length;
-
-            setDebugMessage("Starting video...");
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play();
-
-            resizeObserver = new ResizeObserver(configureCanvasAndDepthTexture);
-            resizeObserver.observe(canvasRef.current);
-            
-            render();
-            setDebugMessage("Ready. Initializing tracking...");
-
+          setDebugMessage("Loading 3D Model...");
+          const loader = new GLTFLoader();
+          const gltf = await loader.loadAsync('/models/lips_model.glb');
+      
+          // === DEBUG: List all objects found in GLTF ===
+          let lipMesh = null;
+          gltf.scene.traverse((object) => {
+            console.log('GLTF Node:', object.type, '-', object.name);
+            if (object.isMesh) {
+              console.log('✅ Found mesh:', object.name, object);
+              if (!lipMesh) lipMesh = object; // First mesh only for now
+            }
+          });
+      
+          if (!lipMesh) throw new Error("❌ Could not find a mesh in the loaded GLTF scene.");
+      
+          const geometry = lipMesh.geometry;
+          const positions = geometry.attributes.position?.array;
+          const normals = geometry.attributes.normal?.array;
+          const uvs = geometry.attributes.uv?.array;
+          const indices = geometry.index?.array;
+      
+          if (!positions || !normals || !uvs || !indices) {
+            throw new Error("❌ One or more geometry attributes (position, normal, uv, indices) are missing.");
+          }
+      
+          const modelCenter = calculateBoundingBoxCenter(positions);
+          gpuState.pState.lipModelData = { positions, normals, uvs, indices, modelCenter };
+      
+          console.log('✔ Positions:', positions.length);
+          console.log('✔ Indices:', indices.length);
+          console.log('✔ Model Center:', modelCenter);
+      
+          // === WebGPU Setup ===
+          setDebugMessage("Initializing GPU...");
+          if (!navigator.gpu) throw new Error("WebGPU not supported.");
+          const adapter = await navigator.gpu.requestAdapter();
+          if (!adapter) throw new Error("No GPU adapter found.");
+          gpuState.device = await adapter.requestDevice();
+          gpuState.context = canvasRef.current.getContext('webgpu');
+          gpuState.format = navigator.gpu.getPreferredCanvasFormat();
+      
+          configureCanvasAndDepthTexture();
+      
+          // === Load textures (optional) ===
+          let lipstickAlbedoImageBitmap, lipstickNormalImageBitmap;
+          try {
+            lipstickAlbedoImageBitmap = await loadImageBitmap('/textures/lipstick_albedo_gray.png');
+          } catch (e) { console.warn('⚠️ Albedo texture missing:', e); }
+          try {
+            lipstickNormalImageBitmap = await loadImageBitmap('/textures/lipstick_normal.png');
+          } catch (e) { console.warn('⚠️ Normal texture missing:', e); }
+      
+          const layoutsAndPipelines = await createPipelines(gpuState.device, gpuState.format, true);
+          Object.assign(gpuState.pState, layoutsAndPipelines);
+      
+          // === Create GPU Buffers ===
+          gpuState.pState.videoAspectRatioUBO = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          gpuState.pState.videoAspectRatioBindGroup = gpuState.device.createBindGroup({
+            layout: gpuState.pState.videoAspectRatioGroupLayout,
+            entries: [{ binding: 0, resource: { buffer: gpuState.pState.videoAspectRatioUBO } }],
+          });
+      
+          gpuState.pState.lipModelMatrixUBO = gpuState.device.createBuffer({ size: 192, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          gpuState.pState.lipModelMatrixBindGroup = gpuState.device.createBindGroup({
+            layout: gpuState.pState.lipModelMatrixGroupLayout,
+            entries: [{ binding: 0, resource: { buffer: gpuState.pState.lipModelMatrixUBO } }],
+          });
+      
+          gpuState.pState.lipstickMaterialUniformBuffer = gpuState.device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          gpuState.pState.lightingUniformBuffer = gpuState.device.createBuffer({ size: 64, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+          gpuState.pState.lipModelLightingBindGroup = gpuState.device.createBindGroup({
+            layout: gpuState.pState.lightingGroupLayout,
+            entries: [{ binding: 0, resource: { buffer: gpuState.pState.lightingUniformBuffer } }],
+          });
+      
+          gpuState.pState.videoSampler = gpuState.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+          const fallbackTexture = gpuState.device.createTexture({
+            size: [1, 1],
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+          });
+          gpuState.device.queue.writeTexture(
+            { texture: fallbackTexture },
+            new Uint8Array([255, 255, 255, 255]),
+            { bytesPerRow: 4 },
+            { width: 1, height: 1 }
+          );
+      
+          // === Load actual or fallback textures ===
+          gpuState.pState.lipstickAlbedoSampler = gpuState.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+          gpuState.pState.lipModelMaterialBindGroup = gpuState.device.createBindGroup({
+            layout: gpuState.pState.lipstickMaterialGroupLayout,
+            entries: [
+              { binding: 0, resource: { buffer: gpuState.pState.lipstickMaterialUniformBuffer } },
+              { binding: 1, resource: (gpuState.pState.lipstickAlbedoTexture || fallbackTexture).createView() },
+              { binding: 2, resource: gpuState.pState.lipstickAlbedoSampler },
+              { binding: 3, resource: (gpuState.pState.lipstickNormalTexture || fallbackTexture).createView() },
+            ]
+          });
+      
+          // === Upload Geometry ===
+          const numVertices = positions.length / 3;
+          const interleaved = new Float32Array(numVertices * 8);
+          for (let i = 0; i < numVertices; ++i) {
+            interleaved.set(positions.slice(i * 3, i * 3 + 3), i * 8);
+            interleaved.set(normals.slice(i * 3, i * 3 + 3), i * 8 + 3);
+            interleaved.set(uvs.slice(i * 2, i * 2 + 2), i * 8 + 6);
+          }
+          gpuState.pState.lipModelVertexBuffer = gpuState.device.createBuffer({
+            size: interleaved.byteLength,
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+          });
+          gpuState.device.queue.writeBuffer(gpuState.pState.lipModelVertexBuffer, 0, interleaved);
+      
+          const indicesData = indices;
+          const paddedIndexDataLength = Math.ceil(indicesData.byteLength / 4) * 4;
+          const paddedIndexData = new Uint8Array(paddedIndexDataLength);
+          paddedIndexData.set(new Uint8Array(indicesData.buffer, indicesData.byteOffset, indicesData.byteLength));
+      
+          gpuState.pState.lipModelIndexBuffer = gpuState.device.createBuffer({
+            size: paddedIndexDataLength,
+            usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+          });
+          gpuState.device.queue.writeBuffer(gpuState.pState.lipModelIndexBuffer, 0, paddedIndexData);
+      
+          gpuState.pState.lipModelIndexFormat = indicesData instanceof Uint16Array ? 'uint16' : 'uint32';
+          gpuState.pState.lipModelNumIndices = indices.length;
+      
+          // === Start video feed ===
+          setDebugMessage("Starting video...");
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+      
+          resizeObserver = new ResizeObserver(configureCanvasAndDepthTexture);
+          resizeObserver.observe(canvasRef.current);
+      
+          render();
+          setDebugMessage("Ready. Initializing tracking...");
         } catch (err) {
-            console.error("Initialization failed:", err);
-            setError(err.message);
-            setDebugMessage("Error during setup.");
-            return;
+          console.error("❌ Initialization failed:", err);
+          setError(err.message);
+          setDebugMessage("Error during setup.");
+          return;
         }
-
+      
         try {
-            const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
-            const lmInstance = await FaceLandmarker.createFromOptions(vision, {
-                baseOptions: { modelAssetPath: '/models/face_landmarker.task', delegate: 'GPU' },
-                outputFaceLandmarks: true,
-                outputFacialTransformationMatrixes: true,
-                runningMode: 'VIDEO',
-                numFaces: 1,
-            });
-            landmarkerRef.current = lmInstance;
-            setDebugMessage("Tracking Active");
+          const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+          const lmInstance = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: '/models/face_landmarker.task', delegate: 'GPU' },
+            outputFaceLandmarks: true,
+            outputFacialTransformationMatrixes: true,
+            runningMode: 'VIDEO',
+            numFaces: 1,
+          });
+          landmarkerRef.current = lmInstance;
+          setDebugMessage("Tracking Active");
         } catch (err) {
-            console.error("Failed to initialize Face Landmarker:", err);
-            setDebugMessage("Tracking failed to load.");
+          console.error("Failed to initialize Face Landmarker:", err);
+          setDebugMessage("Tracking failed to load.");
         }
-    };
+      };
+      
 
     gui = new GUI();
     const controls = debugControlsRef.current;
